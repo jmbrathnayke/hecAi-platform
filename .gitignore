@@ -9,6 +9,11 @@ frontend/node_modules/
 frontend/.next/
 frontend/out/
 
+# serwist — generated Service Worker (built from app/sw.ts)
+frontend/public/sw.js
+frontend/public/sw.js.map
+frontend/public/swe-worker-*.js
+
 # Python
 backend/venv/
 backend/__pycache__/
