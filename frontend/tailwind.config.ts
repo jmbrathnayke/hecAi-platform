@@ -59,10 +59,11 @@ const config: Config = {
         "design-8": "64px",
       },
       fontFamily: {
+        // CSS variables are provided by next/font/google (see app/[locale]/layout.tsx).
         sans: [
-          "Noto Sans",
-          "Noto Sans Sinhala",
-          "Noto Sans Tamil",
+          "var(--font-noto-sans)",
+          "var(--font-noto-sinhala)",
+          "var(--font-noto-tamil)",
           "system-ui",
           "sans-serif",
         ],
