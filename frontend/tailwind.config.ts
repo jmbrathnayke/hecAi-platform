@@ -80,6 +80,21 @@ const config: Config = {
         "touch-target": "48px",
         "primary-btn": "56px",
       },
+      keyframes: {
+        "slide-down": {
+          "0%": { transform: "translateY(-100%)", opacity: "0" },
+          "100%": { transform: "translateY(0)", opacity: "1" },
+        },
+        "fade-in": {
+          "0%": { opacity: "0" },
+          "100%": { opacity: "1" },
+        },
+      },
+      animation: {
+        // Suppressed via the `motion-reduce:animate-none` variant (UX-DR15).
+        "slide-down": "slide-down 200ms ease-out",
+        "fade-in": "fade-in 200ms ease-out",
+      },
     },
   },
   plugins: [],

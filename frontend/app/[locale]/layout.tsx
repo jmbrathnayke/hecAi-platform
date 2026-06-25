@@ -1,8 +1,11 @@
 import type { Metadata, Viewport } from "next";
 import { Noto_Sans, Noto_Sans_Sinhala, Noto_Sans_Tamil } from "next/font/google";
+import { notFound } from "next/navigation";
 import { NextIntlClientProvider } from "next-intl";
 import { getMessages } from "next-intl/server";
 import { SWRegistrar } from "@/components/SWRegistrar";
+import { OfflineBanner } from "@/components/OfflineBanner";
+import { routing } from "@/routing";
 import "../globals.css";
 
 // Self-hosted by next/font at build time → served from same origin and precached by the
@@ -41,6 +44,11 @@ export default async function LocaleLayout({
   params: Promise<{ locale: string }>;
 }) {
   const { locale } = await params;
+  // Reject unknown locale segments (e.g. /admin, /xyz) with a 404 instead of rendering the
+  // citizen home in a fallback locale. Admin routes (Sprint 5) live at /admin, not /[locale].
+  if (!routing.locales.includes(locale as (typeof routing.locales)[number])) {
+    notFound();
+  }
   const messages = await getMessages();
   return (
     <html
@@ -50,6 +58,7 @@ export default async function LocaleLayout({
       <body className="font-sans">
         <SWRegistrar />
         <NextIntlClientProvider messages={messages}>
+          <OfflineBanner />
           {children}
         </NextIntlClientProvider>
       </body>
