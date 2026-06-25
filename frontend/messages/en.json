@@ -1,6 +1,13 @@
 {
   "home": {
     "title": "HEC Reporting System",
-    "subtitle": "Coming soon"
+    "tagline": "Report human-elephant conflict incidents and track your compensation claims",
+    "languageSelector": "Choose your language",
+    "reportIncident": "Report Incident",
+    "checkStatus": "Check Claim Status"
+  },
+  "offline": {
+    "banner": "You are offline. Reports will be saved and sent when you reconnect.",
+    "reconnected": "Back online — syncing your reports"
   }
 }
