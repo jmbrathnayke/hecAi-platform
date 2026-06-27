@@ -174,3 +174,34 @@ export async function putSessionValue(
     tx.onabort = () => reject(tx.error);
   });
 }
+
+/**
+ * Merge `fields` into an existing case draft (read-merge-write in one transaction).
+ * Creates a minimal record if the draft does not yet exist.
+ */
+export async function updateDraft(
+  offlineId: string,
+  fields: Record<string, unknown>,
+): Promise<void> {
+  const { tx, store } = await openStore("cases", "readwrite");
+  return new Promise<void>((resolve, reject) => {
+    const req = store.get(offlineId);
+    req.onsuccess = () => {
+      const existing = (req.result as Record<string, unknown> | undefined) ?? {
+        offline_id: offlineId,
+      };
+      store.put({
+        ...existing,
+        ...fields,
+        offline_id: offlineId,
+        // Preserve a caller-/record-supplied status; only default to "draft" for a new record.
+        sync_status: fields.sync_status ?? existing.sync_status ?? "draft",
+        updated_at: new Date().toISOString(),
+      });
+    };
+    req.onerror = () => reject(req.error);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  });
+}
