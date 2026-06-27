@@ -194,7 +194,8 @@ export async function updateDraft(
         ...existing,
         ...fields,
         offline_id: offlineId,
-        sync_status: "draft",
+        // Preserve a caller-/record-supplied status; only default to "draft" for a new record.
+        sync_status: fields.sync_status ?? existing.sync_status ?? "draft",
         updated_at: new Date().toISOString(),
       });
     };

@@ -37,10 +37,20 @@ export default function DamageStep() {
     getCase(draftId)
       .then((draft) => {
         if (!active || !draft) return;
-        if (typeof draft.damage_category === "string") {
-          setSelected(draft.damage_category as DamageCategory);
-        }
-        if (typeof draft.description === "string") setDescription(draft.description);
+        // Only SEED initial values — never overwrite anything the user has already
+        // changed since mount (the functional updaters skip when state is non-pristine).
+        setSelected((prev) => {
+          if (prev !== null) return prev;
+          const stored = draft.damage_category;
+          return DAMAGE_CATEGORIES.includes(stored as DamageCategory)
+            ? (stored as DamageCategory)
+            : prev; // ignore invalid/legacy keys
+        });
+        setDescription((prev) =>
+          prev !== "" || typeof draft.description !== "string"
+            ? prev
+            : draft.description.slice(0, MAX_DESCRIPTION),
+        );
       })
       .catch(() => {
         /* a fresh draft simply has no fields yet */
@@ -73,7 +83,7 @@ export default function DamageStep() {
     }
   }
 
-  const remaining = MAX_DESCRIPTION - description.length;
+  const remaining = Math.max(0, MAX_DESCRIPTION - description.length);
 
   return (
     <main className="mx-auto flex w-full max-w-md flex-col gap-design-6 px-design-5 py-design-6">
