@@ -44,18 +44,32 @@ export async function decryptField(
   return new TextDecoder().decode(decrypted);
 }
 
+// Shared in-flight promise so concurrent callers don't each generate (and persist)
+// a different key — divergent non-extractable keys would make data permanently
+// undecryptable. Mirrors the openDB() singleton pattern.
+let keyPromise: Promise<CryptoKey> | null = null;
+
 /**
  * Returns the anonymous citizen's device key, creating and persisting it on first use.
  * The key is non-extractable; only the live CryptoKey object is stored in IndexedDB.
  */
 export async function getOrCreateSessionKey(): Promise<CryptoKey> {
-  const existing = (await getSessionValue(CITIZEN_KEY_ID)) as
-    | { id: string; key: CryptoKey }
-    | undefined;
-  if (existing?.key) return existing.key;
-  const key = await generateKey();
-  await putSessionValue({ id: CITIZEN_KEY_ID, key });
-  return key;
+  if (keyPromise) return keyPromise;
+  keyPromise = (async () => {
+    const existing = (await getSessionValue(CITIZEN_KEY_ID)) as
+      | { id: string; key: CryptoKey }
+      | undefined;
+    if (existing?.key) return existing.key;
+    const key = await generateKey();
+    await putSessionValue({ id: CITIZEN_KEY_ID, key });
+    return key;
+  })();
+  try {
+    return await keyPromise;
+  } catch (err) {
+    keyPromise = null; // allow retry on failure
+    throw err;
+  }
 }
 
 function toBase64(bytes: Uint8Array): string {

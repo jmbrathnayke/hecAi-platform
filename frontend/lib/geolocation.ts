@@ -15,9 +15,28 @@ export function getCurrentPosition(timeoutMs = 10000): Promise<GeolocationCoordi
       reject(new GpsTimeoutError());
       return;
     }
+    // Belt-and-suspenders: a JS timer guarantees the 10s bound (AC4) even if a
+    // non-conformant platform never invokes either callback.
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        reject(new GpsTimeoutError());
+      }
+    }, timeoutMs);
     navigator.geolocation.getCurrentPosition(
-      (pos) => resolve(pos.coords),
-      () => reject(new GpsTimeoutError()),
+      (pos) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(pos.coords);
+      },
+      () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        reject(new GpsTimeoutError());
+      },
       { timeout: timeoutMs, enableHighAccuracy: true },
     );
   });

@@ -1,19 +1,19 @@
 "use client";
 // Step 2 of the incident form: incident location.
 // Auto-acquires GPS (10s timeout); on failure shows a manual map-pin picker (FR-1.6).
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import { useTranslations } from "next-intl";
 import { useRouter } from "@/navigation";
 import { StepIndicator } from "@/components/StepIndicator";
 import { getCurrentPosition } from "@/lib/geolocation";
 import { getCase, putCase } from "@/lib/indexeddb";
+import { getDraftId } from "@/lib/draft";
 import type { LatLng } from "@/components/MapPinPicker";
 
 // Leaflet touches `window`; load the picker client-side only.
 const MapPinPicker = dynamic(() => import("@/components/MapPinPicker"), { ssr: false });
 
-const DRAFT_ID_KEY = "hec-draft-id";
 const SRI_LANKA_CENTER: LatLng = { lat: 7.8731, lng: 80.7718 };
 
 type Status = "detecting" | "gps" | "manual";
@@ -26,27 +26,40 @@ export default function LocationStep() {
   const [status, setStatus] = useState<Status>("detecting");
   const [coords, setCoords] = useState<LatLng | null>(null);
   const [saving, setSaving] = useState(false);
-  const ranRef = useRef(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (ranRef.current) return; // guard against React 18 StrictMode double-invoke
-    ranRef.current = true;
+    // Identity (Step 1) must come first; if there's no draft (deep link / lost
+    // sessionStorage), send the user back rather than starting an orphan draft.
+    if (!getDraftId()) {
+      router.replace("/report");
+      return;
+    }
+    // `active` ignores late GPS settles after unmount (also covers StrictMode).
+    let active = true;
     getCurrentPosition()
       .then((c) => {
+        if (!active) return;
         setCoords({ lat: c.latitude, lng: c.longitude });
         setStatus("gps");
       })
-      .catch(() => setStatus("manual"));
-  }, []);
+      .catch(() => {
+        if (active) setStatus("manual");
+      });
+    return () => {
+      active = false;
+    };
+  }, [router]);
 
   async function saveAndNext(loc: LatLng, source: "gps" | "manual") {
     if (saving) return;
     setSaving(true);
+    setSaveError(null);
     try {
-      let offlineId = sessionStorage.getItem(DRAFT_ID_KEY);
+      const offlineId = getDraftId();
       if (!offlineId) {
-        offlineId = crypto.randomUUID();
-        sessionStorage.setItem(DRAFT_ID_KEY, offlineId);
+        router.replace("/report");
+        return;
       }
       const existing = (await getCase(offlineId)) ?? {};
       await putCase({
@@ -59,6 +72,8 @@ export default function LocationStep() {
         updated_at: new Date().toISOString(),
       });
       router.push("/report/damage");
+    } catch {
+      setSaveError(t("step2.saveError"));
     } finally {
       setSaving(false);
     }
@@ -107,6 +122,12 @@ export default function LocationStep() {
             onConfirm={(c) => void saveAndNext(c, "manual")}
           />
         </div>
+      )}
+
+      {saveError && (
+        <p role="alert" className="text-caption text-status-error">
+          {saveError}
+        </p>
       )}
     </main>
   );

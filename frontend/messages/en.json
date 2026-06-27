@@ -23,7 +23,8 @@
       "mobile": "Mobile number",
       "next": "Next",
       "nicError": "Enter a valid NIC (e.g. 000000000V or 200012345678)",
-      "mobileError": "Enter a valid mobile number (07XXXXXXXX)"
+      "mobileError": "Enter a valid mobile number (07XXXXXXXX)",
+      "saveError": "Couldn’t save your details. Please try again."
     },
     "step2": {
       "title": "Incident location",
@@ -31,7 +32,8 @@
       "gpsDetected": "Location detected",
       "gpsFailed": "We couldn’t detect your location. Place a pin on the map instead.",
       "confirmPin": "Confirm location",
-      "next": "Next"
+      "next": "Next",
+      "saveError": "Couldn’t save the location. Please try again."
     }
   }
 }

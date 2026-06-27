@@ -8,8 +8,7 @@ import { StepIndicator } from "@/components/StepIndicator";
 import { isValidNIC, isValidMobile } from "@/lib/validation";
 import { getOrCreateSessionKey, encryptField } from "@/lib/crypto";
 import { getCase, putCase } from "@/lib/indexeddb";
-
-const DRAFT_ID_KEY = "hec-draft-id";
+import { getOrCreateDraftId } from "@/lib/draft";
 
 export default function IdentityStep() {
   const t = useTranslations("report");
@@ -20,6 +19,7 @@ export default function IdentityStep() {
   const [mobile, setMobile] = useState("");
   const [nicError, setNicError] = useState<string | null>(null);
   const [mobileError, setMobileError] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   function validate(): boolean {
@@ -33,16 +33,13 @@ export default function IdentityStep() {
   async function handleNext() {
     if (!validate() || saving) return;
     setSaving(true);
+    setSubmitError(null);
     try {
       const key = await getOrCreateSessionKey();
       const nicEnc = await encryptField(nic.trim(), key);
       const mobileEnc = await encryptField(mobile.trim(), key);
 
-      let offlineId = sessionStorage.getItem(DRAFT_ID_KEY);
-      if (!offlineId) {
-        offlineId = crypto.randomUUID();
-        sessionStorage.setItem(DRAFT_ID_KEY, offlineId);
-      }
+      const offlineId = getOrCreateDraftId();
       const existing = (await getCase(offlineId)) ?? {};
 
       // Save first, navigate second (CRITICAL #5 — avoid data loss on slow devices).
@@ -59,6 +56,9 @@ export default function IdentityStep() {
       });
 
       router.push("/report/location");
+    } catch {
+      // Crypto / IndexedDB / storage failure — keep the user here with their input.
+      setSubmitError(t("step1.saveError"));
     } finally {
       setSaving(false);
     }
@@ -126,6 +126,12 @@ export default function IdentityStep() {
             </p>
           )}
         </div>
+
+        {submitError && (
+          <p role="alert" className="text-caption text-status-error">
+            {submitError}
+          </p>
+        )}
 
         <button
           type="submit"
