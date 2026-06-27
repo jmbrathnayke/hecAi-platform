@@ -34,6 +34,19 @@
       "confirmPin": "Confirm location",
       "next": "Next",
       "saveError": "Couldn’t save the location. Please try again."
+    },
+    "step3": {
+      "title": "What type of damage occurred?",
+      "crop": "Crop Damage",
+      "property": "Property Damage",
+      "combined": "Combined Damage",
+      "none": "No Visible Damage",
+      "description": "Description (optional)",
+      "descriptionPlaceholder": "Describe what happened...",
+      "charsRemaining": "{remaining} characters remaining",
+      "next": "Next",
+      "selectError": "Please select a damage type",
+      "saveError": "Couldn’t save. Please try again."
     }
   }
 }
