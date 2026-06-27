@@ -146,3 +146,31 @@ export async function getAllCases(): Promise<Record<string, unknown>[]> {
     req.onerror = () => reject(req.error);
   });
 }
+
+// ---------------------------------------------------------------------------
+// officer_session store — small keyed records (e.g. the citizen device crypto key).
+// CryptoKey objects are stored directly via structured clone (never as raw bytes).
+// ---------------------------------------------------------------------------
+
+export async function getSessionValue(
+  id: string,
+): Promise<Record<string, unknown> | undefined> {
+  const { store } = await openStore("officer_session", "readonly");
+  return new Promise((resolve, reject) => {
+    const req = store.get(id);
+    req.onsuccess = () => resolve(req.result as Record<string, unknown> | undefined);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+export async function putSessionValue(
+  record: { id: string } & Record<string, unknown>,
+): Promise<void> {
+  const { tx, store } = await openStore("officer_session", "readwrite");
+  return new Promise<void>((resolve, reject) => {
+    store.put(record);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  });
+}

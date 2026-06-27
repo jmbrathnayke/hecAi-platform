@@ -9,5 +9,31 @@
   "offline": {
     "banner": "You are offline. Reports will be saved and sent when you reconnect.",
     "reconnected": "Back online — syncing your reports"
+  },
+  "report": {
+    "steps": {
+      "identity": "Identity",
+      "location": "Location",
+      "damage": "Damage",
+      "photos": "Photos"
+    },
+    "step1": {
+      "title": "Your details",
+      "nic": "National Identity Card (NIC) number",
+      "mobile": "Mobile number",
+      "next": "Next",
+      "nicError": "Enter a valid NIC (e.g. 000000000V or 200012345678)",
+      "mobileError": "Enter a valid mobile number (07XXXXXXXX)",
+      "saveError": "Couldn’t save your details. Please try again."
+    },
+    "step2": {
+      "title": "Incident location",
+      "detecting": "Detecting your location…",
+      "gpsDetected": "Location detected",
+      "gpsFailed": "We couldn’t detect your location. Place a pin on the map instead.",
+      "confirmPin": "Confirm location",
+      "next": "Next",
+      "saveError": "Couldn’t save the location. Please try again."
+    }
   }
 }
