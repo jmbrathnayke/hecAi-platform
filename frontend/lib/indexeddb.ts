@@ -205,3 +205,46 @@ export async function updateDraft(
     tx.onabort = () => reject(tx.error);
   });
 }
+
+// ---------------------------------------------------------------------------
+// photo_blobs store — large image Blobs kept OUT of the cases record (the draft
+// only references them by blob_key) to keep case-record sizes small.
+// ---------------------------------------------------------------------------
+
+export async function addPhotoBlob(blobKey: string, blob: Blob): Promise<void> {
+  const { tx, store } = await openStore("photo_blobs", "readwrite");
+  return new Promise<void>((resolve, reject) => {
+    store.put({ blob_key: blobKey, blob, created_at: Date.now() });
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  });
+}
+
+export async function deletePhotoBlob(blobKey: string): Promise<void> {
+  const { tx, store } = await openStore("photo_blobs", "readwrite");
+  return new Promise<void>((resolve, reject) => {
+    store.delete(blobKey);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  });
+}
+
+export async function listPhotoBlobs(
+  blobKeys: string[],
+): Promise<{ blob_key: string; blob: Blob }[]> {
+  if (blobKeys.length === 0) return [];
+  const { store } = await openStore("photo_blobs", "readonly");
+  const results = await Promise.all(
+    blobKeys.map(
+      (key) =>
+        new Promise<{ blob_key: string; blob: Blob } | undefined>((resolve, reject) => {
+          const req = store.get(key);
+          req.onsuccess = () => resolve(req.result as { blob_key: string; blob: Blob } | undefined);
+          req.onerror = () => reject(req.error);
+        }),
+    ),
+  );
+  return results.filter((r): r is { blob_key: string; blob: Blob } => r !== undefined);
+}

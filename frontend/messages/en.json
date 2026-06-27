@@ -47,6 +47,20 @@
       "next": "Next",
       "selectError": "Please select a damage type",
       "saveError": "Couldn’t save. Please try again."
+    },
+    "step4": {
+      "title": "Add Photos",
+      "addPhoto": "Take Photo",
+      "processing": "Processing…",
+      "maxReached": "Maximum 10 photos reached",
+      "blurryWarning": "Blurry — Retake?",
+      "exposureWarning": "Poor lighting — Retake?",
+      "retake": "Retake",
+      "remove": "Remove photo",
+      "count": "{count} of {max} photos",
+      "minPhotoError": "Please add at least 1 photo",
+      "saveError": "Couldn’t save the photo. Please try again.",
+      "submit": "Submit Report"
     }
   }
 }
