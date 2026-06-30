@@ -77,7 +77,13 @@ export async function buildPoC(draft: Record<string, unknown>): Promise<PoCRecor
   const record = toPoCRecord(draft, offlineId, timestampLocal, identityHash);
 
   // Merge onto the existing draft — keep location/photos/ciphertexts already stored.
-  await putCase({ ...draft, ...record, offline_id: offlineId });
+  // Best-effort: the receipt is fully in-memory, so a persistence failure (IDB quota /
+  // blocked) must NOT deny the citizen their evidence (offline-first, FR-3.2).
+  try {
+    await putCase({ ...draft, ...record, offline_id: offlineId });
+  } catch {
+    /* receipt still returned and rendered; sync/retry handled later (Epic 4) */
+  }
   return record;
 }
 

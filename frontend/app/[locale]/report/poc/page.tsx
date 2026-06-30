@@ -3,7 +3,7 @@
 // (offline-first, FR-3.2). If online and an auth token is available it submits in the
 // background and upgrades the reference to the canonical HEC-YYYY-NNNN — the QR/receipt
 // never blocks on the network (CRITICAL #3).
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { useRouter } from "@/navigation";
 import { PoCCard } from "@/components/PoCCard";
@@ -21,13 +21,9 @@ export default function PoCPage() {
   const [poc, setPoc] = useState<PoCRecord | null>(null);
   const [canonicalId, setCanonicalId] = useState<string | null>(null);
   const [canShare, setCanShare] = useState(false);
-  const ranRef = useRef(false);
 
   useEffect(() => {
     setCanShare(typeof navigator !== "undefined" && typeof navigator.share === "function");
-
-    if (ranRef.current) return; // build/submit exactly once (also covers Strict Mode)
-    ranRef.current = true;
 
     const draftId = getDraftId();
     if (!draftId) {
@@ -66,22 +62,43 @@ export default function PoCPage() {
     };
   }, [router]);
 
-  function downloadQrPng() {
+  // Render a self-contained PoC card (title + reference + QR + timestamp) to a PNG.
+  // Uses the SVG QR drawn onto a canvas — no html2canvas (CRITICAL #5).
+  function downloadPoCPng() {
     const svg = document.querySelector<SVGSVGElement>("#poc-qr svg");
     if (!svg || !poc) return;
+    const reference = canonicalId ?? poc.offline_id;
+    const timestamp = new Date(poc.timestamp_local).toLocaleString();
     const xml = new XMLSerializer().serializeToString(svg);
     const svgUrl = URL.createObjectURL(new Blob([xml], { type: "image/svg+xml" }));
+
     const img = new Image();
+    img.onerror = () => URL.revokeObjectURL(svgUrl);
     img.onload = () => {
-      const size = img.width || 180;
+      const W = 300;
+      const QR = 180;
+      const H = 336;
       const canvas = document.createElement("canvas");
-      canvas.width = size;
-      canvas.height = size;
+      canvas.width = W;
+      canvas.height = H;
       const ctx = canvas.getContext("2d");
       if (ctx) {
         ctx.fillStyle = "#ffffff";
-        ctx.fillRect(0, 0, size, size);
-        ctx.drawImage(img, 0, 0);
+        ctx.fillRect(0, 0, W, H);
+        ctx.textAlign = "center";
+        ctx.fillStyle = "#14532d";
+        ctx.font = "bold 20px sans-serif";
+        ctx.fillText(t("title"), W / 2, 40);
+        ctx.fillStyle = "#6b7280";
+        ctx.font = "11px sans-serif";
+        ctx.fillText(t("canonicalLabel").toUpperCase(), W / 2, 68);
+        ctx.fillStyle = "#111827";
+        ctx.font = "13px monospace";
+        ctx.fillText(reference, W / 2, 90);
+        ctx.drawImage(img, (W - QR) / 2, 108, QR, QR);
+        ctx.fillStyle = "#6b7280";
+        ctx.font = "12px sans-serif";
+        ctx.fillText(timestamp, W / 2, 314);
         canvas.toBlob((blob) => {
           if (!blob) return;
           const href = URL.createObjectURL(blob);
@@ -139,7 +156,7 @@ export default function PoCPage() {
         ) : (
           <button
             type="button"
-            onClick={downloadQrPng}
+            onClick={downloadPoCPng}
             className="flex flex-1 min-h-primary-btn items-center justify-center rounded-md bg-forest px-design-4 text-label font-semibold text-ink-on-dark transition-opacity hover:opacity-90"
           >
             {t("download")}

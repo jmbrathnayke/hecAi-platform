@@ -141,6 +141,35 @@ def test_submit_creates_case_with_canonical_id(client, store):
     assert store["audit"][0][2] == "officer-1"
 
 
+def test_submit_500_when_secret_missing(monkeypatch, store):
+    app = create_app({"TESTING": True, "DATABASE_URL": "postgresql://fake", "SUPABASE_JWT_SECRET": None})
+    monkeypatch.setattr("app.api.v1.cases._get_connection", lambda: FakeConn(store))
+    res = app.test_client().post(
+        "/api/v1/cases/submit", json=_body(), headers={"Authorization": f"Bearer {_token()}"}
+    )
+    assert res.status_code == 500
+    assert res.get_json()["error"] == "server_misconfigured"
+
+
+def test_submit_handles_malformed_gps(client):
+    res = client.post(
+        "/api/v1/cases/submit",
+        json=_body(gps="not-a-dict"),
+        headers={"Authorization": f"Bearer {_token()}"},
+    )
+    assert res.status_code == 201  # gps coerced to {} → null lat/lng, no 500
+
+
+def test_submit_handles_non_string_timestamp(client):
+    res = client.post(
+        "/api/v1/cases/submit",
+        json=_body(timestamp_local=12345),
+        headers={"Authorization": f"Bearer {_token()}"},
+    )
+    assert res.status_code == 201  # falls back to current UTC year, no 500
+    assert res.get_json()["canonical_id"].startswith("HEC-")
+
+
 def test_submit_is_idempotent(client, store):
     headers = {"Authorization": f"Bearer {_token()}"}
     first = client.post("/api/v1/cases/submit", json=_body(), headers=headers)
