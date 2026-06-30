@@ -19,8 +19,10 @@ def create_app(config=None):
 
     from app.api.v1.health import health_bp
     from app.api.v1.cases import cases_bp
+    from app.api.v1.status import status_bp
 
     app.register_blueprint(health_bp, url_prefix="/api/v1")
     app.register_blueprint(cases_bp, url_prefix="/api/v1")
+    app.register_blueprint(status_bp, url_prefix="/api/v1/cases/status")
 
     return app
