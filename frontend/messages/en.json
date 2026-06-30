@@ -63,5 +63,14 @@
       "readError": "Couldn’t read that image. Please choose a different photo.",
       "submit": "Submit Report"
     }
+  },
+  "poc": {
+    "title": "Proof of Claim",
+    "canonicalLabel": "Reference Number",
+    "offlineNotice": "Your report will sync when you reconnect. Keep this QR code as evidence.",
+    "share": "Share",
+    "download": "Download",
+    "print": "Print",
+    "footer": "Human-Elephant Conflict AI E-Governance Platform"
   }
 }
