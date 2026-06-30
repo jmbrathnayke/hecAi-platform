@@ -8,6 +8,7 @@ backend/.env.*.local
 frontend/node_modules/
 frontend/.next/
 frontend/out/
+frontend/*.tsbuildinfo
 
 # serwist — generated Service Worker (built from app/sw.ts)
 frontend/public/sw.js

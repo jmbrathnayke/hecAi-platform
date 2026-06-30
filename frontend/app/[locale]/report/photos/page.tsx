@@ -1,6 +1,7 @@
 "use client";
 // Step 4 of the incident form: capture 1–10 damage photos with on-capture quality
-// feedback. Blobs live in the photo_blobs store; the draft holds only blob_key refs.
+// feedback. Blobs live in the photo_blobs store; the draft holds only blob_key refs,
+// kept in sync on every add/remove so captured photos survive navigation.
 import { useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { useRouter } from "@/navigation";
@@ -24,6 +25,7 @@ interface PhotoEntry {
   previewUrl: string;
   blurry: boolean;
   poorExposure: boolean;
+  pending: boolean; // quality check / blob save in flight
 }
 
 export default function PhotosStep() {
@@ -32,17 +34,27 @@ export default function PhotosStep() {
   const steps = [t("steps.identity"), t("steps.location"), t("steps.damage"), t("steps.photos")];
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // blob_key of the photo being retaken (null = a plain "add"). Consumed on the
+  // next file selection; cleared eagerly so a cancelled picker can't leak it.
+  const retakeTargetRef = useRef<string | null>(null);
   const [photos, setPhotos] = useState<PhotoEntry[]>([]);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [restored, setRestored] = useState(false);
 
-  // Keep a ref of preview URLs so the unmount cleanup can revoke them all.
+  // Keep a ref of preview URLs so the unmount-only cleanup can revoke them all.
   const urlsRef = useRef<string[]>([]);
   urlsRef.current = photos.map((p) => p.previewUrl);
+  useEffect(() => {
+    return () => {
+      urlsRef.current.forEach((u) => URL.revokeObjectURL(u));
+    };
+  }, []);
 
   // Restore any photos already captured (returning from a later step); redirect to
-  // Step 1 if there is no draft.
+  // Step 1 if there is no draft. Merges with anything captured before this resolves
+  // and clamps to MAX_PHOTOS in case an older/corrupt draft carries more keys.
   useEffect(() => {
     const draftId = getDraftId();
     if (!draftId) {
@@ -52,47 +64,114 @@ export default function PhotosStep() {
     let active = true;
     getCase(draftId)
       .then(async (draft) => {
-        const keys = (draft?.photo_blob_keys as string[] | undefined) ?? [];
+        const keys = ((draft?.photo_blob_keys as string[] | undefined) ?? []).slice(0, MAX_PHOTOS);
         if (!active || keys.length === 0) return;
         const blobs = await listPhotoBlobs(keys);
         if (!active) return;
-        setPhotos((prev) =>
-          prev.length > 0
-            ? prev
-            : blobs.map((b) => ({
-                blobKey: b.blob_key,
-                previewUrl: URL.createObjectURL(b.blob),
-                blurry: false,
-                poorExposure: false,
-              })),
-        );
+        setPhotos((prev) => {
+          const existing = new Set(prev.map((p) => p.blobKey));
+          const restoredEntries = blobs
+            .filter((b) => !existing.has(b.blob_key))
+            .map((b) => ({
+              blobKey: b.blob_key,
+              previewUrl: URL.createObjectURL(b.blob),
+              blurry: false,
+              poorExposure: false,
+              pending: false,
+            }));
+          return [...restoredEntries, ...prev].slice(0, MAX_PHOTOS);
+        });
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => {
+        if (active) setRestored(true);
+      });
     return () => {
       active = false;
-      urlsRef.current.forEach((u) => URL.revokeObjectURL(u));
     };
   }, [router]);
+
+  // Persist the draft's photo_blob_keys whenever the committed photo set changes, so
+  // captured photos survive a navigate-back and removed photos never leave dangling
+  // keys. Gated on `restored` so we don't overwrite the draft with [] before the
+  // initial restore has loaded. Pending entries are excluded (their blob isn't saved
+  // yet).
+  useEffect(() => {
+    if (!restored) return;
+    const draftId = getDraftId();
+    if (!draftId) return;
+    const keys = photos.filter((p) => !p.pending).map((p) => p.blobKey);
+    updateDraft(draftId, { photo_blob_keys: keys }).catch(() => {});
+  }, [photos, restored]);
+
+  function openRetake(blobKey: string) {
+    retakeTargetRef.current = blobKey;
+    fileInputRef.current?.click();
+  }
 
   async function handleCapture(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = ""; // allow re-selecting the same file
-    if (!file || photos.length >= MAX_PHOTOS || processing) return;
+    const retakeKey = retakeTargetRef.current;
+    retakeTargetRef.current = null; // consume immediately (picker-cancel safe)
+    if (!file || processing) return;
+    // A retake replaces a slot, so it's allowed even at the cap; a plain add is not.
+    if (!retakeKey && photos.length >= MAX_PHOTOS) return;
+
+    const oldEntry = retakeKey ? photos.find((p) => p.blobKey === retakeKey) : undefined;
+    if (retakeKey && !oldEntry) return; // slot vanished (removed mid-flight)
 
     setProcessing(true);
     setError(null);
     const previewUrl = URL.createObjectURL(file);
-    try {
-      const blobKey = uuidv4();
-      const quality = await assessImageQuality(file).catch(() => ({
-        blurry: false,
-        poorExposure: false,
-      }));
-      await addPhotoBlob(blobKey, file);
-      setPhotos((prev) => [...prev, { blobKey, previewUrl, ...quality }]);
-    } catch {
+    const blobKey = uuidv4();
+
+    // Optimistic slot with a pending spinner (CRITICAL #3) — appears immediately.
+    setPhotos((prev) =>
+      retakeKey
+        ? prev.map((p) =>
+            p.blobKey === retakeKey
+              ? { blobKey, previewUrl, blurry: false, poorExposure: false, pending: true }
+              : p,
+          )
+        : [...prev, { blobKey, previewUrl, blurry: false, poorExposure: false, pending: true }],
+    );
+
+    // Roll back the optimistic slot: restore the old photo on a failed retake,
+    // otherwise just drop the placeholder.
+    const rollback = (messageKey: "step4.readError" | "step4.saveError") => {
       URL.revokeObjectURL(previewUrl);
-      setError(t("step4.saveError"));
+      setPhotos((prev) =>
+        retakeKey && oldEntry
+          ? prev.map((p) => (p.blobKey === blobKey ? oldEntry : p))
+          : prev.filter((p) => p.blobKey !== blobKey),
+      );
+      setError(t(messageKey));
+    };
+
+    try {
+      // assessImageQuality throws on undecodable / non-image files → reject them.
+      let quality;
+      try {
+        quality = await assessImageQuality(file);
+      } catch {
+        rollback("step4.readError");
+        return;
+      }
+      try {
+        await addPhotoBlob(blobKey, file);
+      } catch {
+        rollback("step4.saveError");
+        return;
+      }
+      setPhotos((prev) =>
+        prev.map((p) => (p.blobKey === blobKey ? { ...p, ...quality, pending: false } : p)),
+      );
+      // Retake committed: drop the old blob + preview URL.
+      if (oldEntry && oldEntry.blobKey !== blobKey) {
+        URL.revokeObjectURL(oldEntry.previewUrl);
+        deletePhotoBlob(oldEntry.blobKey).catch(() => {});
+      }
     } finally {
       setProcessing(false);
     }
@@ -109,8 +188,9 @@ export default function PhotosStep() {
   }
 
   async function handleSubmit() {
-    if (saving) return;
-    if (photos.length === 0) {
+    if (saving || processing) return;
+    const committed = photos.filter((p) => !p.pending);
+    if (committed.length === 0) {
       setError(t("step4.minPhotoError"));
       return;
     }
@@ -122,7 +202,7 @@ export default function PhotosStep() {
     setSaving(true);
     setError(null);
     try {
-      await updateDraft(draftId, { photo_blob_keys: photos.map((p) => p.blobKey) });
+      await updateDraft(draftId, { photo_blob_keys: committed.map((p) => p.blobKey) });
       router.push("/report/poc");
     } catch {
       setError(t("step4.saveError"));
@@ -172,10 +252,12 @@ export default function PhotosStep() {
               key={p.blobKey}
               previewUrl={p.previewUrl}
               warningText={warningFor(p)}
+              pending={p.pending}
+              processingLabel={t("step4.processing")}
               retakeLabel={t("step4.retake")}
               removeLabel={t("step4.remove")}
               onRemove={() => void handleRemove(p.blobKey, p.previewUrl)}
-              onRetake={() => fileInputRef.current?.click()}
+              onRetake={() => openRetake(p.blobKey)}
             />
           ))}
         </div>

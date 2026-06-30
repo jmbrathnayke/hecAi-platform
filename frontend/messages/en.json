@@ -60,6 +60,7 @@
       "count": "{count} of {max} photos",
       "minPhotoError": "Please add at least 1 photo",
       "saveError": "Couldn’t save the photo. Please try again.",
+      "readError": "Couldn’t read that image. Please choose a different photo.",
       "submit": "Submit Report"
     }
   }
