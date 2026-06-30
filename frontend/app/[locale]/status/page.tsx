@@ -35,13 +35,20 @@ export default function StatusPage() {
       const res = await fetch(
         `${API_BASE}/api/v1/cases/status/${encodeURIComponent(trimmed)}`,
       );
-      if (!res.ok) {
+      // Only a 404 means the reference genuinely doesn't exist. A 5xx/other status is a
+      // service problem — don't tell a citizen with a valid reference it wasn't found.
+      if (res.status === 404) {
         setError(t("notFound"));
+        return;
+      }
+      if (!res.ok) {
+        setError(t("serviceError"));
         return;
       }
       setResult((await res.json()) as CaseStatus);
     } catch {
-      setError(t("notFound"));
+      // Network failure / fetch threw — also a service problem, not a missing reference.
+      setError(t("serviceError"));
     } finally {
       setLoading(false);
     }

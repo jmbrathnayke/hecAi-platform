@@ -5,7 +5,8 @@ export interface CaseStatus {
   canonical_id: string | null;
   offline_id: string;
   status: string;
-  updated_at: string;
+  // The backend emits null when a case has no updated_at timestamp.
+  updated_at: string | null;
   approved_amount?: number;
 }
 

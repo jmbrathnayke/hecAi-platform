@@ -31,6 +31,10 @@ export default function QRScanner({ onResult }: QRScannerProps) {
             onResultRef.current(result.getText());
           }
         });
+        // If the component unmounted while the camera was starting, the cleanup below
+        // already ran (with controls still undefined) — stop the now-live stream here so
+        // the camera doesn't keep running with no handle to release it.
+        if (cancelled) controls.stop();
       } catch {
         if (!cancelled) setError(t("cameraPermissionDenied"));
       }

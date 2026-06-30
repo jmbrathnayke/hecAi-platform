@@ -2,7 +2,7 @@
 // badge, last-updated date, and the approved amount only for Approved claims.
 "use client";
 
-import { useTranslations } from "next-intl";
+import { useTranslations, useLocale } from "next-intl";
 import {
   type CaseStatus,
   KNOWN_STATUSES,
@@ -19,12 +19,15 @@ const BADGE: Record<string, string> = {
 
 export function StatusCard({ canonical_id, offline_id, status, updated_at, approved_amount }: CaseStatus) {
   const t = useTranslations("status");
+  const locale = useLocale();
   const displayRef = canonical_id ?? offline_id;
   const isKnown = (KNOWN_STATUSES as readonly string[]).includes(status);
   const label = isKnown ? t(`statusLabels.${statusKey(status)}`) : status;
   const badge = BADGE[status] ?? "bg-surface-tint text-ink-secondary";
-  const updated = new Date(updated_at);
-  const updatedText = isNaN(updated.getTime()) ? updated_at : updated.toLocaleDateString();
+  // Guard null/empty (epoch-0 would otherwise render as 1970) and format in the active locale.
+  const updated = updated_at ? new Date(updated_at) : null;
+  const updatedText =
+    updated && !isNaN(updated.getTime()) ? updated.toLocaleDateString(locale) : "—";
 
   return (
     <div className="flex flex-col gap-design-3 rounded-md border border-border-default bg-surface-raised p-design-5">
@@ -42,7 +45,7 @@ export function StatusCard({ canonical_id, offline_id, status, updated_at, appro
 
       {showApprovedAmount({ status, approved_amount }) && (
         <p className="text-body font-semibold text-ink-primary">
-          {t("approvedAmount")}: LKR {approved_amount!.toLocaleString()}
+          {t("approvedAmount")}: LKR {approved_amount!.toLocaleString(locale)}
         </p>
       )}
     </div>

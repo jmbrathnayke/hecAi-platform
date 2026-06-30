@@ -7,6 +7,7 @@ and that approved_amount appears only for Approved cases.
 """
 from datetime import datetime, timezone
 
+import psycopg2
 import pytest
 
 from app import create_app
@@ -90,6 +91,47 @@ def test_lookup_by_canonical_uses_canonical_id(monkeypatch):
     assert res.status_code == 200
     assert "canonical_id = %s" in captured["sql"]
     assert captured["params"] == (HEC_REF,)
+
+
+def test_lowercase_hec_is_uppercased_before_query(monkeypatch):
+    # A lower/mixed-case HEC reference must be normalized to the stored uppercase form.
+    row = (HEC_REF, UUID_REF, "Submitted", UPDATED, None)
+    client, captured = make_client(monkeypatch, row)
+    res = client.get("/api/v1/cases/status/hec-2026-0001")
+    assert res.status_code == 200
+    assert captured["params"] == (HEC_REF,)  # normalized, not the raw lowercase input
+
+
+def test_trailing_newline_reference_is_rejected(monkeypatch):
+    # fullmatch (not Python's `$`) must reject a trailing newline.
+    app = create_app({"TESTING": True, "DATABASE_URL": "postgresql://fake"})
+    monkeypatch.setattr(
+        "app.api.v1.status._get_connection",
+        lambda: (_ for _ in ()).throw(AssertionError("should not query")),
+    )
+    res = app.test_client().get(f"/api/v1/cases/status/{UUID_REF}%0A")
+    assert res.status_code == 400
+
+
+def test_null_offline_id_serializes_as_null_not_string(monkeypatch):
+    # HEC lookup of an online-created case with no offline_id must not return "None".
+    row = (HEC_REF, None, "Submitted", UPDATED, None)
+    client, _ = make_client(monkeypatch, row)
+    res = client.get(f"/api/v1/cases/status/{HEC_REF}")
+    assert res.get_json()["offline_id"] is None
+
+
+def test_db_error_returns_500_not_404(monkeypatch):
+    # A DB failure must surface as a distinct 500, never a misleading 404.
+    app = create_app({"TESTING": True, "DATABASE_URL": "postgresql://fake"})
+
+    def boom():
+        raise psycopg2.OperationalError("connection refused")
+
+    monkeypatch.setattr("app.api.v1.status._get_connection", boom)
+    res = app.test_client().get(f"/api/v1/cases/status/{UUID_REF}")
+    assert res.status_code == 500
+    assert res.get_json()["error"] == "server_error"
 
 
 def test_not_found_returns_404(monkeypatch):

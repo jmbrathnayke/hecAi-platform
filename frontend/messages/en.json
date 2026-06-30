@@ -80,6 +80,7 @@
     "check": "Check Status",
     "scanQR": "Scan QR Code",
     "notFound": "Reference not found. Check the number on your Proof of Claim.",
+    "serviceError": "Something went wrong. Please try again in a moment.",
     "lastUpdated": "Last Updated",
     "approvedAmount": "Approved Amount",
     "cameraPermissionDenied": "Camera access denied. Please type your reference instead.",
