@@ -27,6 +27,11 @@ export function useSessionTimeout(): SessionTimeoutState {
   const timeoutTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Guards signOut()/navigation after the timer fires post-unmount (Epic 2 retro lesson).
   const mountedRef = useRef(true);
+  // Bumped on every armTimers() call. The in-flight timeout callback captures its own
+  // generation and checks it's still current before committing the redirect — activity
+  // arriving after the 4h timer fires but before its async signOut() resolves can't be
+  // cancelled via clearTimeout (the callback already started), so this catches it instead.
+  const generationRef = useRef(0);
 
   const clearTimers = useCallback(() => {
     if (warningTimerRef.current) clearTimeout(warningTimerRef.current);
@@ -37,8 +42,9 @@ export function useSessionTimeout(): SessionTimeoutState {
 
   const armTimers = useCallback(() => {
     clearTimers();
+    const myGeneration = ++generationRef.current;
     warningTimerRef.current = setTimeout(() => {
-      if (mountedRef.current) setShowWarning(true);
+      if (mountedRef.current && generationRef.current === myGeneration) setShowWarning(true);
     }, WARNING_AFTER_MS);
     timeoutTimerRef.current = setTimeout(() => {
       (async () => {
@@ -48,7 +54,9 @@ export function useSessionTimeout(): SessionTimeoutState {
           // Sign-out failure must not block the redirect — an expired session should not
           // leave the officer stranded on a protected page either way.
         } finally {
-          if (mountedRef.current) {
+          // If activity re-armed the timers while signOut() was in flight, this callback
+          // is stale — don't redirect an officer who's since become active again.
+          if (mountedRef.current && generationRef.current === myGeneration) {
             setShowWarning(false);
             router.push("/officer/login");
           }
@@ -58,7 +66,11 @@ export function useSessionTimeout(): SessionTimeoutState {
   }, [clearTimers, router]);
 
   const extendSession = useCallback(() => {
-    if (mountedRef.current) setShowWarning(false);
+    // Guard against being called after unmount (e.g. by a future warning-modal button
+    // whose click handler fires post-navigation) — re-arming here would start timers that
+    // the unmount cleanup already ran and will never clear again.
+    if (!mountedRef.current) return;
+    setShowWarning(false);
     armTimers();
   }, [armTimers]);
 

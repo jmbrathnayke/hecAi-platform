@@ -5,10 +5,11 @@ token -> 401, non-officer role -> 403, missing server secret -> 500, and on succ
 g.officer_id / g.assigned_divisions are populated from a signature-verified token (never
 trusted from the client without decoding here).
 """
+import base64
+import json
 from datetime import datetime, timedelta, timezone
 
 import jwt
-import pytest
 from flask import Flask, g, jsonify
 
 from app.api.v1.middleware.auth import require_officer
@@ -105,3 +106,59 @@ def test_non_list_assigned_divisions_coerced_to_empty_list():
     res = client.get("/protected", headers={"Authorization": f"Bearer {_token(claims)}"})
     assert res.status_code == 200
     assert res.get_json()["assigned_divisions"] == []
+
+
+def test_non_string_elements_filtered_out_of_assigned_divisions():
+    claims = {
+        "sub": "officer-1",
+        "user_metadata": {"role": "officer", "assigned_divisions": ["DIV-1", 42, None, "DIV-2"]},
+    }
+    client = _make_app().test_client()
+    res = client.get("/protected", headers={"Authorization": f"Bearer {_token(claims)}"})
+    assert res.status_code == 200
+    assert res.get_json()["assigned_divisions"] == ["DIV-1", "DIV-2"]
+
+
+def test_missing_sub_claim_returns_401():
+    claims = {"user_metadata": {"role": "officer", "assigned_divisions": ["DIV-1"]}}  # no sub
+    client = _make_app().test_client()
+    res = client.get("/protected", headers={"Authorization": f"Bearer {_token(claims)}"})
+    assert res.status_code == 401
+    assert res.get_json()["error"] == "invalid_token"
+
+
+def test_empty_sub_claim_returns_401():
+    claims = {"sub": "", "user_metadata": {"role": "officer"}}
+    client = _make_app().test_client()
+    res = client.get("/protected", headers={"Authorization": f"Bearer {_token(claims)}"})
+    assert res.status_code == 401
+    assert res.get_json()["error"] == "invalid_token"
+
+
+def test_alg_none_token_is_rejected():
+    # Classic alg-confusion attack: a token with header {"alg": "none"} and no signature,
+    # claiming to be pre-verified. PyJWT must refuse this since "none" isn't in our
+    # explicit `algorithms=["HS256"]` allow-list.
+    claims = {"sub": "officer-1", "user_metadata": {"role": "officer"}}
+
+    def _b64url(data: bytes) -> str:
+        return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
+
+    header = _b64url(json.dumps({"alg": "none", "typ": "JWT"}).encode())
+    payload = _b64url(json.dumps(claims).encode())
+    forged_token = f"{header}.{payload}."  # empty signature segment
+    client = _make_app().test_client()
+    res = client.get("/protected", headers={"Authorization": f"Bearer {forged_token}"})
+    assert res.status_code == 401
+    assert res.get_json()["error"] == "invalid_token"
+
+
+def test_wrong_algorithm_token_is_rejected():
+    # A token signed with a different algorithm than our explicit allow-list (HS256 only)
+    # must be rejected outright, not silently accepted under a mismatched verification path.
+    claims = {"sub": "officer-1", "user_metadata": {"role": "officer"}}
+    mismatched_token = jwt.encode(claims, SECRET, algorithm="HS384")
+    client = _make_app().test_client()
+    res = client.get("/protected", headers={"Authorization": f"Bearer {mismatched_token}"})
+    assert res.status_code == 401
+    assert res.get_json()["error"] == "invalid_token"

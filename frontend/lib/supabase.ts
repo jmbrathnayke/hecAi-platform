@@ -8,19 +8,30 @@
 import { createBrowserClient, createServerClient } from "@supabase/ssr";
 import type { CookieMethodsServer } from "@supabase/ssr";
 
+function requireEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    // A missing env var here means a deployment misconfiguration, not a recoverable
+    // runtime state — fail loudly and immediately rather than letting the Supabase SDK
+    // fail confusingly later with `createBrowserClient(undefined, undefined)`.
+    throw new Error(`${name} is not set — Supabase auth cannot initialize.`);
+  }
+  return value;
+}
+
 export function createClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+  const url = requireEnv("NEXT_PUBLIC_SUPABASE_URL");
+  const key = requireEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY");
   return createBrowserClient(url, key);
 }
 
 /**
  * Server-side client for middleware/Server Components. `cookies` must implement the
- * subset of the Next.js cookie store `@supabase/ssr` needs (get/set/remove or getAll/setAll
- * depending on version) — callers pass an adapter appropriate to their context.
+ * `CookieMethodsServer` shape (`getAll`/`setAll`) that this project's pinned `@supabase/ssr`
+ * version (^0.5.0) requires — callers pass an adapter appropriate to their context.
  */
 export function createServerSupabaseClient(cookies: CookieMethodsServer) {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+  const url = requireEnv("NEXT_PUBLIC_SUPABASE_URL");
+  const key = requireEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY");
   return createServerClient(url, key, { cookies });
 }

@@ -109,3 +109,54 @@ test("unmounting clears timers — no signOut/redirect fires after unmount", asy
   expect(mockSignOut).not.toHaveBeenCalled();
   expect(mockPush).not.toHaveBeenCalled();
 });
+
+test("activity arriving while signOut() is in flight cancels the stale redirect (generation guard)", async () => {
+  let resolveSignOut: (v: { error: null }) => void = () => {};
+  mockSignOut.mockReturnValue(
+    new Promise((resolve) => {
+      resolveSignOut = resolve;
+    }),
+  );
+
+  renderHook(() => useSessionTimeout());
+
+  // Fire the 4h timeout — its async body starts (calls signOut()) but can't complete yet.
+  act(() => {
+    jest.advanceTimersByTime(TIMEOUT_AFTER_MS);
+  });
+  expect(mockSignOut).toHaveBeenCalledTimes(1);
+
+  // Activity arrives in the gap: clearTimeout can't cancel the already-running callback,
+  // but armTimers() bumps the generation counter, which the stale callback must check.
+  act(() => {
+    window.dispatchEvent(new Event("keydown"));
+  });
+
+  // Now let the original signOut() call resolve.
+  await act(async () => {
+    resolveSignOut({ error: null });
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+
+  expect(mockPush).not.toHaveBeenCalled();
+});
+
+test("extendSession() called after unmount is a no-op — does not re-arm uncancellable timers", async () => {
+  const { result, unmount } = renderHook(() => useSessionTimeout());
+  const { extendSession } = result.current;
+  unmount();
+
+  act(() => {
+    extendSession();
+  });
+
+  await act(async () => {
+    jest.advanceTimersByTime(TIMEOUT_AFTER_MS);
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+
+  expect(mockSignOut).not.toHaveBeenCalled();
+  expect(mockPush).not.toHaveBeenCalled();
+});

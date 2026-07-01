@@ -14,7 +14,12 @@ import { NextRequest, NextResponse } from "next/server";
 // the intl-middleware factory below deliberately stays self-contained for the same reason.
 const mockGetUser = jest.fn();
 jest.mock("@/lib/supabase", () => ({
-  createServerSupabaseClient: () => ({ auth: { getUser: (...a: unknown[]) => mockGetUser(...a) } }),
+  createServerSupabaseClient: (cookies: { setAll?: (c: unknown[]) => void }) => {
+    // Stash the cookie adapter middleware.ts passed in so tests can simulate the Supabase
+    // SDK calling setAll() (e.g. to refresh/clear a session cookie) during getUser().
+    (globalThis as unknown as { __capturedCookies: unknown }).__capturedCookies = cookies;
+    return { auth: { getUser: (...a: unknown[]) => mockGetUser(...a) } };
+  },
 }));
 
 jest.mock("next-intl/middleware", () => ({
@@ -84,4 +89,40 @@ test("getUser() failure does not throw — fails closed with a redirect", async 
   const res = await middleware(req);
   expect(res.status).toBe(307);
   expect(res.headers.get("location")).toBe("http://localhost/officer/login");
+});
+
+test("case-differing officer path (/Officer/dashboard) is still gated, not bypassed", async () => {
+  mockGetUser.mockResolvedValue({ data: { user: null } });
+  const req = new NextRequest(new URL("http://localhost/Officer/dashboard"));
+  const res = await middleware(req);
+  expect(res.status).toBe(307);
+  expect(res.headers.get("location")).toBe("http://localhost/officer/login");
+});
+
+test("cookies written via setAll() during getUser() propagate onto the success response", async () => {
+  mockGetUser.mockImplementation(() => {
+    const cookies = (globalThis as unknown as { __capturedCookies: { setAll: (c: unknown[]) => void } })
+      .__capturedCookies;
+    cookies.setAll([{ name: "sb-refreshed", value: "new-token", options: {} }]);
+    return Promise.resolve({ data: { user: { id: "officer-1" } } });
+  });
+  const req = new NextRequest(new URL("http://localhost/officer/dashboard"));
+  const res = await middleware(req);
+  expect(res.status).toBe(200);
+  expect(res.cookies.get("sb-refreshed")?.value).toBe("new-token");
+});
+
+test("cookies written via setAll() during a failed getUser() still propagate onto the redirect response", async () => {
+  mockGetUser.mockImplementation(() => {
+    const cookies = (globalThis as unknown as { __capturedCookies: { setAll: (c: unknown[]) => void } })
+      .__capturedCookies;
+    // Simulates Supabase clearing an invalid/expired session cookie before reporting no user.
+    cookies.setAll([{ name: "sb-refreshed", value: "", options: {} }]);
+    return Promise.resolve({ data: { user: null } });
+  });
+  const req = new NextRequest(new URL("http://localhost/officer/dashboard"));
+  const res = await middleware(req);
+  expect(res.status).toBe(307);
+  // Before the fix, returning a bare NextResponse.redirect() here would silently drop this.
+  expect(res.cookies.get("sb-refreshed")?.value).toBe("");
 });

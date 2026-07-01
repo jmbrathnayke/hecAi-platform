@@ -1,4 +1,4 @@
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { useOfficerSession } from "../useOfficerSession";
 
 const mockGetSession = jest.fn();
@@ -77,12 +77,72 @@ test("no live session and no cache resolves to signed-out state, not a stuck loa
   expect(result.current.assigned_divisions).toEqual([]);
 });
 
-test("getSession() rejection is caught — resolves to signed-out state, not an unhandled rejection", async () => {
+test("getSession() rejection falls back to the cached IDB session — the 'dropped connection' case is exactly what the cache exists for", async () => {
   mockGetSession.mockRejectedValue(new Error("network down"));
+  mockGetSessionValue.mockResolvedValue({
+    id: "officer",
+    officer_id: "cached-officer",
+    assigned_divisions: ["DIV-9"],
+  });
+
+  const { result } = renderHook(() => useOfficerSession());
+  await waitFor(() => expect(result.current.loading).toBe(false));
+  expect(result.current.officer_id).toBe("cached-officer");
+  expect(result.current.assigned_divisions).toEqual(["DIV-9"]);
+});
+
+test("getSession() rejection with no cache resolves to signed-out state, not an unhandled rejection", async () => {
+  mockGetSession.mockRejectedValue(new Error("network down"));
+  mockGetSessionValue.mockResolvedValue(undefined);
 
   const { result } = renderHook(() => useOfficerSession());
   await waitFor(() => expect(result.current.loading).toBe(false));
   expect(result.current.officer_id).toBeNull();
+});
+
+test("a malformed session (truthy session, missing user) falls back to cache instead of throwing", async () => {
+  mockGetSession.mockResolvedValue({ data: { session: { user: undefined } }, error: null });
+  mockGetSessionValue.mockResolvedValue({
+    id: "officer",
+    officer_id: "cached-officer",
+    assigned_divisions: ["DIV-9"],
+  });
+
+  const { result } = renderHook(() => useOfficerSession());
+  await waitFor(() => expect(result.current.loading).toBe(false));
+  expect(result.current.officer_id).toBe("cached-officer");
+});
+
+test("a cached record with a non-string officer_id is coerced to null, not passed through", async () => {
+  mockGetSession.mockResolvedValue({ data: { session: null }, error: null });
+  mockGetSessionValue.mockResolvedValue({ id: "officer", officer_id: 12345, assigned_divisions: [] });
+
+  const { result } = renderHook(() => useOfficerSession());
+  await waitFor(() => expect(result.current.loading).toBe(false));
+  expect(result.current.officer_id).toBeNull();
+});
+
+test("a hung getSession() that never resolves falls back to cache via the timeout race, not a stuck spinner", async () => {
+  jest.useFakeTimers();
+  mockGetSession.mockReturnValue(new Promise(() => {})); // never resolves
+  mockGetSessionValue.mockResolvedValue({
+    id: "officer",
+    officer_id: "cached-officer",
+    assigned_divisions: [],
+  });
+
+  const { result } = renderHook(() => useOfficerSession());
+  expect(result.current.loading).toBe(true);
+
+  await act(async () => {
+    jest.advanceTimersByTime(8000);
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+
+  expect(result.current.loading).toBe(false);
+  expect(result.current.officer_id).toBe("cached-officer");
+  jest.useRealTimers();
 });
 
 test("a putSessionValue cache-write failure does not affect the resolved state", async () => {

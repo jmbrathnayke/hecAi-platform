@@ -16,9 +16,13 @@ export default async function middleware(request: NextRequest) {
   }
 
   // Officer routes — also English-only, no locale prefix, and session-protected.
-  // Path-boundary match so /officerx etc. isn't treated as an officer route.
-  const isOfficerRoute = path === "/officer" || path.startsWith("/officer/");
-  const isOfficerLogin = path === "/officer/login" || path.startsWith("/officer/login/");
+  // Path-boundary match so /officerx etc. isn't treated as an officer route. Compared
+  // case-insensitively (defense-in-depth) — Next.js's own route resolution is also
+  // case-sensitive, so a case-differing path can't reach real page content either way,
+  // but this keeps the auth gate itself from being the weaker link.
+  const lowerPath = path.toLowerCase();
+  const isOfficerRoute = lowerPath === "/officer" || lowerPath.startsWith("/officer/");
+  const isOfficerLogin = lowerPath === "/officer/login" || lowerPath.startsWith("/officer/login/");
   if (isOfficerRoute && !isOfficerLogin) {
     let response = NextResponse.next({ request });
     const supabase = createServerSupabaseClient({
@@ -42,7 +46,12 @@ export default async function middleware(request: NextRequest) {
       user = null;
     }
     if (!user) {
-      return NextResponse.redirect(new URL("/officer/login", request.url));
+      // Carry over any cookie mutations setAll() already wrote (e.g. clearing an
+      // invalid/expired session cookie) — returning a bare redirect would silently drop
+      // them, leaving the stale cookie in the browser across the redirect.
+      const redirect = NextResponse.redirect(new URL("/officer/login", request.url));
+      response.cookies.getAll().forEach((cookie) => redirect.cookies.set(cookie));
+      return redirect;
     }
     return response;
   }

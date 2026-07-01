@@ -36,11 +36,18 @@ def require_officer():
             if not isinstance(metadata, dict) or metadata.get("role") != "officer":
                 return jsonify({"error": "forbidden"}), 403
 
+            officer_id = claims.get("sub")
+            if not officer_id:
+                # A validly-signed token missing `sub` is malformed, not just unauthorized —
+                # don't let a None officer_id silently flow into downstream officer_id-keyed
+                # queries/audit writes.
+                return jsonify({"error": "invalid_token"}), 401
+
             assigned_divisions = metadata.get("assigned_divisions", [])
-            g.officer_id = claims.get("sub")
-            g.assigned_divisions = (
-                assigned_divisions if isinstance(assigned_divisions, list) else []
-            )
+            if not isinstance(assigned_divisions, list):
+                assigned_divisions = []
+            g.officer_id = officer_id
+            g.assigned_divisions = [d for d in assigned_divisions if isinstance(d, str)]
             return f(*args, **kwargs)
 
         return wrapper

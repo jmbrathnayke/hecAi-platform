@@ -48,3 +48,19 @@ test("createServerSupabaseClient forwards the cookie adapter", async () => {
   );
   expect(client).toBe(mockServerClient);
 });
+
+test("createClient throws a clear config error when the URL env var is missing, instead of calling the SDK with undefined", async () => {
+  process.env = { ...ORIGINAL_ENV, NEXT_PUBLIC_SUPABASE_ANON_KEY: "anon-key" };
+  const { createClient } = await import("../supabase");
+  expect(() => createClient()).toThrow(/NEXT_PUBLIC_SUPABASE_URL/);
+  expect(createBrowserClient).not.toHaveBeenCalled();
+});
+
+test("createServerSupabaseClient throws a clear config error when the anon key env var is missing", async () => {
+  process.env = { ...ORIGINAL_ENV, NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co" };
+  const { createServerSupabaseClient } = await import("../supabase");
+  expect(() => createServerSupabaseClient({ getAll: () => [], setAll: () => {} })).toThrow(
+    /NEXT_PUBLIC_SUPABASE_ANON_KEY/,
+  );
+  expect(createServerClient).not.toHaveBeenCalled();
+});
