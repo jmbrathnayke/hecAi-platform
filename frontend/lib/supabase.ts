@@ -8,11 +8,10 @@
 import { createBrowserClient, createServerClient } from "@supabase/ssr";
 import type { CookieMethodsServer } from "@supabase/ssr";
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-
 export function createClient() {
-  return createBrowserClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+  return createBrowserClient(url, key);
 }
 
 /**
@@ -21,5 +20,7 @@ export function createClient() {
  * depending on version) — callers pass an adapter appropriate to their context.
  */
 export function createServerSupabaseClient(cookies: CookieMethodsServer) {
-  return createServerClient(SUPABASE_URL, SUPABASE_ANON_KEY, { cookies });
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+  return createServerClient(url, key, { cookies });
 }
