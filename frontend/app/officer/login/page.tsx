@@ -2,6 +2,7 @@
 
 // Officer login (Story 3.1). English-only (FR-9.3) — lives outside app/[locale] so it never
 // gets a /si|/ta|/en prefix, mirroring the existing /admin bypass in middleware.ts.
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase";
@@ -45,16 +46,12 @@ export default function OfficerLoginPage() {
       if (!mountedRef.current) return;
       if (signInError) {
         setError(signInError.message);
-        setSubmitting(false);
       }
-      // On success the browser is navigating to Google — leave the button disabled
-      // rather than resetting `submitting`, so a slow redirect can't be double-clicked
-      // into firing a second signInWithOAuth call.
+      // On success the browser navigates to Google; nothing else to do here.
     } catch {
-      if (mountedRef.current) {
-        setError("Could not reach the sign-in service. Check your connection and try again.");
-        setSubmitting(false);
-      }
+      if (mountedRef.current) setError("Could not reach the sign-in service. Check your connection and try again.");
+    } finally {
+      if (mountedRef.current) setSubmitting(false);
     }
   }
 
@@ -99,29 +96,19 @@ export default function OfficerLoginPage() {
         </div>
 
         <form onSubmit={handleEmailSignIn} className="space-y-design-3">
-          <label htmlFor="officer-email" className="sr-only">
-            DWC email address
-          </label>
           <input
-            id="officer-email"
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="DWC email address"
-            autoComplete="email"
             required
             className="w-full border border-border-default rounded-md px-design-3 py-design-2 text-body"
           />
-          <label htmlFor="officer-password" className="sr-only">
-            Password
-          </label>
           <input
-            id="officer-password"
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="Password"
-            autoComplete="current-password"
             required
             className="w-full border border-border-default rounded-md px-design-3 py-design-2 text-body"
           />
