@@ -11,8 +11,8 @@ import type { LayersModel } from "@tensorflow/tfjs";
 export const MODEL_URL = "/models/mobilenetv2/model.json";
 
 export class ModelNotAvailableError extends Error {
-  constructor() {
-    super("model.error");
+  constructor(cause?: unknown) {
+    super("AI model could not be loaded", { cause });
     this.name = "ModelNotAvailableError";
   }
 }
@@ -31,10 +31,10 @@ export function loadModel(): Promise<LayersModel> {
       const model = await tf.loadLayersModel(MODEL_URL);
       modelInstance = model;
       return model;
-    } catch {
+    } catch (err) {
       // Reset so a later reconnect can retry the load instead of staying stuck on failure.
       loadPromise = null;
-      throw new ModelNotAvailableError();
+      throw new ModelNotAvailableError(err);
     }
   })();
 

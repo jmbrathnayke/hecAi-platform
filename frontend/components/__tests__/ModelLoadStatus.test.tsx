@@ -18,7 +18,7 @@ describe("ModelLoadStatus", () => {
     mockLoadModel.mockReturnValue(new Promise((resolve) => (resolveLoad = () => resolve({}))));
 
     render(<ModelLoadStatus />);
-    expect(screen.getByText("Preparing AI model for offline use...")).toBeInTheDocument();
+    expect(screen.getByText("Preparing AI model...")).toBeInTheDocument();
 
     await act(async () => resolveLoad());
     await waitFor(() =>
@@ -53,5 +53,39 @@ describe("ModelLoadStatus", () => {
 
     // Resolving after unmount must not throw a "state update on unmounted component" warning.
     await act(async () => resolveLoad());
+  });
+
+  it("retries loading when the browser comes back online after an error", async () => {
+    mockLoadModel.mockRejectedValueOnce(new Error("offline, no cache"));
+    render(<ModelLoadStatus />);
+    await waitFor(() =>
+      expect(
+        screen.getByText("AI model not available offline. Please reconnect to load the model."),
+      ).toBeInTheDocument(),
+    );
+
+    mockLoadModel.mockResolvedValueOnce({});
+    await act(async () => {
+      window.dispatchEvent(new Event("online"));
+    });
+
+    await waitFor(() =>
+      expect(screen.getByText("AI model ready for offline classification")).toBeInTheDocument(),
+    );
+    expect(mockLoadModel).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not re-trigger a load on reconnect once the model is already ready", async () => {
+    mockLoadModel.mockResolvedValue({});
+    render(<ModelLoadStatus />);
+    await waitFor(() =>
+      expect(screen.getByText("AI model ready for offline classification")).toBeInTheDocument(),
+    );
+
+    await act(async () => {
+      window.dispatchEvent(new Event("online"));
+    });
+
+    expect(mockLoadModel).toHaveBeenCalledTimes(1);
   });
 });

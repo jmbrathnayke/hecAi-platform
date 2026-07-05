@@ -1,6 +1,6 @@
 import type { NextConfig } from "next";
 import { createHash } from "node:crypto";
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import createNextIntlPlugin from "next-intl/plugin";
 import withSerwistInit from "@serwist/next";
 
@@ -16,10 +16,19 @@ const rev = (path: string): string =>
 // time (not hardcoded) so a retrained model with a different shard count doesn't need a code
 // change here — class_names.json / severity_mapping.json are training-time artifacts only and
 // are never fetched at runtime, so they're excluded.
+//
+// Fails the build loudly (rather than silently shipping without offline AI) if the model
+// directory hasn't been populated yet — see the story's "Copy trained TF.js model files"
+// prerequisite step.
 const MODEL_DIR = "public/models/mobilenetv2";
-const modelPrecacheEntries = readdirSync(MODEL_DIR)
-  .filter((file) => file === "model.json" || file.endsWith(".bin"))
-  .map((file) => ({ url: `/models/mobilenetv2/${file}`, revision: rev(`${MODEL_DIR}/${file}`) }));
+if (!existsSync(MODEL_DIR)) {
+  throw new Error(
+    `${MODEL_DIR} is missing. Copy the trained MobileNetV2 TF.js export there before building (see story-3-2-model-precache.md).`,
+  );
+}
+const modelPrecacheEntries = readdirSync(MODEL_DIR, { withFileTypes: true })
+  .filter((entry) => entry.isFile() && /^model\.json$|\.bin$/i.test(entry.name))
+  .map(({ name }) => ({ url: `/models/mobilenetv2/${name}`, revision: rev(`${MODEL_DIR}/${name}`) }));
 
 const withSerwist = withSerwistInit({
   // swSrc points to the TypeScript SOURCE — serwist compiles it to swDest.
