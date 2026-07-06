@@ -10,12 +10,13 @@ import { useEffect, useRef, useState } from "react";
 import { assessImageQuality } from "@/lib/imageQuality";
 import { classifyImage, type ClassId, type ClassificationResult } from "@/lib/mobilenet";
 import { deriveCaseCategory } from "@/lib/classification";
-import { saveClassification, getCase } from "@/lib/indexeddb";
+import { saveClassification, saveOverride, getCase } from "@/lib/indexeddb";
 import { getDraftId, getOrCreateDraftId } from "@/lib/draft";
 import { AIResultCard } from "@/components/AIResultCard";
+import { OverrideForm } from "@/components/OverrideForm";
 
 type Status = "idle" | "classifying" | "result" | "error";
-type Decision = "accepted" | "override" | null;
+type Decision = "accepted" | "override" | "overridden" | null;
 
 // Reverse of deriveCaseCategory: reconstruct an equivalent per-photo class set from a persisted
 // case-level rollup. Lets us re-hydrate the accumulator after a reload so the rollup stays
@@ -39,6 +40,12 @@ export default function OfficerClassifyPage() {
   const [result, setResult] = useState<ClassificationResult | null>(null);
   const [qualityWarning, setQualityWarning] = useState(false);
   const [decision, setDecision] = useState<Decision>(null);
+  // Override-save failed (distinct from a classification failure): the result already exists,
+  // so we keep the result view + the officer's typed reason instead of a "retake photo" error.
+  const [overrideError, setOverrideError] = useState(false);
+  // Serializes override confirms the same way inFlightRef serializes captures (the Confirm
+  // button stays enabled during the async save, so a double-tap could fire two writes).
+  const overrideSavingRef = useRef(false);
   // Accumulated per-photo classes for this case, so the case-level rollup (FR-2.1) reflects
   // every photo the officer has classified in this session, not just the latest.
   const classIdsRef = useRef<ClassId[]>([]);
@@ -118,6 +125,47 @@ export default function OfficerClassifyPage() {
     }
   }
 
+  // Story 3.4: the officer overrides the AI class for the just-classified photo. The override is
+  // additive — ai_category/ai_confidence/ai_severity stay intact; original_ai_category snapshots
+  // the AI's class. case_category is recomputed by substituting the corrected class for THIS
+  // photo (the last element of classIdsRef, appended on capture). We commit the classIdsRef
+  // mutation only AFTER the write resolves (3.3 discipline) so a failed save leaves no phantom.
+  async function handleOverrideConfirm(category: ClassId, reason: string) {
+    if (!result) return;
+    if (overrideSavingRef.current) return; // ignore double-taps while a save is in flight
+    overrideSavingRef.current = true;
+    setOverrideError(false);
+    const draftId = getOrCreateDraftId();
+    const nextClassIds = [...classIdsRef.current];
+    if (nextClassIds.length > 0) {
+      nextClassIds[nextClassIds.length - 1] = category;
+    } else {
+      nextClassIds.push(category);
+    }
+    // D1: correcting to the class the AI already predicted is not a disagreement — record it as
+    // a non-override so the override-rate metric (NFR-6.3) stays honest; the reason is kept.
+    const isRealOverride = category !== result.classId;
+    try {
+      await saveOverride(draftId, {
+        override_applied: isRealOverride,
+        override_category: category,
+        override_reason: reason,
+        original_ai_category: result.classId,
+        case_category: deriveCaseCategory(nextClassIds),
+      });
+    } catch {
+      // Only the override write failed — classification already succeeded. Keep the result view
+      // (and the officer's typed reason) and surface an override-specific, retryable error.
+      if (mountedRef.current) setOverrideError(true);
+      return;
+    } finally {
+      overrideSavingRef.current = false;
+    }
+    classIdsRef.current = nextClassIds;
+    if (!mountedRef.current) return;
+    setDecision("overridden");
+  }
+
   return (
     <main className="min-h-screen bg-surface-base px-design-4 py-design-6">
       <div className="max-w-md mx-auto space-y-design-4">
@@ -161,14 +209,38 @@ export default function OfficerClassifyPage() {
               severity={result.severity}
               confidence={result.confidence}
               processingTimeMs={result.processingTimeMs}
-              onAccept={() => setDecision("accepted")}
-              onOverride={() => setDecision("override")}
+              onAccept={() => {
+                // Once an override is recorded, Accept must not flip the UI to "accepted"
+                // while the persisted draft still says overridden (contradictory record).
+                if (decision !== "overridden") setDecision("accepted");
+              }}
+              onOverride={() => {
+                setOverrideError(false);
+                setDecision("override");
+              }}
             />
             {decision === "accepted" && (
               <p className="text-label text-status-success">Assessment accepted.</p>
             )}
             {decision === "override" && (
-              <p className="text-label text-ink-secondary">Select the correct category to override.</p>
+              <>
+                <OverrideForm
+                  currentCategory={result.classId}
+                  onConfirm={(category, reason) => void handleOverrideConfirm(category, reason)}
+                  onCancel={() => {
+                    setOverrideError(false);
+                    setDecision(null);
+                  }}
+                />
+                {overrideError && (
+                  <p role="alert" className="text-caption text-status-error">
+                    Could not save the override. Please try again.
+                  </p>
+                )}
+              </>
+            )}
+            {decision === "overridden" && (
+              <p className="text-label text-status-success">Override recorded.</p>
             )}
           </>
         )}
