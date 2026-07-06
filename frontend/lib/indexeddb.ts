@@ -207,6 +207,30 @@ export async function updateDraft(
 }
 
 // ---------------------------------------------------------------------------
+// AI classification (Story 3.3) — persisted onto the case draft. The `cases` store is
+// schemaless (arbitrary record), so no version bump is needed; this typed helper exists to
+// centralize the exact field names, which are a cross-story contract: Story 3.4 (override)
+// reads `ai_category`/`ai_confidence` and copies `ai_category` into `original_ai_category`,
+// and the sync path forwards these to inference_log.
+// ---------------------------------------------------------------------------
+
+export interface CaseClassification {
+  ai_category: string; // raw model classId: crop_damage | no_damage | property_damage
+  ai_confidence: number; // 0..1
+  ai_severity: string; // None | Minor | Moderate | Severe
+  ai_processing_time_ms: number;
+  ai_model_version: string;
+  case_category?: string; // derived case-level rollup (crop_damage|property_damage|combined|no_damage)
+}
+
+export async function saveClassification(
+  offlineId: string,
+  classification: CaseClassification,
+): Promise<void> {
+  return updateDraft(offlineId, { ...classification });
+}
+
+// ---------------------------------------------------------------------------
 // photo_blobs store — large image Blobs kept OUT of the cases record (the draft
 // only references them by blob_key) to keep case-record sizes small.
 // ---------------------------------------------------------------------------
