@@ -3,7 +3,7 @@ import OfficerClassifyPage from "@/app/officer/classify/page";
 import { assessImageQuality } from "@/lib/imageQuality";
 import { classifyImage } from "@/lib/mobilenet";
 import { saveClassification, saveOverride, getCase } from "@/lib/indexeddb";
-import { getDraftId, getOrCreateDraftId } from "@/lib/draft";
+import { getDraftId, getOrCreateDraftId, clearDraftId } from "@/lib/draft";
 
 jest.mock("@/lib/imageQuality", () => ({ assessImageQuality: jest.fn() }));
 jest.mock("@/lib/mobilenet", () => ({ classifyImage: jest.fn() }));
@@ -15,6 +15,7 @@ jest.mock("@/lib/indexeddb", () => ({
 jest.mock("@/lib/draft", () => ({
   getOrCreateDraftId: jest.fn(() => "draft-1"),
   getDraftId: jest.fn(() => null),
+  clearDraftId: jest.fn(),
 }));
 
 const mockAssess = assessImageQuality as jest.Mock;
@@ -295,6 +296,32 @@ describe("OfficerClassifyPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Accept" }));
     expect(screen.queryByText("Assessment accepted.")).not.toBeInTheDocument();
     expect(screen.getByText("Override recorded.")).toBeInTheDocument();
+  });
+
+  it("'Start new case' clears the rollup so the next case does not inherit prior photos (Story 3.5 AC7)", async () => {
+    // Photo 1: crop_damage → rollup 'crop_damage'. Start new case. Photo 2: property_damage
+    // → rollup must be 'property_damage' (NOT 'combined'), proving classIdsRef was reset.
+    mockClassify.mockResolvedValueOnce({
+      classId: "crop_damage",
+      severity: "Moderate",
+      confidence: 0.7,
+      processingTimeMs: 280,
+      modelVersion: "mobilenetv2-v1",
+    });
+    render(<OfficerClassifyPage />);
+
+    selectPhoto(); // crop_damage
+    await waitFor(() => expect(mockSave).toHaveBeenCalledTimes(1));
+    expect(mockSave.mock.calls[0][1].case_category).toBe("crop_damage");
+
+    fireEvent.click(screen.getByRole("button", { name: "Start new case" }));
+    expect(clearDraftId as jest.Mock).toHaveBeenCalledTimes(1);
+    // the result card is torn down back to idle
+    expect(screen.queryByTestId("ai-result-card")).not.toBeInTheDocument();
+
+    selectPhoto(); // property_damage (default mock) — must NOT union with the previous crop photo
+    await waitFor(() => expect(mockSave).toHaveBeenCalledTimes(2));
+    expect(mockSave.mock.calls[1][1].case_category).toBe("property_damage");
   });
 
   it("returns to the result view (Accept still available) when the override is cancelled", async () => {

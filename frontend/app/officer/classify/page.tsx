@@ -11,7 +11,7 @@ import { assessImageQuality } from "@/lib/imageQuality";
 import { classifyImage, type ClassId, type ClassificationResult } from "@/lib/mobilenet";
 import { deriveCaseCategory } from "@/lib/classification";
 import { saveClassification, saveOverride, getCase } from "@/lib/indexeddb";
-import { getDraftId, getOrCreateDraftId } from "@/lib/draft";
+import { getDraftId, getOrCreateDraftId, clearDraftId } from "@/lib/draft";
 import { AIResultCard } from "@/components/AIResultCard";
 import { OverrideForm } from "@/components/OverrideForm";
 
@@ -166,10 +166,32 @@ export default function OfficerClassifyPage() {
     setDecision("overridden");
   }
 
+  // Story 3.5 (AC7): start a fresh case. Clears the draft id so the next capture gets a new
+  // offline_id, and empties the per-photo accumulator so the previous case's photos do NOT
+  // bleed into the next case's case_category rollup (closes the 3.3 "no new-case reset" deferral).
+  function handleStartNewCase() {
+    clearDraftId();
+    classIdsRef.current = [];
+    setResult(null);
+    setDecision(null);
+    setOverrideError(false);
+    setQualityWarning(false);
+    setStatus("idle");
+  }
+
   return (
     <main className="min-h-screen bg-surface-base px-design-4 py-design-6">
       <div className="max-w-md mx-auto space-y-design-4">
-        <h1 className="text-title text-ink-primary">Damage Classification</h1>
+        <div className="flex items-center justify-between gap-design-3">
+          <h1 className="text-title text-ink-primary">Damage Classification</h1>
+          <button
+            type="button"
+            onClick={handleStartNewCase}
+            className="min-h-touch-target text-label font-semibold text-forest underline"
+          >
+            Start new case
+          </button>
+        </div>
 
         <input
           ref={fileInputRef}

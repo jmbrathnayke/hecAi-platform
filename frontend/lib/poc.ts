@@ -15,6 +15,10 @@ export interface PoCRecord {
   damage_category: string | null;
   submitter_identity_hash: string;
   sync_status: "pending" | "synced";
+  // Officer-assisted submission (Story 3.5, FR-1.2). Present only on the officer path; the
+  // anonymous citizen path leaves both undefined so its request body is byte-for-byte unchanged.
+  submitted_by_officer?: boolean;
+  officer_id?: string;
 }
 
 export interface SubmitResult {
@@ -97,19 +101,26 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
  */
 export async function submitCaseOnline(record: PoCRecord, token: string): Promise<SubmitResult | null> {
   try {
+    // Officer fields are added only when present so the citizen request body is unchanged
+    // (and the backend's officer-aware branch stays dormant for anonymous submissions).
+    const body: Record<string, unknown> = {
+      offline_id: record.offline_id,
+      timestamp_local: record.timestamp_local,
+      gps: record.gps,
+      damage_category: record.damage_category,
+      submitter_identity_hash: record.submitter_identity_hash,
+    };
+    if (record.submitted_by_officer) {
+      body.submitted_by_officer = true;
+      body.officer_id = record.officer_id;
+    }
     const res = await fetch(`${API_BASE}/api/v1/cases/submit`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({
-        offline_id: record.offline_id,
-        timestamp_local: record.timestamp_local,
-        gps: record.gps,
-        damage_category: record.damage_category,
-        submitter_identity_hash: record.submitter_identity_hash,
-      }),
+      body: JSON.stringify(body),
     });
     if (!res.ok) return null;
     const data = (await res.json()) as Partial<SubmitResult>;
