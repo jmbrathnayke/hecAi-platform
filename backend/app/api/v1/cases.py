@@ -46,6 +46,25 @@ def submit_case():
     if not damage_category:
         return jsonify({"error": "damage_category_required"}), 400
 
+    # Officer-assisted submission (Story 3.5, FR-1.2). Branch on a strict-bool flag so the
+    # anonymous/citizen path (flag absent or false) is completely unchanged. When set, the
+    # request must come from an officer-role token AND carry an officer_id that matches the
+    # verified JWT `sub` — officer_id is NEVER trusted from the body (mirrors require_officer()).
+    submitted_by_officer = body.get("submitted_by_officer") is True
+    officer_id = None
+    if submitted_by_officer:
+        metadata = claims.get("user_metadata", {})
+        if not isinstance(metadata, dict) or metadata.get("role") != "officer":
+            return jsonify({"error": "forbidden"}), 403
+        sub = claims.get("sub")
+        body_officer_id = body.get("officer_id")
+        # Require BOTH a non-empty sub and a matching body officer_id — a validly-signed token
+        # missing `sub` must never pass by both sides being falsy/None (e.g. body omits
+        # officer_id too), which would otherwise insert a NULL officer_id for an officer-flagged row.
+        if not sub or not body_officer_id or body_officer_id != sub:
+            return jsonify({"error": "forbidden"}), 403
+        officer_id = sub
+
     # Defensive type-coercion on attacker-controllable JSON.
     gps = body.get("gps")
     if not isinstance(gps, dict):
@@ -77,8 +96,9 @@ def submit_case():
                 cur.execute(
                     """INSERT INTO cases
                          (offline_id, canonical_id, damage_category,
-                          gps_lat, gps_lng, submitter_identity_hash)
-                       VALUES (%s, %s, %s, %s, %s, %s)
+                          gps_lat, gps_lng, submitter_identity_hash,
+                          officer_id, submitted_by_officer)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                        ON CONFLICT (offline_id) DO NOTHING
                        RETURNING id""",
                     (
@@ -88,6 +108,8 @@ def submit_case():
                         gps.get("lat"),
                         gps.get("lng"),
                         body.get("submitter_identity_hash"),
+                        officer_id,
+                        submitted_by_officer,
                     ),
                 )
                 row = cur.fetchone()

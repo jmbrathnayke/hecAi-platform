@@ -38,3 +38,18 @@ export function getOrCreateDraftId(): string {
   safeSet(id);
   return id;
 }
+
+/**
+ * Clears the current draft id so the next getOrCreateDraftId() starts a fresh case.
+ * Resets both the sessionStorage entry and the in-memory fallback (Story 3.5 "new case"
+ * reset primitive). Guarded like safeSet so a throwing sessionStorage (private mode /
+ * blocked site data) still clears the memory fallback.
+ */
+export function clearDraftId(): void {
+  memoryDraftId = null;
+  try {
+    sessionStorage.removeItem(DRAFT_ID_KEY);
+  } catch {
+    // storage unavailable — memoryDraftId is already cleared, which is what matters here
+  }
+}
