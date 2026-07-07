@@ -1,0 +1,15 @@
+{
+  "name": "HEC Reporting System",
+  "short_name": "HEC Report",
+  "description": "Human-Elephant Conflict AI E-Governance Platform",
+  "id": "/",
+  "start_url": "/si/",
+  "display": "standalone",
+  "background_color": "#F2F7F2",
+  "theme_color": "#2D6A4F",
+  "lang": "si",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

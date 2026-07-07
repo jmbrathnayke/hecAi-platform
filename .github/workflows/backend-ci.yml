@@ -1,0 +1,40 @@
+name: Backend CI
+
+# CI only (install + pytest). Gates feature work and both shared branches
+# (development = testing, main = production). Deployment is a separate future workflow.
+on:
+  push:
+    branches:
+      - "feature/**"
+      - development
+      - main
+  pull_request:
+    branches:
+      - development
+      - main
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    env:
+      FLASK_TESTING: "true"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run tests
+        run: pytest -v

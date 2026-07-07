@@ -1,0 +1,19 @@
+{
+  "method": "confidence_band",
+  "no_damage_class": "no_damage",
+  "no_damage_severity": "None",
+  "bands": [
+    {
+      "min_confidence": 0.85,
+      "severity": "Severe"
+    },
+    {
+      "min_confidence": 0.65,
+      "severity": "Moderate"
+    },
+    {
+      "min_confidence": 0.0,
+      "severity": "Minor"
+    }
+  ]
+}

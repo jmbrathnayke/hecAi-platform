@@ -59,10 +59,11 @@ const config: Config = {
         "design-8": "64px",
       },
       fontFamily: {
+        // CSS variables are provided by next/font/google (see app/[locale]/layout.tsx).
         sans: [
-          "Noto Sans",
-          "Noto Sans Sinhala",
-          "Noto Sans Tamil",
+          "var(--font-noto-sans)",
+          "var(--font-noto-sinhala)",
+          "var(--font-noto-tamil)",
           "system-ui",
           "sans-serif",
         ],
@@ -78,6 +79,21 @@ const config: Config = {
       minHeight: {
         "touch-target": "48px",
         "primary-btn": "56px",
+      },
+      keyframes: {
+        "slide-down": {
+          "0%": { transform: "translateY(-100%)", opacity: "0" },
+          "100%": { transform: "translateY(0)", opacity: "1" },
+        },
+        "fade-in": {
+          "0%": { opacity: "0" },
+          "100%": { opacity: "1" },
+        },
+      },
+      animation: {
+        // Suppressed via the `motion-reduce:animate-none` variant (UX-DR15).
+        "slide-down": "slide-down 200ms ease-out",
+        "fade-in": "fade-in 200ms ease-out",
       },
     },
   },
