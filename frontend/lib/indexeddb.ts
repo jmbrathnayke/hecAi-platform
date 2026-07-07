@@ -231,6 +231,30 @@ export async function saveClassification(
 }
 
 // ---------------------------------------------------------------------------
+// AI classification override (Story 3.4, FR-2.4) — additive audit fields on the case draft.
+// The override is *additive*: `ai_category`/`ai_confidence`/`ai_severity` are never mutated;
+// `original_ai_category` snapshots the AI's class at override time so the original prediction
+// (and the override-rate metric, NFR-6.3) is always recoverable. `override_applied` is the
+// FE-side contract name — the backend maps it to `inference_log.was_overridden` on sync
+// (Story 4.2). Category values stay raw snake_case `ClassId` end-to-end.
+// ---------------------------------------------------------------------------
+
+export interface CaseOverride {
+  override_applied: boolean; // officer overrode the AI class
+  override_category: string; // corrected ClassId: crop_damage | no_damage | property_damage
+  override_reason: string; // mandatory justification (>= 10 non-whitespace chars, UX-DR14)
+  original_ai_category: string; // snapshot of ai_category at override time — ai_category stays intact
+  case_category?: string; // recomputed case-level rollup after the override
+}
+
+export async function saveOverride(
+  offlineId: string,
+  override: CaseOverride,
+): Promise<void> {
+  return updateDraft(offlineId, { ...override });
+}
+
+// ---------------------------------------------------------------------------
 // photo_blobs store — large image Blobs kept OUT of the cases record (the draft
 // only references them by blob_key) to keep case-record sizes small.
 // ---------------------------------------------------------------------------
