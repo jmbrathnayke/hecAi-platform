@@ -6,6 +6,7 @@ idempotency, canonical-id assignment, the audit write, and the officer_id-from-J
 without a real database.
 """
 import jwt
+import psycopg2
 import pytest
 
 from app import create_app
@@ -29,6 +30,9 @@ class FakeCursor:
         return False
 
     def execute(self, sql, params=()):
+        if "INSERT INTO cases" in sql and params[0] == self.store.get("fail_offline_id"):
+            raise psycopg2.OperationalError("simulated DB failure")
+
         if "SELECT canonical_id FROM cases" in sql:
             oid = params[0]
             self._result = (self.store["cases"][oid],) if oid in self.store["cases"] else None
@@ -237,3 +241,81 @@ def test_officer_assisted_item_uses_verified_officer_id(client, store):
     stored = store["rows"][item["offline_id"]]
     assert stored["officer_id"] == "officer-1"
     assert stored["submitted_by_officer"] is True
+
+
+# --- Review-patch coverage: type/range validation, malformed year, unhandled DB error ---
+
+
+def test_batch_rejects_wrong_type_offline_id(client, store):
+    bad = _item(12345)  # int instead of str
+    res = client.post(
+        "/api/v1/sync/batch", json={"cases": [bad]}, headers=_auth(_officer_token())
+    )
+    assert res.status_code == 400
+    assert len(store["cases"]) == 0
+
+
+def test_batch_rejects_wrong_type_damage_category(client, store):
+    bad = _item("11111111-1111-4111-8111-111111111111", damage_category=["crop"])
+    res = client.post(
+        "/api/v1/sync/batch", json={"cases": [bad]}, headers=_auth(_officer_token())
+    )
+    assert res.status_code == 400
+    assert len(store["cases"]) == 0
+
+
+def test_batch_rejects_out_of_range_gps(client, store):
+    bad = _item("11111111-1111-4111-8111-111111111111", gps={"lat": 923456.1, "lng": 80.63})
+    res = client.post(
+        "/api/v1/sync/batch", json={"cases": [bad]}, headers=_auth(_officer_token())
+    )
+    assert res.status_code == 400
+    assert len(store["cases"]) == 0
+
+
+def test_batch_rejects_wrong_type_gps_value(client, store):
+    bad = _item("11111111-1111-4111-8111-111111111111", gps={"lat": "north", "lng": 80.63})
+    res = client.post(
+        "/api/v1/sync/batch", json={"cases": [bad]}, headers=_auth(_officer_token())
+    )
+    assert res.status_code == 400
+    assert len(store["cases"]) == 0
+
+
+def test_batch_rejects_bool_as_gps_value(client, store):
+    bad = _item("11111111-1111-4111-8111-111111111111", gps={"lat": True, "lng": 80.63})
+    res = client.post(
+        "/api/v1/sync/batch", json={"cases": [bad]}, headers=_auth(_officer_token())
+    )
+    assert res.status_code == 400
+    assert len(store["cases"]) == 0
+
+
+def test_batch_accepts_null_gps(client, store):
+    ok = _item("11111111-1111-4111-8111-111111111111", gps=None)
+    res = client.post(
+        "/api/v1/sync/batch", json={"cases": [ok]}, headers=_auth(_officer_token())
+    )
+    assert res.status_code == 200
+
+
+def test_malformed_timestamp_falls_back_to_current_year(client, store):
+    # "99" would pass a bare isdigit() check but is not a valid 4-digit year.
+    item = _item("11111111-1111-4111-8111-111111111111", timestamp_local="99")
+    res = client.post(
+        "/api/v1/sync/batch", json={"cases": [item]}, headers=_auth(_officer_token())
+    )
+    assert res.status_code == 200
+    canonical_id = res.get_json()["results"][0]["canonical_id"]
+    current_year = str(__import__("datetime").datetime.now(__import__("datetime").timezone.utc).year)
+    assert canonical_id.startswith(f"HEC-{current_year}-")
+
+
+def test_unhandled_db_error_returns_json_500(client, store):
+    store["fail_offline_id"] = "22222222-2222-4222-8222-222222222222"
+    item = _item(store["fail_offline_id"])
+    res = client.post(
+        "/api/v1/sync/batch", json={"cases": [item]}, headers=_auth(_officer_token())
+    )
+    assert res.status_code == 500
+    assert res.get_json()["error"] == "server_error"
