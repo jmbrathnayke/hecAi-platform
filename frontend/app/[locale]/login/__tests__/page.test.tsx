@@ -12,69 +12,78 @@ jest.mock("next/navigation", () => ({
   useRouter: () => ({ push: (...a: unknown[]) => mockPush(...a) }),
 }));
 
-const mockSignInWithPassword = jest.fn();
-const mockSignUp = jest.fn();
+const mockSignInWithOtp = jest.fn();
+const mockVerifyOtp = jest.fn();
 jest.mock("@/lib/supabase", () => ({
   createClient: () => ({
     auth: {
-      signInWithPassword: (...a: unknown[]) => mockSignInWithPassword(...a),
-      signUp: (...a: unknown[]) => mockSignUp(...a),
+      signInWithOtp: (...a: unknown[]) => mockSignInWithOtp(...a),
+      verifyOtp: (...a: unknown[]) => mockVerifyOtp(...a),
     },
   }),
 }));
 
 beforeEach(() => {
   mockPush.mockReset();
-  mockSignInWithPassword.mockReset().mockResolvedValue({ error: null });
-  mockSignUp.mockReset().mockResolvedValue({ error: null });
+  mockSignInWithOtp.mockReset().mockResolvedValue({ error: null });
+  mockVerifyOtp.mockReset().mockResolvedValue({ error: null });
 });
 
-function fillCredentials() {
-  fireEvent.change(screen.getByLabelText("email"), { target: { value: "c@example.com" } });
-  fireEvent.change(screen.getByLabelText("password"), { target: { value: "hunter2" } });
+function enterPhoneAndSend(phone = "+94714790447") {
+  fireEvent.change(screen.getByLabelText("phone"), { target: { value: phone } });
+  fireEvent.click(screen.getByRole("button", { name: "sendCode" }));
 }
 
-test("successful sign-in redirects to the localized My Cases page", async () => {
+test("sending the code moves to the OTP phase", async () => {
   render(<CitizenLoginPage />);
-  fillCredentials();
-  fireEvent.click(screen.getByRole("button", { name: "signIn" }));
+  enterPhoneAndSend();
+  await waitFor(() => expect(mockSignInWithOtp).toHaveBeenCalledWith({ phone: "+94714790447" }));
+  // OTP phase visible
+  expect(await screen.findByRole("status")).toHaveTextContent("codeSent");
+  expect(screen.getByRole("button", { name: "verify" })).toBeInTheDocument();
+});
+
+test("verifying a valid code redirects to the localized My Cases page", async () => {
+  render(<CitizenLoginPage />);
+  enterPhoneAndSend();
+  await screen.findByRole("button", { name: "verify" });
+  fireEvent.change(screen.getByLabelText("code"), { target: { value: "123456" } });
+  fireEvent.click(screen.getByRole("button", { name: "verify" }));
 
   await waitFor(() =>
-    expect(mockSignInWithPassword).toHaveBeenCalledWith({
-      email: "c@example.com",
-      password: "hunter2",
+    expect(mockVerifyOtp).toHaveBeenCalledWith({
+      phone: "+94714790447",
+      token: "123456",
+      type: "sms",
     }),
   );
   await waitFor(() => expect(mockPush).toHaveBeenCalledWith("/en/my-cases"));
 });
 
-test("sign-in failure shows an error and does not redirect", async () => {
-  mockSignInWithPassword.mockResolvedValue({ error: { message: "bad" } });
+test("a send failure shows an error and stays on the phone phase", async () => {
+  mockSignInWithOtp.mockResolvedValue({ error: { message: "bad number" } });
   render(<CitizenLoginPage />);
-  fillCredentials();
-  fireEvent.click(screen.getByRole("button", { name: "signIn" }));
-
-  expect(await screen.findByRole("alert")).toHaveTextContent("signInError");
-  expect(mockPush).not.toHaveBeenCalled();
+  enterPhoneAndSend();
+  expect(await screen.findByRole("alert")).toHaveTextContent("sendError");
+  // still on the phone phase (no OTP input)
+  expect(screen.getByRole("button", { name: "sendCode" })).toBeInTheDocument();
 });
 
-test("sign-up shows the confirm-email notice and does not redirect", async () => {
+test("a bad OTP shows an error and does not redirect", async () => {
+  mockVerifyOtp.mockResolvedValue({ error: { message: "invalid otp" } });
   render(<CitizenLoginPage />);
-  // toggle to sign-up mode
-  fireEvent.click(screen.getByRole("button", { name: "toggleToSignUp" }));
-  fillCredentials();
-  fireEvent.click(screen.getByRole("button", { name: "signUp" }));
+  enterPhoneAndSend();
+  await screen.findByRole("button", { name: "verify" });
+  fireEvent.change(screen.getByLabelText("code"), { target: { value: "000000" } });
+  fireEvent.click(screen.getByRole("button", { name: "verify" }));
 
-  expect(await screen.findByRole("status")).toHaveTextContent("checkEmail");
-  await waitFor(() => expect(mockSignUp).toHaveBeenCalled());
+  expect(await screen.findByRole("alert")).toHaveTextContent("verifyError");
   expect(mockPush).not.toHaveBeenCalled();
 });
 
 test("a thrown network failure shows a generic error", async () => {
-  mockSignInWithPassword.mockRejectedValue(new Error("network down"));
+  mockSignInWithOtp.mockRejectedValue(new Error("network down"));
   render(<CitizenLoginPage />);
-  fillCredentials();
-  fireEvent.click(screen.getByRole("button", { name: "signIn" }));
-
+  enterPhoneAndSend();
   expect(await screen.findByRole("alert")).toHaveTextContent("networkError");
 });

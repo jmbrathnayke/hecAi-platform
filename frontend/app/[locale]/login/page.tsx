@@ -1,6 +1,8 @@
 "use client";
-// Citizen login / sign-up (Story 4.0). Localized (app/[locale]) — unlike the English-only officer
-// portal. Anonymous reporting stays available; this is the OPTIONAL account for "My Cases".
+// Citizen login via phone OTP (Story 4.0). Localized (app/[locale]) — unlike the English-only
+// officer portal. Anonymous reporting stays available; this is the OPTIONAL account for "My Cases".
+// Supabase sends the SMS OTP via its configured provider (Twilio); phone signups auto-create the
+// user on first verify, so one flow covers both sign-in and sign-up.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
@@ -20,11 +22,10 @@ export default function CitizenLoginPage() {
     return supabaseRef.current;
   }, []);
 
-  const [mode, setMode] = useState<"signin" | "signup">("signin");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [phase, setPhase] = useState<"phone" | "otp">("phone");
+  const [phone, setPhone] = useState("");
+  const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   // Guards state updates after the async auth call resolves post-unmount (Epic 2 retro lesson).
@@ -36,30 +37,38 @@ export default function CitizenLoginPage() {
     };
   }, []);
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleSendCode(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    setNotice(null);
     setSubmitting(true);
     try {
-      if (mode === "signup") {
-        const { error: signUpError } = await getSupabase().auth.signUp({ email, password });
-        if (!mountedRef.current) return;
-        if (signUpError) {
-          setError(t("signUpError"));
-          return;
-        }
-        // Supabase requires email confirmation by default → no session yet; guide the user.
-        setNotice(t("checkEmail"));
+      const { error: sendError } = await getSupabase().auth.signInWithOtp({ phone });
+      if (!mountedRef.current) return;
+      if (sendError) {
+        setError(t("sendError"));
         return;
       }
-      const { error: signInError } = await getSupabase().auth.signInWithPassword({
-        email,
-        password,
+      setPhase("otp");
+    } catch {
+      if (mountedRef.current) setError(t("networkError"));
+    } finally {
+      if (mountedRef.current) setSubmitting(false);
+    }
+  }
+
+  async function handleVerify(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setSubmitting(true);
+    try {
+      const { error: verifyError } = await getSupabase().auth.verifyOtp({
+        phone,
+        token: code,
+        type: "sms",
       });
       if (!mountedRef.current) return;
-      if (signInError) {
-        setError(t("signInError"));
+      if (verifyError) {
+        setError(t("verifyError"));
         return;
       }
       router.push(`/${locale}/my-cases`);
@@ -78,55 +87,66 @@ export default function CitizenLoginPage() {
           <p className="text-caption text-ink-secondary">{t("subtitle")}</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-design-3">
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder={t("emailPlaceholder")}
-            aria-label={t("email")}
-            required
-            className="w-full border border-border-default rounded-md px-design-3 py-design-2 text-body"
-          />
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder={t("password")}
-            aria-label={t("password")}
-            required
-            minLength={6}
-            className="w-full border border-border-default rounded-md px-design-3 py-design-2 text-body"
-          />
-          <button
-            type="submit"
-            disabled={submitting}
-            className="w-full min-h-touch-target bg-amber text-ink-on-amber text-label font-semibold rounded-md disabled:opacity-60"
-          >
-            {mode === "signup" ? t("signUp") : t("signIn")}
-          </button>
-        </form>
-
-        <button
-          type="button"
-          onClick={() => {
-            setMode((m) => (m === "signin" ? "signup" : "signin"));
-            setError(null);
-            setNotice(null);
-          }}
-          className="w-full text-caption text-forest underline"
-        >
-          {mode === "signin" ? t("toggleToSignUp") : t("toggleToSignIn")}
-        </button>
+        {phase === "phone" ? (
+          <form onSubmit={handleSendCode} className="space-y-design-3">
+            <input
+              type="tel"
+              inputMode="tel"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder={t("phonePlaceholder")}
+              aria-label={t("phone")}
+              required
+              className="w-full border border-border-default rounded-md px-design-3 py-design-2 text-body"
+            />
+            <button
+              type="submit"
+              disabled={submitting}
+              className="w-full min-h-touch-target bg-amber text-ink-on-amber text-label font-semibold rounded-md disabled:opacity-60"
+            >
+              {t("sendCode")}
+            </button>
+          </form>
+        ) : (
+          <form onSubmit={handleVerify} className="space-y-design-3">
+            <p role="status" className="text-caption text-ink-secondary text-center">
+              {t("codeSent")}
+            </p>
+            <input
+              type="text"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              placeholder={t("codePlaceholder")}
+              aria-label={t("code")}
+              required
+              className="w-full border border-border-default rounded-md px-design-3 py-design-2 text-body text-center tracking-widest"
+            />
+            <button
+              type="submit"
+              disabled={submitting}
+              className="w-full min-h-touch-target bg-amber text-ink-on-amber text-label font-semibold rounded-md disabled:opacity-60"
+            >
+              {t("verify")}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setPhase("phone");
+                setCode("");
+                setError(null);
+              }}
+              className="w-full text-caption text-forest underline"
+            >
+              {t("changeNumber")}
+            </button>
+          </form>
+        )}
 
         {error && (
           <p role="alert" className="text-status-error text-label text-center">
             {error}
-          </p>
-        )}
-        {notice && (
-          <p role="status" className="text-forest text-label text-center">
-            {notice}
           </p>
         )}
       </div>
