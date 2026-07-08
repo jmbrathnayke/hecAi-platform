@@ -5,6 +5,8 @@ endpoint issues (mirrors test_cases.py's pattern), so we exercise auth, batch va
 idempotency, canonical-id assignment, the audit write, and the officer_id-from-JWT guard
 without a real database.
 """
+import json
+
 import jwt
 import psycopg2
 import pytest
@@ -33,7 +35,22 @@ class FakeCursor:
         if "INSERT INTO cases" in sql and params[0] == self.store.get("fail_offline_id"):
             raise psycopg2.OperationalError("simulated DB failure")
 
-        if "SELECT canonical_id FROM cases" in sql:
+        if "SELECT id, canonical_id" in sql:
+            oid = params[0]
+            if oid in self.store["cases"]:
+                row = self.store["rows"][oid]
+                self._result = (
+                    row["id"],
+                    self.store["cases"][oid],
+                    row["damage_category"],
+                    row["gps_lat"],
+                    row["gps_lng"],
+                    row["submitter_identity_hash"],
+                    row["officer_id"],
+                )
+            else:
+                self._result = None
+        elif "SELECT canonical_id FROM cases" in sql:
             oid = params[0]
             self._result = (self.store["cases"][oid],) if oid in self.store["cases"] else None
         elif "nextval" in sql:
@@ -57,16 +74,29 @@ class FakeCursor:
                 self.store["cases"][offline_id] = canonical_id
                 self.store["case_pk"] += 1
                 self.store["rows"][offline_id] = {
+                    "id": self.store["case_pk"],
                     "damage_category": damage_category,
                     "gps_lat": gps_lat,
                     "gps_lng": gps_lng,
+                    "submitter_identity_hash": submitter_identity_hash,
                     "officer_id": officer_id,
                     "submitted_by_officer": submitted_by_officer,
                 }
                 self._result = (self.store["case_pk"],)
         elif "INSERT INTO audit_log" in sql:
-            case_id, event, actor_id = params
-            self.store["audit"].append({"case_id": case_id, "event": event, "actor_id": actor_id})
+            if len(params) == 4:
+                case_id, event, actor_id, metadata = params
+                self.store["audit"].append(
+                    {
+                        "case_id": case_id,
+                        "event": event,
+                        "actor_id": actor_id,
+                        "metadata": json.loads(metadata),
+                    }
+                )
+            else:
+                case_id, event, actor_id = params
+                self.store["audit"].append({"case_id": case_id, "event": event, "actor_id": actor_id})
             self._result = None
         else:  # pragma: no cover - unexpected SQL
             raise AssertionError(f"unexpected SQL: {sql}")
@@ -319,3 +349,49 @@ def test_unhandled_db_error_returns_json_500(client, store):
     )
     assert res.status_code == 500
     assert res.get_json()["error"] == "server_error"
+
+
+# --- Story 4.3: log-only UUID-collision detection ---
+
+
+def test_matching_retry_does_not_log_collision(client, store):
+    offline_id = "55555555-5555-4555-8555-555555555555"
+    payload = _item(offline_id)
+    res1 = client.post(
+        "/api/v1/sync/batch", json={"cases": [payload]}, headers=_auth(_officer_token())
+    )
+    assert res1.status_code == 200
+
+    # Identical retry (byte-for-byte, as the real client would replay it).
+    res2 = client.post(
+        "/api/v1/sync/batch", json={"cases": [payload]}, headers=_auth(_officer_token())
+    )
+    assert res2.status_code == 200
+    assert res2.get_json()["results"][0]["inserted"] is False
+    assert not any(a["event"] == "uuid_collision" for a in store["audit"])
+
+
+def test_differing_content_on_existing_offline_id_logs_collision(client, store):
+    offline_id = "66666666-6666-4666-8666-666666666666"
+    first = _item(offline_id, damage_category="crop")
+    res1 = client.post(
+        "/api/v1/sync/batch", json={"cases": [first]}, headers=_auth(_officer_token())
+    )
+    assert res1.status_code == 200
+    first_canonical_id = res1.get_json()["results"][0]["canonical_id"]
+
+    # Same offline_id, different content — simulates a true UUID collision from another device.
+    second = _item(offline_id, damage_category="property")
+    res2 = client.post(
+        "/api/v1/sync/batch", json={"cases": [second]}, headers=_auth(_officer_token())
+    )
+    assert res2.status_code == 200
+    result = res2.get_json()["results"][0]
+    # No data is lost: the original stored case still wins, unchanged.
+    assert result["inserted"] is False
+    assert result["canonical_id"] == first_canonical_id
+    assert store["rows"][offline_id]["damage_category"] == "crop"
+
+    collisions = [a for a in store["audit"] if a["event"] == "uuid_collision"]
+    assert len(collisions) == 1
+    assert collisions[0]["metadata"]["offline_id"] == offline_id

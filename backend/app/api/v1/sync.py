@@ -11,6 +11,7 @@ Request/response shape mirrors POST /api/v1/cases/submit exactly (same buildCase
 item shape from frontend/lib/poc.ts), batched under {"cases": [...]}.
 """
 import datetime
+import json
 
 import psycopg2
 from flask import Blueprint, current_app, g, jsonify, request
@@ -107,15 +108,72 @@ def batch_sync():
         conn.close()
 
 
+def _floats_differ(a, b) -> bool:
+    """Postgres returns NUMERIC as Decimal; compare against a client float with a small
+    tolerance so harmless serialization noise on an ordinary retry never reads as a
+    collision."""
+    if a is None or b is None:
+        return a is not b
+    return abs(float(a) - float(b)) > 1e-6
+
+
+def _log_uuid_collision_if_content_differs(cur, existing_row, item, officer_id: str) -> None:
+    """Story 4.3 (PRD Addendum A3): a UUID4 collision (~10^-18, essentially never occurs)
+    submitted by a different device would hit the same ON CONFLICT path as an ordinary
+    retry, but with DIFFERENT content. Log-only, belt-and-suspenders — no new id is minted,
+    no second row is inserted, and the original stored case is never modified ("no data is
+    lost"). An ordinary same-device retry always resends byte-identical content, so this
+    never fires in the common case."""
+    existing_id, _canonical_id, existing_damage, existing_lat, existing_lng, existing_hash, existing_officer_id = existing_row
+
+    gps = item.get("gps")
+    if not isinstance(gps, dict):
+        gps = {}
+    submitted_by_officer = item.get("submitted_by_officer") is True
+    item_officer_id = officer_id if submitted_by_officer else None
+
+    differs = (
+        existing_damage != item.get("damage_category")
+        or _floats_differ(existing_lat, gps.get("lat"))
+        or _floats_differ(existing_lng, gps.get("lng"))
+        or existing_hash != item.get("submitter_identity_hash")
+        or existing_officer_id != item_officer_id
+    )
+    if not differs:
+        return
+
+    cur.execute(
+        "INSERT INTO audit_log (case_id, event, actor_id, metadata) VALUES (%s, %s, %s, %s::jsonb)",
+        (
+            existing_id,
+            "uuid_collision",
+            officer_id,
+            json.dumps(
+                {
+                    "offline_id": item.get("offline_id"),
+                    "existing_case_id": existing_id,
+                    "note": "content differs from stored row with same offline_id",
+                }
+            ),
+        ),
+    )
+
+
 def _sync_one(cur, item: dict, officer_id: str) -> dict:
     offline_id = item["offline_id"]
 
     # Fast path: an already-synced offline_id returns its canonical id without burning a
     # sequence value (retry scenario — the client may replay this same item repeatedly).
-    cur.execute("SELECT canonical_id FROM cases WHERE offline_id = %s", (offline_id,))
+    # Also fetches content columns for the UUID-collision check below.
+    cur.execute(
+        "SELECT id, canonical_id, damage_category, gps_lat, gps_lng, "
+        "submitter_identity_hash, officer_id FROM cases WHERE offline_id = %s",
+        (offline_id,),
+    )
     existing = cur.fetchone()
     if existing:
-        return {"offline_id": offline_id, "canonical_id": existing[0], "inserted": False}
+        _log_uuid_collision_if_content_differs(cur, existing, item, officer_id)
+        return {"offline_id": offline_id, "canonical_id": existing[1], "inserted": False}
 
     ts = item.get("timestamp_local")
     year = ts[:4] if isinstance(ts, str) else ""
@@ -124,6 +182,10 @@ def _sync_one(cur, item: dict, officer_id: str) -> dict:
     if not (len(year) == 4 and year.isascii() and year.isdigit()):
         year = str(datetime.datetime.now(datetime.timezone.utc).year)
 
+    # Single global sequence, never reset per calendar year (PRD Addendum A3 / Story 4.3
+    # decision): gap-free numbering matters more than year-local numbering. A case synced
+    # in January 2027 can legitimately be HEC-2027-1042, continuing from HEC-2026-1041 —
+    # matches the same sequence already shared with cases.py::submit_case and sms.py.
     cur.execute("SELECT nextval('hec_canonical_seq')")
     seq = cur.fetchone()[0]
     canonical_id = f"HEC-{year}-{seq:04d}"

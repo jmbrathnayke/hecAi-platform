@@ -102,6 +102,19 @@ export default function OfficerPoCPage() {
     };
   }, [router]);
 
+  // Story 4.3: pick up a background sync that completes while this page is still open,
+  // without waiting for a reload (dispatched by lib/syncQueue.ts::runSync on success).
+  useEffect(() => {
+    function handleSynced(e: Event) {
+      const evt = e as CustomEvent<{ offline_id: string; canonical_id: string }>;
+      if (poc && evt.detail.offline_id === poc.offline_id) {
+        setCanonicalId(evt.detail.canonical_id);
+      }
+    }
+    window.addEventListener("hec-case-synced", handleSynced);
+    return () => window.removeEventListener("hec-case-synced", handleSynced);
+  }, [poc]);
+
   if (!poc) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-surface-base" role="status" aria-live="polite">

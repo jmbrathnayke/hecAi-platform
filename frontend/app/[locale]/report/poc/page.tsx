@@ -62,6 +62,19 @@ export default function PoCPage() {
     };
   }, [router]);
 
+  // Story 4.3: pick up a background sync that completes while this page is still open,
+  // without waiting for a reload (dispatched by lib/syncQueue.ts::runSync on success).
+  useEffect(() => {
+    function handleSynced(e: Event) {
+      const evt = e as CustomEvent<{ offline_id: string; canonical_id: string }>;
+      if (poc && evt.detail.offline_id === poc.offline_id) {
+        setCanonicalId(evt.detail.canonical_id);
+      }
+    }
+    window.addEventListener("hec-case-synced", handleSynced);
+    return () => window.removeEventListener("hec-case-synced", handleSynced);
+  }, [poc]);
+
   // Render a self-contained PoC card (title + reference + QR + timestamp) to a PNG.
   // Uses the SVG QR drawn onto a canvas — no html2canvas (CRITICAL #5).
   function downloadPoCPng() {

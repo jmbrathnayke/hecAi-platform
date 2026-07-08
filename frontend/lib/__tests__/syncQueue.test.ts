@@ -52,6 +52,13 @@ beforeEach(() => {
   (global.fetch as jest.Mock | undefined)?.mockReset?.();
 });
 
+afterEach(() => {
+  // jest.spyOn(window, "dispatchEvent") in the tests below would otherwise keep
+  // accumulating call history across tests (spyOn on an already-spied function
+  // returns the same mock rather than a fresh one).
+  jest.restoreAllMocks();
+});
+
 describe("enqueueCase", () => {
   it("adds a new pending item when none exists for the offline_id", async () => {
     mockGetQueue.mockResolvedValue([]);
@@ -170,6 +177,35 @@ describe("runSync", () => {
 
     const failureUpdate = mockUpdateItem.mock.calls.filter(([id]) => id === 9).pop();
     expect(failureUpdate?.[1]).toMatchObject({ status: "failed", sync_attempts: 6 });
+  });
+
+  it("dispatches a hec-case-synced event with the offline_id/canonical_id on confirmed success", async () => {
+    const due = item({ id: 5, offline_id: "off-5" });
+    mockGetQueue.mockResolvedValue([due]);
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ results: [{ offline_id: "off-5", canonical_id: "HEC-2026-0099" }] }),
+    }) as unknown as typeof fetch;
+    const dispatchSpy = jest.spyOn(window, "dispatchEvent");
+
+    await runSync("tok");
+
+    const synced = dispatchSpy.mock.calls
+      .map(([e]) => e as CustomEvent)
+      .find((e) => e.type === "hec-case-synced");
+    expect(synced).toBeDefined();
+    expect(synced?.detail).toEqual({ offline_id: "off-5", canonical_id: "HEC-2026-0099" });
+  });
+
+  it("does not dispatch hec-case-synced for an item the server didn't confirm", async () => {
+    mockGetQueue.mockResolvedValue([item({ id: 2 })]);
+    global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({ results: [] }) }) as unknown as typeof fetch;
+    const dispatchSpy = jest.spyOn(window, "dispatchEvent");
+
+    await runSync("tok");
+
+    const synced = dispatchSpy.mock.calls.map(([e]) => e as CustomEvent).find((e) => e.type === "hec-case-synced");
+    expect(synced).toBeUndefined();
   });
 
   it("does not fire two overlapping batches when called concurrently", async () => {
