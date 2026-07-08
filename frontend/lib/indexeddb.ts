@@ -1,15 +1,19 @@
 // IndexedDB schema + helpers for the HEC offline store.
 // CLIENT-ONLY: never import this from a Server Component — `indexedDB` exists only in the browser.
 //
-// Schema (version 1) — this is the permanent contract; changing it later requires a
+// Schema (version 2) — this is the permanent contract; changing it later requires a
 // version bump + migration in onupgradeneeded.
 //   cases           keyPath: offline_id   index: sync_status
-//   sync_queue      autoIncrement         index: status
+//   sync_queue      keyPath: id (autoIncrement)   index: status
 //   photo_blobs     keyPath: blob_key
 //   officer_session keyPath: id
+//
+// v1 -> v2 (Story 4.1): sync_queue recreated with an inline `id` keyPath (was a bare
+// autoIncrement key not stored on the record) so queue items can be read/updated by id
+// without a cursor. Safe: no code wrote to sync_queue before this version.
 
 const DB_NAME = "hec-platform-db";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 let dbInstance: IDBDatabase | null = null;
 let openPromise: Promise<IDBDatabase> | null = null;
@@ -49,10 +53,14 @@ export function openDB(): Promise<IDBDatabase> {
         casesStore.createIndex("sync_status", "sync_status", { unique: false });
       }
 
-      if (!db.objectStoreNames.contains("sync_queue")) {
-        const syncStore = db.createObjectStore("sync_queue", { autoIncrement: true });
-        syncStore.createIndex("status", "status", { unique: false });
+      // Recreated (not gated behind objectStoreNames.contains) on every v1->v2 upgrade to
+      // change the key structure — see the v1->v2 note above. onupgradeneeded only runs once
+      // per version bump per browser, so this never touches an already-v2 database.
+      if (db.objectStoreNames.contains("sync_queue")) {
+        db.deleteObjectStore("sync_queue");
       }
+      const syncStore = db.createObjectStore("sync_queue", { keyPath: "id", autoIncrement: true });
+      syncStore.createIndex("status", "status", { unique: false });
 
       if (!db.objectStoreNames.contains("photo_blobs")) {
         db.createObjectStore("photo_blobs", { keyPath: "blob_key" });
@@ -144,6 +152,75 @@ export async function getAllCases(): Promise<Record<string, unknown>[]> {
     const req = store.getAll();
     req.onsuccess = () => resolve(req.result as Record<string, unknown>[]);
     req.onerror = () => reject(req.error);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// sync_queue store (Story 4.1, FR-8.2/8.4/8.5) — cases that failed a one-shot online
+// submit (or were drafted offline) wait here for automatic background retry. Bookkeeping
+// (attempts/backoff/status) lives on the record so the SyncStatusBar and the retry loop
+// share a single source of truth.
+// ---------------------------------------------------------------------------
+
+// A successfully-synced item is deleted outright (see runSync in lib/syncQueue.ts), never
+// transitioned to a terminal "synced"/"done" state — so the status union only lists states
+// an item can actually be found IN while it still exists in the store.
+export interface SyncQueueItem {
+  id: number;
+  offline_id: string;
+  payload: Record<string, unknown>;
+  status: "pending" | "in_progress" | "failed";
+  sync_attempts: number;
+  last_error?: string;
+  queued_at: number;
+  next_attempt_at: number;
+}
+
+export async function addSyncQueueItem(item: Omit<SyncQueueItem, "id">): Promise<number> {
+  const { tx, store } = await openStore("sync_queue", "readwrite");
+  return new Promise<number>((resolve, reject) => {
+    const req = store.add(item);
+    req.onsuccess = () => resolve(req.result as number);
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  });
+}
+
+export async function getSyncQueue(): Promise<SyncQueueItem[]> {
+  const { store } = await openStore("sync_queue", "readonly");
+  return new Promise((resolve, reject) => {
+    const req = store.getAll();
+    req.onsuccess = () => resolve(req.result as SyncQueueItem[]);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+/** Read-merge-write a queue item by id. A no-op if the item was already removed. */
+export async function updateSyncQueueItem(
+  id: number,
+  fields: Partial<Omit<SyncQueueItem, "id">>,
+): Promise<void> {
+  const { tx, store } = await openStore("sync_queue", "readwrite");
+  return new Promise<void>((resolve, reject) => {
+    const req = store.get(id);
+    req.onsuccess = () => {
+      const existing = req.result as SyncQueueItem | undefined;
+      if (existing) store.put({ ...existing, ...fields, id });
+    };
+    req.onerror = () => reject(req.error);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  });
+}
+
+export async function deleteSyncQueueItem(id: number): Promise<void> {
+  const { tx, store } = await openStore("sync_queue", "readwrite");
+  return new Promise<void>((resolve, reject) => {
+    store.delete(id);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
   });
 }
 

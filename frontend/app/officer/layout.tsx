@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "../globals.css";
+import { SyncStatusBar } from "@/components/SyncStatusBar";
 
 // Officer routes are a separate top-level tree from app/[locale] (English-only, FR-9.3,
 // no i18n provider) — Next.js requires each top-level branch under app/ to reach its own
@@ -12,7 +13,10 @@ export const metadata: Metadata = {
 export default function OfficerLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className="font-sans">{children}</body>
+      <body className="font-sans">
+        <SyncStatusBar />
+        {children}
+      </body>
     </html>
   );
 }
