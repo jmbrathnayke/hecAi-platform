@@ -161,8 +161,12 @@ def test_valid_sms_creates_case_audit_and_reply(client, store, sent):
     assert row["officer_id"] == OFFICER_UID
     assert row["status"] == "Submitted"
     assert row["citizen_nic_plain"] == "200012345678"
-    # SHA-256 of the NIC is still written for cross-channel matching.
-    assert row["submitter_identity_hash"] == hashlib.sha256(b"200012345678").hexdigest()
+    # submitter_identity_hash is an offline_id-scoped SHA-256 (mirrors the citizen path's shape),
+    # a per-submission opaque tag — NOT sha256(nic) and NOT cross-channel matchable.
+    assert (
+        row["submitter_identity_hash"]
+        == hashlib.sha256(f"{row['offline_id']}:200012345678".encode()).hexdigest()
+    )
     # Audit row recorded.
     assert len(store["audit"]) == 1
     assert store["audit"][0]["event"] == "sms_submission"
@@ -205,6 +209,9 @@ def test_invalid_signature_returns_403_no_side_effects(monkeypatch, client, stor
         "HELLO 200012345678 7.29,80.63 CROP",  # wrong keyword
         "REPORT 123 7.29,80.63 CROP",  # bad NIC
         "REPORT 200012345678 not-coords CROP",  # bad coords
+        "REPORT 200012345678 91,80.63 CROP",  # latitude out of range (>90)
+        "REPORT 200012345678 7.29,200 CROP",  # longitude out of range (>180)
+        "REPORT 200012345678 1000,80.63 CROP",  # 4-digit lat would overflow NUMERIC(10,7)
         "REPORT 200012345678 7.29,80.63 FIRE",  # bad damage type
     ],
 )

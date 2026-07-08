@@ -93,13 +93,17 @@ def inbound_sms():
     if not coord_match:
         return reply(ERROR_REPLY)
     lat, lng = float(coord_match.group(1)), float(coord_match.group(2))
+    # Range-gate the coordinates. COORD_RE only checks shape, so a regex-valid but impossible pair
+    # (e.g. "91,200") would otherwise be stored as a real case with a nonsense location, and a
+    # value with 4+ integer digits would overflow gps_lat/lng NUMERIC(10,7) into a psycopg2 error
+    # and a misleading "try again" reply. The PWA path is shielded by GPS/MapPinPicker; SMS is not.
+    if not (-90 <= lat <= 90 and -180 <= lng <= 180):
+        return reply(ERROR_REPLY)
     damage_category = DAMAGE_MAP.get(damage_raw)
     if not damage_category:
         return reply(ERROR_REPLY)
 
     year = str(datetime.now(timezone.utc).year)
-    # Cross-channel matching hash: every other path stores only this SHA-256, never plaintext NIC.
-    identity_hash = hashlib.sha256(nic.encode()).hexdigest()
 
     try:
         conn = _get_connection()
@@ -131,6 +135,12 @@ def inbound_sms():
                             )
 
                     offline_id = str(uuid.uuid4())
+                    # submitter_identity_hash mirrors the SHAPE the citizen path uses — an
+                    # offline_id-scoped SHA-256 (the frontend hashes offline_id:nicCiphertext; SMS
+                    # has no ciphertext, so it hashes offline_id:nic). It is a per-submission opaque
+                    # tag, NOT a cross-channel citizen key (the two channels can never produce the
+                    # same value); citizen identification is via citizen_nic_plain.
+                    identity_hash = hashlib.sha256(f"{offline_id}:{nic}".encode()).hexdigest()
                     cur.execute("SELECT nextval('hec_canonical_seq')")
                     seq = cur.fetchone()[0]
                     canonical_id = f"HEC-{year}-{seq:04d}"

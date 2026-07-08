@@ -4,10 +4,11 @@
 -- the fallback channel). DEFAULT 'app' keeps all existing rows correct with no backfill.
 --
 -- citizen_nic_plain is the ONLY server-side plaintext NIC on the platform. Every other path
--- AES-GCM encrypts the NIC client-side and the server only ever sees the SHA-256
--- submitter_identity_hash. SMS has no client to encrypt with, so the plaintext NIC is stored here
--- for officer-accountable identification (PO-ratified 2026-07-08). The SHA-256 hash is STILL
--- written to submitter_identity_hash for cross-channel matching consistency. This column is
+-- AES-GCM encrypts the NIC client-side and the server only ever sees an offline_id-scoped SHA-256
+-- (submitter_identity_hash). SMS has no client to encrypt with, so the plaintext NIC is stored
+-- here for officer-accountable identification (PO-ratified 2026-07-08). submitter_identity_hash is
+-- still populated (offline_id:nic) to keep that column uniformly shaped, but note it is a
+-- per-submission opaque tag, NOT a value that cross-matches the PWA channel. This column is
 -- write-only for accountability — it must never be returned by any read/status endpoint.
 --
 -- twilio_message_sid is the idempotency key. Twilio retries inbound webhooks on timeout/non-2xx,
