@@ -27,17 +27,43 @@ def _get_connection():
     return psycopg2.connect(current_app.config["DATABASE_URL"])
 
 
+def _is_number(value) -> bool:
+    # bool is a subclass of int in Python — True/False must not pass as coordinates.
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
 def _validate_item(item: dict) -> list:
-    """Presence-only validation, matching cases.py::submit_case's leniency — no closed
-    enum on damage_category exists anywhere else in this backend, so this endpoint
-    doesn't invent one either."""
+    """No closed enum on damage_category exists anywhere else in this backend, so this
+    endpoint doesn't invent one either — but every field is type/range-checked before it
+    can reach a typed DB column (a wrong-type or out-of-range value must 400, not crash
+    the batch's DB transaction)."""
     errors = []
     if not isinstance(item, dict):
         return ["item must be an object"]
-    if not item.get("offline_id"):
+
+    offline_id = item.get("offline_id")
+    if not offline_id:
         errors.append("offline_id is required")
-    if not item.get("damage_category"):
+    elif not isinstance(offline_id, str):
+        errors.append("offline_id must be a string")
+
+    damage_category = item.get("damage_category")
+    if not damage_category:
         errors.append("damage_category is required")
+    elif not isinstance(damage_category, str):
+        errors.append("damage_category must be a string")
+
+    gps = item.get("gps")
+    if gps is not None:
+        if not isinstance(gps, dict):
+            errors.append("gps must be an object or null")
+        else:
+            lat, lng = gps.get("lat"), gps.get("lng")
+            if lat is not None and (not _is_number(lat) or not (-90 <= lat <= 90)):
+                errors.append("gps.lat must be a number in range -90..90")
+            if lng is not None and (not _is_number(lng) or not (-180 <= lng <= 180)):
+                errors.append("gps.lng must be a number in range -180..180")
+
     return errors
 
 
@@ -74,6 +100,9 @@ def batch_sync():
                 for item in cases_data:
                     results.append(_sync_one(cur, item, officer_id))
         return jsonify({"results": results}), 200
+    except psycopg2.Error:
+        current_app.logger.exception("sync batch failed")
+        return jsonify({"error": "server_error"}), 500
     finally:
         conn.close()
 
@@ -90,7 +119,9 @@ def _sync_one(cur, item: dict, officer_id: str) -> dict:
 
     ts = item.get("timestamp_local")
     year = ts[:4] if isinstance(ts, str) else ""
-    if not year.isdigit():
+    # isdigit() alone accepts non-ASCII digits (e.g. superscripts) and short strings would
+    # otherwise slip through as a malformed canonical_id (e.g. "HEC-99-0001").
+    if not (len(year) == 4 and year.isascii() and year.isdigit()):
         year = str(datetime.datetime.now(datetime.timezone.utc).year)
 
     cur.execute("SELECT nextval('hec_canonical_seq')")
