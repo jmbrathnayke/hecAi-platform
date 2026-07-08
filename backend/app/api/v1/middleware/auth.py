@@ -53,3 +53,48 @@ def require_officer():
         return wrapper
 
     return decorator
+
+
+def require_citizen():
+    """Guard citizen-owned routes (Story 4.0). Mirrors require_officer()'s independent JWT
+    validation, but a citizen is a plain authenticated Supabase user with NO staff role: any
+    officer/admin token is rejected (403) so a staff `sub` is never treated as a citizen_id.
+    Sets g.citizen_id from the signature-verified `sub`."""
+    def decorator(f):
+        @functools.wraps(f)
+        def wrapper(*args, **kwargs):
+            secret = current_app.config.get("SUPABASE_JWT_SECRET")
+            if not secret:
+                return jsonify({"error": "server_misconfigured"}), 500
+
+            auth = request.headers.get("Authorization", "")
+            if not auth.startswith("Bearer "):
+                return jsonify({"error": "missing_token"}), 401
+            token = auth.split(" ", 1)[1]
+            try:
+                claims = jwt.decode(
+                    token, secret, algorithms=["HS256"], options={"verify_aud": False}
+                )
+            except jwt.ExpiredSignatureError:
+                return jsonify({"error": "token_expired"}), 401
+            except jwt.PyJWTError:
+                return jsonify({"error": "invalid_token"}), 401
+
+            metadata = claims.get("user_metadata", {})
+            role = metadata.get("role") if isinstance(metadata, dict) else None
+            if role in ("officer", "admin"):
+                # A valid Supabase token, but staff — not a citizen. Never scope their cases here.
+                return jsonify({"error": "forbidden"}), 403
+
+            citizen_id = claims.get("sub")
+            if not citizen_id:
+                # A validly-signed token missing `sub` is malformed — don't let a None citizen_id
+                # flow into ownership-keyed queries.
+                return jsonify({"error": "invalid_token"}), 401
+
+            g.citizen_id = citizen_id
+            return f(*args, **kwargs)
+
+        return wrapper
+
+    return decorator

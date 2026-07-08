@@ -38,12 +38,13 @@ class FakeCursor:
             offline_id, canonical_id = params[0], params[1]
             self.store["cases"][offline_id] = canonical_id
             self.store["case_pk"] += 1
-            # Capture the officer-accountability columns (Story 3.5) so tests can assert them.
-            # Column order: offline_id, canonical_id, damage_category, gps_lat, gps_lng,
-            # submitter_identity_hash, officer_id, submitted_by_officer.
+            # Capture the ownership columns so tests can assert them. Column order: offline_id,
+            # canonical_id, damage_category, gps_lat, gps_lng, submitter_identity_hash, officer_id,
+            # submitted_by_officer, citizen_id (Story 4.0).
             self.store["rows"][offline_id] = {
                 "officer_id": params[6],
                 "submitted_by_officer": params[7],
+                "citizen_id": params[8],
             }
             self._result = (self.store["case_pk"],)
         elif "INSERT INTO audit_log" in sql:
@@ -273,3 +274,34 @@ def test_officer_assisted_is_idempotent(client, store):
     assert first.get_json()["canonical_id"] == second.get_json()["canonical_id"]
     assert len(store["cases"]) == 1
     assert len(store["audit"]) == 1
+
+
+# --- Story 4.0: citizen ownership -----------------------------------------------------------
+
+
+def test_authenticated_citizen_submit_stamps_citizen_id(client, store):
+    # A plain authenticated user (JWT with sub, no staff role) → the case is owned by their UID.
+    res = client.post(
+        "/api/v1/cases/submit",
+        json=_body(),
+        headers={"Authorization": f"Bearer {jwt.encode({'sub': 'citizen-9'}, SECRET, algorithm='HS256')}"},
+    )
+    assert res.status_code == 201
+    row = store["rows"][_body()["offline_id"]]
+    assert row["citizen_id"] == "citizen-9"
+    assert row["officer_id"] is None
+    assert row["submitted_by_officer"] is False
+
+
+def test_officer_token_without_assist_flag_leaves_citizen_id_null(client, store):
+    # A staff (officer) token that is NOT using the officer-assisted flag is not a citizen —
+    # citizen_id stays NULL (staff cases aren't owned via the citizen leg).
+    res = client.post(
+        "/api/v1/cases/submit",
+        json=_body(),
+        headers={"Authorization": f"Bearer {_officer_token(sub='officer-7')}"},
+    )
+    assert res.status_code == 201
+    row = store["rows"][_body()["offline_id"]]
+    assert row["citizen_id"] is None
+    assert row["officer_id"] is None  # not officer-assisted → officer_id also null
