@@ -28,12 +28,14 @@ def create_app(config=None):
     from app.api.v1.cases import cases_bp
     from app.api.v1.status import status_bp
     from app.api.v1.inference import inference_bp
+    from app.api.v1.officer import officer_bp
     from app.api.v1.sms import sms_bp
 
     app.register_blueprint(health_bp, url_prefix="/api/v1")
     app.register_blueprint(cases_bp, url_prefix="/api/v1")
     app.register_blueprint(status_bp, url_prefix="/api/v1/cases/status")
     app.register_blueprint(inference_bp, url_prefix="/api/v1")
+    app.register_blueprint(officer_bp, url_prefix="/api/v1")
     app.register_blueprint(sms_bp, url_prefix="/api/v1")
 
     return app
