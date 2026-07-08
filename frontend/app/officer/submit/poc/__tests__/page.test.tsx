@@ -2,14 +2,20 @@ import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import OfficerPoCPage from "@/app/officer/submit/poc/page";
 import { getCase } from "@/lib/indexeddb";
 import { buildPoC, submitCaseOnline } from "@/lib/poc";
+import { enqueueCase } from "@/lib/syncQueue";
 import { OFFICER_POC_NIC_KEY, clearOfficerPocMask } from "@/lib/officerPoc";
 import { clearDraftId } from "@/lib/draft";
+import { createClient } from "@/lib/supabase";
 
 const push = jest.fn();
 const replace = jest.fn();
+// A stable object, matching Next.js's real useRouter() (memoized) — a fresh literal per
+// call would change the page effect's `[router]` dependency on every state-driven
+// re-render and re-run the whole submit/enqueue effect body multiple times per test.
+const mockRouter = { push, replace };
 
 jest.mock("next/navigation", () => ({
-  useRouter: () => ({ push, replace }),
+  useRouter: () => mockRouter,
 }));
 
 jest.mock("@/lib/draft", () => ({
@@ -28,8 +34,13 @@ jest.mock("@/lib/indexeddb", () => ({
 }));
 
 jest.mock("@/lib/poc", () => ({
+  buildCasePayload: jest.fn((record: Record<string, unknown>) => ({ ...record })),
   buildPoC: jest.fn(),
   submitCaseOnline: jest.fn().mockResolvedValue(null),
+}));
+
+jest.mock("@/lib/syncQueue", () => ({
+  enqueueCase: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock("@/lib/supabase", () => ({
@@ -43,6 +54,7 @@ jest.mock("@/lib/supabase", () => ({
 const mockGetCase = getCase as jest.Mock;
 const mockBuildPoC = buildPoC as jest.Mock;
 const mockSubmit = submitCaseOnline as jest.Mock;
+const mockEnqueueCase = enqueueCase as jest.Mock;
 
 function pocRecord(overrides: Record<string, unknown> = {}) {
   return {
@@ -64,6 +76,7 @@ beforeEach(() => {
   mockGetCase.mockReset();
   mockBuildPoC.mockReset();
   mockSubmit.mockReset().mockResolvedValue(null);
+  mockEnqueueCase.mockReset().mockResolvedValue(undefined);
   try {
     sessionStorage.clear();
   } catch {}
@@ -103,6 +116,49 @@ describe("OfficerPoCPage", () => {
     expect(await screen.findByText("HEC-2026-0007")).toBeInTheDocument();
     // already synced → no further online submit attempt
     await waitFor(() => expect(mockSubmit).not.toHaveBeenCalled());
+    expect(mockEnqueueCase).not.toHaveBeenCalled();
+  });
+
+  it("queues the case for background sync when there is no session token (Story 4.1)", async () => {
+    mockGetCase.mockResolvedValue({ offline_id: "draft-1", officer_id: "officer-42" });
+    mockBuildPoC.mockResolvedValue(pocRecord());
+
+    render(<OfficerPoCPage />);
+
+    await waitFor(() => expect(mockEnqueueCase).toHaveBeenCalledTimes(1));
+    expect(mockSubmit).not.toHaveBeenCalled();
+    const [offlineId, payload] = mockEnqueueCase.mock.calls[0];
+    expect(offlineId).toBe("draft-1");
+    expect(payload).toMatchObject({ offline_id: "off-abc-123", submitted_by_officer: true, officer_id: "officer-42" });
+  });
+
+  it("queues the case for background sync when the one-shot online submit fails (Story 4.1)", async () => {
+    (createClient as jest.Mock).mockReturnValueOnce({
+      auth: { getSession: jest.fn().mockResolvedValue({ data: { session: { access_token: "tok-1" } } }) },
+    });
+    mockGetCase.mockResolvedValue({ offline_id: "draft-1", officer_id: "officer-42" });
+    mockBuildPoC.mockResolvedValue(pocRecord());
+    mockSubmit.mockResolvedValue(null);
+
+    render(<OfficerPoCPage />);
+
+    await waitFor(() => expect(mockSubmit).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(mockEnqueueCase).toHaveBeenCalledTimes(1));
+    expect(mockEnqueueCase.mock.calls[0][0]).toBe("draft-1");
+  });
+
+  it("does not queue for background sync when the one-shot online submit succeeds", async () => {
+    (createClient as jest.Mock).mockReturnValueOnce({
+      auth: { getSession: jest.fn().mockResolvedValue({ data: { session: { access_token: "tok-1" } } }) },
+    });
+    mockGetCase.mockResolvedValue({ offline_id: "draft-1", officer_id: "officer-42" });
+    mockBuildPoC.mockResolvedValue(pocRecord());
+    mockSubmit.mockResolvedValue({ canonical_id: "HEC-2026-0009", offline_id: "off-abc-123" });
+
+    render(<OfficerPoCPage />);
+
+    expect(await screen.findByText("HEC-2026-0009")).toBeInTheDocument();
+    expect(mockEnqueueCase).not.toHaveBeenCalled();
   });
 
   it("redirects to the submit flow when there is no draft to render", async () => {
