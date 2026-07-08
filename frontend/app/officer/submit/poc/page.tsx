@@ -17,7 +17,8 @@ import enMessages from "@/messages/en.json";
 import { PoCCard } from "@/components/PoCCard";
 import { getCase, updateDraft } from "@/lib/indexeddb";
 import { getDraftId, clearDraftId } from "@/lib/draft";
-import { buildPoC, submitCaseOnline, type PoCRecord } from "@/lib/poc";
+import { buildCasePayload, buildPoC, submitCaseOnline, type PoCRecord } from "@/lib/poc";
+import { enqueueCase } from "@/lib/syncQueue";
 import { createClient } from "@/lib/supabase";
 import { OFFICER_POC_NIC_KEY, clearOfficerPocMask } from "@/lib/officerPoc";
 
@@ -57,28 +58,43 @@ export default function OfficerPoCPage() {
       setCanonicalId(typeof draft.canonical_id === "string" ? draft.canonical_id : null);
 
       // Best-effort online submit if not yet synced (e.g. offline at submit, online now).
+      // Anything that doesn't land here is queued for automatic background retry (Story
+      // 4.1) instead of being left to sit as `pending` forever.
       if (draft.canonical_id) return;
+      const officerRecord: PoCRecord = {
+        ...record,
+        submitted_by_officer: true,
+        officer_id: typeof draft.officer_id === "string" ? draft.officer_id : undefined,
+      };
+
       let token: string | null = null;
       try {
         const supabase = createClient();
         const { data } = await supabase.auth.getSession();
         token = data.session?.access_token ?? null;
       } catch {
+        token = null;
+      }
+
+      if (!active) return;
+      if (!token) {
+        await enqueueCase(draftId, buildCasePayload(officerRecord)).catch(() => {});
         return;
       }
-      if (!token || !active) return;
-      const submitResult = await submitCaseOnline(
-        { ...record, submitted_by_officer: true, officer_id: typeof draft.officer_id === "string" ? draft.officer_id : undefined },
-        token,
-      );
-      if (!active || !submitResult) return;
+
+      const submitResult = await submitCaseOnline(officerRecord, token);
+      if (!active) return;
+      if (!submitResult) {
+        await enqueueCase(draftId, buildCasePayload(officerRecord)).catch(() => {});
+        return;
+      }
       setCanonicalId(submitResult.canonical_id);
       await updateDraft(draftId, {
         canonical_id: submitResult.canonical_id,
         sync_status: "synced",
       }).catch(() => {});
     })().catch(() => {
-      /* PoC already rendered; sync retries later (Epic 4) */
+      /* PoC already rendered; sync retries later (Story 4.1) */
     });
 
     return () => {

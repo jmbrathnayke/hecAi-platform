@@ -94,26 +94,36 @@ export async function buildPoC(draft: Record<string, unknown>): Promise<PoCRecor
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 /**
+ * Shape the case-submission request body from a PoCRecord. Shared by the immediate
+ * one-shot submit below and Story 4.1's background sync queue (lib/syncQueue.ts), so a
+ * case that misses the one-shot attempt is retried with byte-identical payload shape.
+ * Officer fields are added only when present so the citizen request body is unchanged
+ * (and the backend's officer-aware branch stays dormant for anonymous submissions).
+ */
+export function buildCasePayload(record: PoCRecord): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    offline_id: record.offline_id,
+    timestamp_local: record.timestamp_local,
+    gps: record.gps,
+    damage_category: record.damage_category,
+    submitter_identity_hash: record.submitter_identity_hash,
+  };
+  if (record.submitted_by_officer) {
+    body.submitted_by_officer = true;
+    body.officer_id = record.officer_id;
+  }
+  return body;
+}
+
+/**
  * Best-effort online submission. Posts the PoC to the backend with a bearer token.
  * Returns the canonical id on success, or null on any failure (offline, 401, 5xx) —
- * the caller keeps the PoC in `pending` and relies on background sync (Epic 4).
+ * the caller keeps the PoC in `pending` and relies on background sync (Story 4.1).
  * The QR/offline receipt never depends on this call (CRITICAL #3).
  */
 export async function submitCaseOnline(record: PoCRecord, token: string): Promise<SubmitResult | null> {
   try {
-    // Officer fields are added only when present so the citizen request body is unchanged
-    // (and the backend's officer-aware branch stays dormant for anonymous submissions).
-    const body: Record<string, unknown> = {
-      offline_id: record.offline_id,
-      timestamp_local: record.timestamp_local,
-      gps: record.gps,
-      damage_category: record.damage_category,
-      submitter_identity_hash: record.submitter_identity_hash,
-    };
-    if (record.submitted_by_officer) {
-      body.submitted_by_officer = true;
-      body.officer_id = record.officer_id;
-    }
+    const body = buildCasePayload(record);
     const res = await fetch(`${API_BASE}/api/v1/cases/submit`, {
       method: "POST",
       headers: {
