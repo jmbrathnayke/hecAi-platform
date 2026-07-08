@@ -3,7 +3,7 @@
 // (offline-first, FR-3.2). If online and an auth token is available it submits in the
 // background and upgrades the reference to the canonical HEC-YYYY-NNNN — the QR/receipt
 // never blocks on the network (CRITICAL #3).
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { useRouter } from "@/navigation";
 import { PoCCard } from "@/components/PoCCard";
@@ -21,11 +21,16 @@ export default function PoCPage() {
   const [poc, setPoc] = useState<PoCRecord | null>(null);
   const [canonicalId, setCanonicalId] = useState<string | null>(null);
   const [canShare, setCanShare] = useState(false);
+  // Known synchronously from mount (unlike `poc`, which is only set after the async
+  // getCase/buildPoC chain resolves) — lets the sync-event listener below match a case
+  // even if the event fires before `poc` is ready (review patch: closes that race).
+  const draftIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     setCanShare(typeof navigator !== "undefined" && typeof navigator.share === "function");
 
     const draftId = getDraftId();
+    draftIdRef.current = draftId;
     if (!draftId) {
       router.replace("/report");
       return;
@@ -41,7 +46,10 @@ export default function PoCPage() {
       const record = await buildPoC(draft);
       if (!active) return;
       setPoc(record);
-      setCanonicalId(typeof draft.canonical_id === "string" ? draft.canonical_id : null);
+      // Functional update: don't clobber a canonical id the hec-case-synced listener may
+      // already have set from a sync that completed while this async chain was in flight
+      // (review patch) — the draft read here can be stale relative to that live event.
+      setCanonicalId((prev) => prev ?? (typeof draft.canonical_id === "string" ? draft.canonical_id : null));
 
       // Best-effort online submission (does not block the receipt above).
       if (!navigator.onLine || draft.canonical_id) return;
@@ -64,16 +72,18 @@ export default function PoCPage() {
 
   // Story 4.3: pick up a background sync that completes while this page is still open,
   // without waiting for a reload (dispatched by lib/syncQueue.ts::runSync on success).
+  // Matches against draftIdRef (set synchronously on mount) rather than `poc` state, so a
+  // sync that completes before the async getCase/buildPoC chain resolves is never missed.
   useEffect(() => {
     function handleSynced(e: Event) {
-      const evt = e as CustomEvent<{ offline_id: string; canonical_id: string }>;
-      if (poc && evt.detail.offline_id === poc.offline_id) {
-        setCanonicalId(evt.detail.canonical_id);
+      const evt = e as CustomEvent<{ offline_id?: string; canonical_id?: string } | undefined>;
+      if (evt.detail && evt.detail.offline_id === draftIdRef.current) {
+        setCanonicalId(evt.detail.canonical_id ?? null);
       }
     }
     window.addEventListener("hec-case-synced", handleSynced);
     return () => window.removeEventListener("hec-case-synced", handleSynced);
-  }, [poc]);
+  }, []);
 
   // Render a self-contained PoC card (title + reference + QR + timestamp) to a PNG.
   // Uses the SVG QR drawn onto a canvas — no html2canvas (CRITICAL #5).

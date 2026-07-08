@@ -67,7 +67,15 @@ class FakeCursor:
                 officer_id,
                 submitted_by_officer,
             ) = params
-            if offline_id in self.store["cases"]:
+            if offline_id == self.store.get("race_offline_id") and offline_id not in self.store["cases"]:
+                # Simulate a concurrent winner committing between our fast-path SELECT
+                # (which found nothing) and our own INSERT — our insert loses the race.
+                winner = self.store["race_winner_row"]
+                self.store["cases"][offline_id] = winner["canonical_id"]
+                self.store["case_pk"] += 1
+                self.store["rows"][offline_id] = {"id": self.store["case_pk"], **winner}
+                self._result = None
+            elif offline_id in self.store["cases"]:
                 # ON CONFLICT DO NOTHING -> no row returned.
                 self._result = None
             else:
@@ -395,3 +403,32 @@ def test_differing_content_on_existing_offline_id_logs_collision(client, store):
     collisions = [a for a in store["audit"] if a["event"] == "uuid_collision"]
     assert len(collisions) == 1
     assert collisions[0]["metadata"]["offline_id"] == offline_id
+
+
+def test_lost_race_branch_also_logs_collision_when_content_differs(client, store):
+    """The 'lost the race' branch (two concurrent requests for the same offline_id; ours
+    loses the ON CONFLICT race) is the genuine concurrent-collision scenario the feature
+    exists for — it must not bypass collision detection."""
+    offline_id = "77777777-7777-4777-8777-777777777777"
+    store["race_offline_id"] = offline_id
+    store["race_winner_row"] = {
+        "canonical_id": "HEC-2026-9001",
+        "damage_category": "property",
+        "gps_lat": 6.0,
+        "gps_lng": 79.0,
+        "submitter_identity_hash": "other-hash",
+        "officer_id": None,
+    }
+    item = _item(offline_id, damage_category="crop")  # differs from the winner's "property"
+
+    res = client.post(
+        "/api/v1/sync/batch", json={"cases": [item]}, headers=_auth(_officer_token())
+    )
+
+    assert res.status_code == 200
+    result = res.get_json()["results"][0]
+    assert result["inserted"] is False
+    assert result["canonical_id"] == "HEC-2026-9001"
+
+    collisions = [a for a in store["audit"] if a["event"] == "uuid_collision"]
+    assert len(collisions) == 1

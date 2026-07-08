@@ -44,9 +44,12 @@ const mockGetAccessToken = getAccessToken as jest.Mock;
 const mockBuildPoC = buildPoC as jest.Mock;
 const mockSubmit = submitCaseOnline as jest.Mock;
 
+// offline_id matches the mocked draft id ("draft-1") throughout — in the real system the
+// PoC's offline_id IS the draft's IndexedDB key (buildPoC reuses draft.offline_id when
+// present), so this keeps the fixtures faithful to that invariant.
 function pocRecord(overrides: Record<string, unknown> = {}) {
   return {
-    offline_id: "off-abc-123",
+    offline_id: "draft-1",
     timestamp_local: "2026-07-07T10:00:00.000Z",
     gps: null,
     damage_category: "crop",
@@ -78,14 +81,14 @@ describe("PoCPage", () => {
 
     render(<PoCPage />);
 
-    expect(await screen.findByText("off-abc-123")).toBeInTheDocument();
+    expect(await screen.findByText("draft-1")).toBeInTheDocument();
   });
 
   it("shows the canonical id once the one-shot online submit succeeds", async () => {
     mockGetCase.mockResolvedValue({ offline_id: "draft-1" });
     mockBuildPoC.mockResolvedValue(pocRecord());
     mockGetAccessToken.mockResolvedValue("tok-1");
-    mockSubmit.mockResolvedValue({ canonical_id: "HEC-2026-0007", offline_id: "off-abc-123" });
+    mockSubmit.mockResolvedValue({ canonical_id: "HEC-2026-0007", offline_id: "draft-1" });
 
     render(<PoCPage />);
 
@@ -97,13 +100,13 @@ describe("PoCPage", () => {
     mockBuildPoC.mockResolvedValue(pocRecord());
 
     render(<PoCPage />);
-    await screen.findByText("off-abc-123");
+    await screen.findByText("draft-1");
     expect(screen.queryByText("HEC-2026-0042")).not.toBeInTheDocument();
 
     fireEvent(
       window,
       new CustomEvent("hec-case-synced", {
-        detail: { offline_id: "off-abc-123", canonical_id: "HEC-2026-0042" },
+        detail: { offline_id: "draft-1", canonical_id: "HEC-2026-0042" },
       }),
     );
 
@@ -115,7 +118,7 @@ describe("PoCPage", () => {
     mockBuildPoC.mockResolvedValue(pocRecord());
 
     render(<PoCPage />);
-    await screen.findByText("off-abc-123");
+    await screen.findByText("draft-1");
 
     fireEvent(
       window,
@@ -125,5 +128,31 @@ describe("PoCPage", () => {
     );
 
     expect(screen.queryByText("HEC-2026-9999")).not.toBeInTheDocument();
+  });
+
+  it("does not miss a hec-case-synced event that fires before the async draft/poc load resolves (review patch)", async () => {
+    mockGetCase.mockResolvedValue({ offline_id: "draft-1" });
+    let resolveBuildPoC!: (value: ReturnType<typeof pocRecord>) => void;
+    mockBuildPoC.mockReturnValue(
+      new Promise((resolve) => {
+        resolveBuildPoC = resolve;
+      }),
+    );
+
+    render(<PoCPage />);
+
+    // Sync completes (and the event fires) WHILE buildPoC is still pending — i.e. before
+    // `poc` state is set. The draftId ("draft-1" here) is known synchronously from mount,
+    // independent of how long the async draft/poc chain takes.
+    fireEvent(
+      window,
+      new CustomEvent("hec-case-synced", {
+        detail: { offline_id: "draft-1", canonical_id: "HEC-2026-0042" },
+      }),
+    );
+
+    resolveBuildPoC(pocRecord());
+
+    expect(await screen.findByText("HEC-2026-0042")).toBeInTheDocument();
   });
 });

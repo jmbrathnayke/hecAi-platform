@@ -221,10 +221,17 @@ def _sync_one(cur, item: dict, officer_id: str) -> dict:
     )
     row = cur.fetchone()
     if row is None:
-        # Lost the race — return the winner's canonical id (idempotent).
-        cur.execute("SELECT canonical_id FROM cases WHERE offline_id = %s", (offline_id,))
+        # Lost the race — this IS the genuine concurrent-collision scenario (two requests
+        # for the same offline_id racing each other); run the same collision check as the
+        # fast path so a true collision here isn't silently skipped.
+        cur.execute(
+            "SELECT id, canonical_id, damage_category, gps_lat, gps_lng, "
+            "submitter_identity_hash, officer_id FROM cases WHERE offline_id = %s",
+            (offline_id,),
+        )
         won = cur.fetchone()
-        return {"offline_id": offline_id, "canonical_id": won[0], "inserted": False}
+        _log_uuid_collision_if_content_differs(cur, won, item, officer_id)
+        return {"offline_id": offline_id, "canonical_id": won[1], "inserted": False}
 
     case_id = row[0]
     cur.execute(
