@@ -118,6 +118,13 @@ export async function runSync(jwtToken: string): Promise<void> {
             });
             await deleteSyncQueueItem(item.id);
             await recordLastSyncedNow();
+            // Story 4.3: let an already-open PoC page pick up the canonical id live,
+            // without waiting for a reload.
+            window.dispatchEvent(
+              new CustomEvent("hec-case-synced", {
+                detail: { offline_id: item.offline_id, canonical_id: canonicalId },
+              }),
+            );
           } else {
             // The server didn't confirm this item — record it as a failed attempt rather
             // than silently dropping it (a partial-batch response must not look like success).
