@@ -65,6 +65,18 @@ def submit_case():
             return jsonify({"error": "forbidden"}), 403
         officer_id = sub
 
+    # Citizen ownership (Story 4.0, NFR-3.2). On the non-officer path, link the case to the
+    # authenticated citizen's Supabase UID (from the verified JWT `sub`, NEVER the body). This
+    # endpoint already requires a valid JWT, so there is no anonymous online submit; a staff token
+    # here (officer/admin not using the officer-assisted flag) is not a citizen and leaves it NULL.
+    citizen_id = None
+    if not submitted_by_officer:
+        meta = claims.get("user_metadata", {})
+        role = meta.get("role") if isinstance(meta, dict) else None
+        sub = claims.get("sub")
+        if sub and role not in ("officer", "admin"):
+            citizen_id = sub
+
     # Defensive type-coercion on attacker-controllable JSON.
     gps = body.get("gps")
     if not isinstance(gps, dict):
@@ -97,8 +109,8 @@ def submit_case():
                     """INSERT INTO cases
                          (offline_id, canonical_id, damage_category,
                           gps_lat, gps_lng, submitter_identity_hash,
-                          officer_id, submitted_by_officer)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                          officer_id, submitted_by_officer, citizen_id)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                        ON CONFLICT (offline_id) DO NOTHING
                        RETURNING id""",
                     (
@@ -110,6 +122,7 @@ def submit_case():
                         body.get("submitter_identity_hash"),
                         officer_id,
                         submitted_by_officer,
+                        citizen_id,
                     ),
                 )
                 row = cur.fetchone()

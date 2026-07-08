@@ -90,5 +90,28 @@
       "Approved": "Approved",
       "Rejected": "Rejected"
     }
+  },
+  "login": {
+    "title": "Sign in",
+    "subtitle": "Sign in to see all of your reports in one place. You can also report without an account.",
+    "email": "Email address",
+    "emailPlaceholder": "you@example.com",
+    "password": "Password",
+    "signIn": "Sign in",
+    "signUp": "Create account",
+    "toggleToSignUp": "New here? Create an account",
+    "toggleToSignIn": "Already have an account? Sign in",
+    "signInError": "Couldn’t sign in. Check your details and try again.",
+    "signUpError": "Couldn’t create your account. Please try again.",
+    "networkError": "Couldn’t reach the sign-in service. Please try again.",
+    "checkEmail": "Almost done — check your email to confirm your account."
+  },
+  "myCases": {
+    "title": "My Cases",
+    "loading": "Loading your cases…",
+    "error": "Couldn’t load your cases.",
+    "retry": "Retry",
+    "empty": "You have no reports yet.",
+    "signOut": "Sign out"
   }
 }

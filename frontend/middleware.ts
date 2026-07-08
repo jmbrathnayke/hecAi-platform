@@ -59,6 +59,39 @@ export default async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // Citizen account routes (Story 4.0) — localized and session-protected. ONLY the "My Cases"
+  // account view is gated; report/* and status/* stay public so anonymous reporting is unaffected.
+  // Matches the locale-prefixed form (/si|/ta|/en/my-cases…); an unprefixed /my-cases is first
+  // locale-redirected by intlMiddleware, then re-enters here prefixed.
+  const citizenMatch = lowerPath.match(/^\/(si|ta|en)\/my-cases(\/|$)/);
+  if (citizenMatch) {
+    const routeLocale = citizenMatch[1];
+    let response = NextResponse.next({ request });
+    const supabase = createServerSupabaseClient({
+      getAll: () => request.cookies.getAll(),
+      setAll: (cookiesToSet) => {
+        cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
+        response = NextResponse.next({ request });
+        cookiesToSet.forEach(({ name, value, options }) => response.cookies.set(name, value, options));
+      },
+    });
+    // getUser() revalidates against Supabase Auth (never trusts an unverified cookie); fail closed.
+    let user = null;
+    try {
+      const result = await supabase.auth.getUser();
+      user = result.data.user;
+    } catch {
+      user = null;
+    }
+    if (!user) {
+      const redirect = NextResponse.redirect(new URL(`/${routeLocale}/login`, request.url));
+      response.cookies.getAll().forEach((cookie) => redirect.cookies.set(cookie));
+      return redirect;
+    }
+    // Authenticated — still run intl handling for the locale-prefixed page.
+    return intlMiddleware(request);
+  }
+
   return intlMiddleware(request);
 }
 
