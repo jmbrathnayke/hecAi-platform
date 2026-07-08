@@ -88,8 +88,12 @@ export default async function middleware(request: NextRequest) {
       response.cookies.getAll().forEach((cookie) => redirect.cookies.set(cookie));
       return redirect;
     }
-    // Authenticated — still run intl handling for the locale-prefixed page.
-    return intlMiddleware(request);
+    // Authenticated — run intl handling for the locale-prefixed page, but carry over any session
+    // cookies Supabase rotated during getUser(). Returning a bare intl response would drop them
+    // and log the citizen out near a token refresh (the Story 3.1 middleware cookie-carry lesson).
+    const intlResponse = intlMiddleware(request);
+    response.cookies.getAll().forEach((cookie) => intlResponse.cookies.set(cookie));
+    return intlResponse;
   }
 
   return intlMiddleware(request);
