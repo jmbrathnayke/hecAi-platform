@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import OfficerDashboardPage from "../page";
 
 // getAccessToken supplies the Bearer token for the authenticated fetch.
@@ -74,4 +74,20 @@ test("shows an error state when there is no session token (does not fetch)", asy
   render(<OfficerDashboardPage />);
   await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
   expect(global.fetch).not.toHaveBeenCalled();
+});
+
+test("Retry re-fetches after an error and recovers", async () => {
+  // First load fails, then the Retry re-fetch succeeds.
+  (global.fetch as jest.Mock)
+    .mockResolvedValueOnce({ ok: false, status: 500, json: async () => ({}) })
+    .mockResolvedValueOnce({ ok: true, json: async () => SAMPLE });
+
+  render(<OfficerDashboardPage />);
+  const retry = await screen.findByRole("button", { name: /retry/i });
+  expect(global.fetch).toHaveBeenCalledTimes(1);
+
+  fireEvent.click(retry);
+
+  expect(await screen.findByText("HEC-2026-0001")).toBeInTheDocument();
+  expect(global.fetch).toHaveBeenCalledTimes(2);
 });

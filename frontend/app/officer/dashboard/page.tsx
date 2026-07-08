@@ -35,6 +35,9 @@ export default function OfficerDashboardPage() {
   const [cases, setCases] = useState<OfficerCase[]>([]);
   const [state, setState] = useState<LoadState>("loading");
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
+  // Bumped by Retry to force a re-fetch — setState to the same statusFilter would be an
+  // Object.is no-op and would NOT re-run the effect, so Retry needs its own changing dep.
+  const [reloadNonce, setReloadNonce] = useState(0);
 
   useEffect(() => {
     let active = true;
@@ -67,7 +70,7 @@ export default function OfficerDashboardPage() {
     return () => {
       active = false;
     };
-  }, [statusFilter]);
+  }, [statusFilter, reloadNonce]);
 
   return (
     <main className="min-h-screen bg-surface-base px-design-4 py-design-6">
@@ -116,7 +119,7 @@ export default function OfficerDashboardPage() {
               <p className="text-body text-status-error">Couldn&apos;t load your cases.</p>
               <button
                 type="button"
-                onClick={() => setStatusFilter((f) => f)}
+                onClick={() => setReloadNonce((n) => n + 1)}
                 className="min-h-touch-target rounded-md border border-forest px-design-4 text-label font-semibold text-forest"
               >
                 Retry
