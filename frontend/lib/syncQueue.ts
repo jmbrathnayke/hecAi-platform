@@ -70,6 +70,11 @@ async function recordLastSyncedNow(): Promise<void> {
 
 let syncInFlight = false;
 
+// Per-item guard for retryItem() (2026-07-09 code review) — prevents a double-tap or a race
+// with an in-flight automatic batch (syncInFlight) from firing two concurrent POSTs for the
+// same item, which could otherwise overwrite each other's sync_attempts/status writes.
+const retryInFlight = new Set<number>();
+
 /**
  * Attempt to sync every due item (not already terminal, backoff window elapsed) in a
  * single batch request. Safe to call repeatedly and concurrently — a no-op when nothing
@@ -153,45 +158,57 @@ async function applySyncedResult(item: SyncQueueItem, canonicalId: string): Prom
 
 /**
  * Manually retry a single queue item right now (Story 4.4), bypassing its backoff window —
- * the officer is actively looking at the Sync Queue screen, so a failure here is reported
- * immediately as "failed" rather than silently rescheduled like an unattended auto-retry.
+ * the officer is actively looking at the Sync Queue screen. Guarded against firing twice for
+ * the same item (double-tap) and against racing an automatic batch already in flight
+ * (`syncInFlight`, e.g. SyncStatusBar's poll) — both would otherwise fire a second,
+ * uncoordinated POST for the same payload (2026-07-09 code review).
  * Marks the item `in_progress` optimistically for the UI, but only removes it from the queue
- * once the server has explicitly confirmed it (same confirmed-only rule as runSync).
+ * once the server has explicitly confirmed it (same confirmed-only rule as runSync). On
+ * failure, shares `recordFailedAttempt`'s backoff bookkeeping with the automatic loop (PO
+ * decision 2026-07-09) so `status: "failed"` still only ever means "exhausted MAX_ATTEMPTS" —
+ * the invariant `SyncStatusBar`'s "after 5 attempts" copy relies on.
  */
 export async function retryItem(queueId: number, jwtToken: string): Promise<void> {
-  const items = await getSyncQueue();
-  const item = items.find((i) => i.id === queueId);
-  if (!item) throw new Error("Queue item not found");
-
-  await updateSyncQueueItem(queueId, { status: "in_progress" });
+  if (syncInFlight) throw new Error("A sync is already in progress");
+  if (retryInFlight.has(queueId)) throw new Error("Retry already in progress");
+  retryInFlight.add(queueId);
 
   try {
-    const res = await fetch(`${API_BASE}/api/v1/sync/batch`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${jwtToken}`,
-      },
-      body: JSON.stringify({ cases: [item.payload] }),
-    });
+    const items = await getSyncQueue();
+    const item = items.find((i) => i.id === queueId);
+    if (!item) throw new Error("Queue item not found");
+    if (item.status === "in_progress") throw new Error("Retry already in progress");
 
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    await updateSyncQueueItem(queueId, { status: "in_progress" });
 
-    const data = (await res.json()) as {
-      results?: { offline_id: string; canonical_id: string }[];
-    };
-    const result = (data.results ?? []).find((r) => r.offline_id === item.offline_id);
-    if (!result) throw new Error("not confirmed by server");
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/sync/batch`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${jwtToken}`,
+        },
+        body: JSON.stringify({ cases: [item.payload] }),
+      });
 
-    await applySyncedResult(item, result.canonical_id);
-  } catch (err) {
-    const errorMessage = err instanceof Error ? err.message : "network error";
-    await updateSyncQueueItem(queueId, {
-      status: "failed",
-      sync_attempts: item.sync_attempts + 1,
-      last_error: errorMessage,
-    });
-    throw err;
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      const data = (await res.json()) as {
+        results?: { offline_id: string; canonical_id: string }[];
+      };
+      const result = (data.results ?? []).find((r) => r.offline_id === item.offline_id);
+      if (!result) throw new Error("not confirmed by server");
+
+      await applySyncedResult(item, result.canonical_id);
+    } catch (err) {
+      // Raw detail goes to console only (CRITICAL #3); the UI shows a sanitized message.
+      console.error(`[syncQueue] manual retry failed for item ${queueId}:`, err);
+      const errorMessage = err instanceof Error ? err.message : "network error";
+      await recordFailedAttempt(item, errorMessage);
+      throw err;
+    }
+  } finally {
+    retryInFlight.delete(queueId);
   }
 }
 

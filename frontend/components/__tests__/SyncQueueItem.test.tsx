@@ -56,3 +56,31 @@ test("omits the attempt count when sync_attempts is 0", () => {
   render(<SyncQueueItemCard item={item({ sync_attempts: 0 })} onRetry={jest.fn()} />);
   expect(screen.queryByText(/attempt/)).not.toBeInTheDocument();
 });
+
+// 2026-07-09 code review patches below.
+
+test("Retry buttons for different items have distinct accessible names", () => {
+  render(
+    <>
+      <SyncQueueItemCard item={item({ id: 1, status: "failed", payload: { damage_category: "crop" } })} onRetry={jest.fn()} />
+      <SyncQueueItemCard item={item({ id: 2, status: "failed", payload: { damage_category: "property" } })} onRetry={jest.fn()} />
+    </>,
+  );
+  expect(screen.getByRole("button", { name: "Retry crop damage report" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Retry property damage report" })).toBeInTheDocument();
+});
+
+test("renders no timestamp (and never 'Invalid Date') when timestamp_local is malformed", () => {
+  render(
+    <SyncQueueItemCard
+      item={item({ payload: { damage_category: "crop", timestamp_local: "not-a-real-date" } })}
+      onRetry={jest.fn()}
+    />,
+  );
+  expect(screen.queryByText(/invalid date/i)).not.toBeInTheDocument();
+});
+
+test("renders no timestamp line when timestamp_local is absent", () => {
+  render(<SyncQueueItemCard item={item({ payload: { damage_category: "crop" } })} onRetry={jest.fn()} />);
+  expect(screen.queryByText(/invalid date/i)).not.toBeInTheDocument();
+});

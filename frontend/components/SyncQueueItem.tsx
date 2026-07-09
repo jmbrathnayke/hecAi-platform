@@ -22,7 +22,9 @@ interface Props {
 export function SyncQueueItemCard({ item, onRetry }: Props) {
   const canRetry = item.status === "failed" || item.status === "pending";
   const damageCategory = (item.payload?.damage_category as string) ?? "Unknown";
-  const timestamp = item.payload?.timestamp_local as string | undefined;
+  const rawTimestamp = item.payload?.timestamp_local as string | undefined;
+  const parsedTimestamp = rawTimestamp ? new Date(rawTimestamp) : null;
+  const hasValidTimestamp = parsedTimestamp !== null && !Number.isNaN(parsedTimestamp.getTime());
 
   return (
     <div
@@ -36,8 +38,8 @@ export function SyncQueueItemCard({ item, onRetry }: Props) {
         </span>
       </div>
 
-      {timestamp && (
-        <p className="text-label text-ink-disabled">{new Date(timestamp).toLocaleString()}</p>
+      {hasValidTimestamp && (
+        <p className="text-label text-ink-disabled">{parsedTimestamp!.toLocaleString()}</p>
       )}
 
       {item.sync_attempts > 0 && (
@@ -56,6 +58,7 @@ export function SyncQueueItemCard({ item, onRetry }: Props) {
         <button
           type="button"
           onClick={() => onRetry(item.id)}
+          aria-label={`Retry ${damageCategory} damage report`}
           className="w-full min-h-touch-target bg-forest text-ink-on-dark text-label font-semibold rounded-md mt-design-2"
         >
           Retry
