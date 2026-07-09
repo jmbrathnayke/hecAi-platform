@@ -11,6 +11,8 @@ import jwt
 import psycopg2
 from flask import Blueprint, current_app, jsonify, request
 
+from app.infrastructure.audit import write_audit_log
+
 cases_bp = Blueprint("cases", __name__)
 
 
@@ -135,10 +137,7 @@ def submit_case():
                     return jsonify({"canonical_id": won[0], "offline_id": offline_id}), 200
 
                 case_id = row[0]
-                cur.execute(
-                    "INSERT INTO audit_log (case_id, event, actor_id) VALUES (%s, %s, %s)",
-                    (case_id, "submitted", claims.get("sub")),
-                )
+                write_audit_log(cur, case_id, "submitted", claims.get("sub"))
         return jsonify({"canonical_id": canonical_id, "offline_id": offline_id}), 201
     finally:
         conn.close()

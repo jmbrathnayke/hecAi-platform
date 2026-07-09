@@ -28,7 +28,11 @@ class FakeCursor:
         return False
 
     def execute(self, sql, params=()):
-        if "SELECT canonical_id FROM cases" in sql:
+        if "pg_advisory_xact_lock" in sql:
+            self._result = None
+        elif "SELECT hash FROM audit_log" in sql:
+            self._result = (self.store["audit"][-1][5],) if self.store["audit"] else None
+        elif "SELECT canonical_id FROM cases" in sql:
             oid = params[0]
             self._result = (self.store["cases"][oid],) if oid in self.store["cases"] else None
         elif "nextval" in sql:
