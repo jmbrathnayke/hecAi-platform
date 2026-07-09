@@ -252,6 +252,16 @@ export async function putSessionValue(
   });
 }
 
+export async function deleteSessionValue(id: string): Promise<void> {
+  const { tx, store } = await openStore("officer_session", "readwrite");
+  return new Promise<void>((resolve, reject) => {
+    store.delete(id);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  });
+}
+
 /**
  * Merge `fields` into an existing case draft (read-merge-write in one transaction).
  * Creates a minimal record if the draft does not yet exist.
