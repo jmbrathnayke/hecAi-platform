@@ -10,7 +10,7 @@
 // Offline-first (CRITICAL #3): the receipt is built from the persisted draft and shown
 // immediately; a best-effort online submit only upgrades the reference to the canonical id.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { NextIntlClientProvider } from "next-intl";
 import enMessages from "@/messages/en.json";
@@ -28,9 +28,14 @@ export default function OfficerPoCPage() {
   const [canonicalId, setCanonicalId] = useState<string | null>(null);
   const [officerId, setOfficerId] = useState<string | null>(null);
   const [nicLast4, setNicLast4] = useState<string | null>(null);
+  // Known synchronously from mount (unlike `poc`, which is only set after the async
+  // getCase/buildPoC chain resolves) — lets the sync-event listener below match a case
+  // even if the event fires before `poc` is ready (review patch: closes that race).
+  const draftIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     const draftId = getDraftId();
+    draftIdRef.current = draftId;
     if (!draftId) {
       router.replace("/officer/submit");
       return;
@@ -55,7 +60,10 @@ export default function OfficerPoCPage() {
       if (!active) return;
       setPoc(record);
       setOfficerId(typeof draft.officer_id === "string" ? draft.officer_id : null);
-      setCanonicalId(typeof draft.canonical_id === "string" ? draft.canonical_id : null);
+      // Functional update: don't clobber a canonical id the hec-case-synced listener may
+      // already have set from a sync that completed while this async chain was in flight
+      // (review patch) — the draft read here can be stale relative to that live event.
+      setCanonicalId((prev) => prev ?? (typeof draft.canonical_id === "string" ? draft.canonical_id : null));
 
       // Best-effort online submit if not yet synced (e.g. offline at submit, online now).
       // Anything that doesn't land here is queued for automatic background retry (Story
@@ -101,6 +109,21 @@ export default function OfficerPoCPage() {
       active = false;
     };
   }, [router]);
+
+  // Story 4.3: pick up a background sync that completes while this page is still open,
+  // without waiting for a reload (dispatched by lib/syncQueue.ts::runSync on success).
+  // Matches against draftIdRef (set synchronously on mount) rather than `poc` state, so a
+  // sync that completes before the async getCase/buildPoC chain resolves is never missed.
+  useEffect(() => {
+    function handleSynced(e: Event) {
+      const evt = e as CustomEvent<{ offline_id?: string; canonical_id?: string } | undefined>;
+      if (evt.detail && evt.detail.offline_id === draftIdRef.current) {
+        setCanonicalId(evt.detail.canonical_id ?? null);
+      }
+    }
+    window.addEventListener("hec-case-synced", handleSynced);
+    return () => window.removeEventListener("hec-case-synced", handleSynced);
+  }, []);
 
   if (!poc) {
     return (

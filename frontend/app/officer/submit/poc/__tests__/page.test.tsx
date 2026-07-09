@@ -167,6 +167,67 @@ describe("OfficerPoCPage", () => {
     await waitFor(() => expect(replace).toHaveBeenCalledWith("/officer/submit"));
   });
 
+  it("updates the canonical id live when a hec-case-synced event fires for this offline_id (Story 4.3)", async () => {
+    mockGetCase.mockResolvedValue({ offline_id: "draft-1", officer_id: "officer-42" });
+    mockBuildPoC.mockResolvedValue(pocRecord());
+
+    render(<OfficerPoCPage />);
+    await waitFor(() => expect(mockEnqueueCase).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText("HEC-2026-0042")).not.toBeInTheDocument();
+
+    fireEvent(
+      window,
+      new CustomEvent("hec-case-synced", {
+        detail: { offline_id: "draft-1", canonical_id: "HEC-2026-0042" },
+      }),
+    );
+
+    expect(await screen.findByText("HEC-2026-0042")).toBeInTheDocument();
+  });
+
+  it("ignores a hec-case-synced event for a different offline_id (Story 4.3)", async () => {
+    mockGetCase.mockResolvedValue({ offline_id: "draft-1", officer_id: "officer-42" });
+    mockBuildPoC.mockResolvedValue(pocRecord());
+
+    render(<OfficerPoCPage />);
+    await waitFor(() => expect(mockEnqueueCase).toHaveBeenCalledTimes(1));
+
+    fireEvent(
+      window,
+      new CustomEvent("hec-case-synced", {
+        detail: { offline_id: "some-other-offline-id", canonical_id: "HEC-2026-9999" },
+      }),
+    );
+
+    expect(screen.queryByText("HEC-2026-9999")).not.toBeInTheDocument();
+  });
+
+  it("does not miss a hec-case-synced event that fires before the async draft/poc load resolves (review patch)", async () => {
+    mockGetCase.mockResolvedValue({ offline_id: "draft-1", officer_id: "officer-42" });
+    let resolveBuildPoC!: (value: ReturnType<typeof pocRecord>) => void;
+    mockBuildPoC.mockReturnValue(
+      new Promise((resolve) => {
+        resolveBuildPoC = resolve;
+      }),
+    );
+
+    render(<OfficerPoCPage />);
+
+    // Sync completes (and the event fires) WHILE buildPoC is still pending — i.e. before
+    // `poc` state is set. The draftId ("draft-1") is known synchronously from mount,
+    // independent of how long the async draft/poc chain takes.
+    fireEvent(
+      window,
+      new CustomEvent("hec-case-synced", {
+        detail: { offline_id: "draft-1", canonical_id: "HEC-2026-0042" },
+      }),
+    );
+
+    resolveBuildPoC(pocRecord());
+
+    expect(await screen.findByText("HEC-2026-0042")).toBeInTheDocument();
+  });
+
   it("'Submit another citizen' clears the draft + NIC mask before navigating (P1/P3)", async () => {
     mockGetCase.mockResolvedValue({ offline_id: "draft-1", officer_id: "officer-42" });
     mockBuildPoC.mockResolvedValue(pocRecord());

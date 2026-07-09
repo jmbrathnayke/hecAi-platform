@@ -8,7 +8,7 @@ import {
   updateSyncQueueItem,
   type SyncQueueItem,
 } from "@/lib/indexeddb";
-import { enqueueCase, getLastSyncedAt, getQueuedItems, runSync } from "@/lib/syncQueue";
+import { enqueueCase, getLastSyncedAt, getQueuedItems, retryItem, runSync } from "@/lib/syncQueue";
 
 jest.mock("@/lib/indexeddb", () => ({
   addSyncQueueItem: jest.fn(),
@@ -50,6 +50,16 @@ beforeEach(() => {
   mockUpdateDraft.mockReset().mockResolvedValue(undefined);
   mockUpdateItem.mockReset().mockResolvedValue(undefined);
   (global.fetch as jest.Mock | undefined)?.mockReset?.();
+  // retryItem() logs raw failures to console.error (CRITICAL #3) — silence the expected noise;
+  // the dedicated logging test below asserts on this same spy.
+  jest.spyOn(console, "error").mockImplementation(() => {});
+});
+
+afterEach(() => {
+  // jest.spyOn(window, "dispatchEvent") in the tests below would otherwise keep
+  // accumulating call history across tests (spyOn on an already-spied function
+  // returns the same mock rather than a fresh one).
+  jest.restoreAllMocks();
 });
 
 describe("enqueueCase", () => {
@@ -172,6 +182,35 @@ describe("runSync", () => {
     expect(failureUpdate?.[1]).toMatchObject({ status: "failed", sync_attempts: 6 });
   });
 
+  it("dispatches a hec-case-synced event with the offline_id/canonical_id on confirmed success", async () => {
+    const due = item({ id: 5, offline_id: "off-5" });
+    mockGetQueue.mockResolvedValue([due]);
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ results: [{ offline_id: "off-5", canonical_id: "HEC-2026-0099" }] }),
+    }) as unknown as typeof fetch;
+    const dispatchSpy = jest.spyOn(window, "dispatchEvent");
+
+    await runSync("tok");
+
+    const synced = dispatchSpy.mock.calls
+      .map(([e]) => e as CustomEvent)
+      .find((e) => e.type === "hec-case-synced");
+    expect(synced).toBeDefined();
+    expect(synced?.detail).toEqual({ offline_id: "off-5", canonical_id: "HEC-2026-0099" });
+  });
+
+  it("does not dispatch hec-case-synced for an item the server didn't confirm", async () => {
+    mockGetQueue.mockResolvedValue([item({ id: 2 })]);
+    global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({ results: [] }) }) as unknown as typeof fetch;
+    const dispatchSpy = jest.spyOn(window, "dispatchEvent");
+
+    await runSync("tok");
+
+    const synced = dispatchSpy.mock.calls.map(([e]) => e as CustomEvent).find((e) => e.type === "hec-case-synced");
+    expect(synced).toBeUndefined();
+  });
+
   it("does not fire two overlapping batches when called concurrently", async () => {
     // The re-entrancy guard (module-level `syncInFlight`) is set synchronously at the top
     // of runSync, before its first await — so calling it twice back-to-back (no await in
@@ -184,5 +223,168 @@ describe("runSync", () => {
     await Promise.all([first, second]);
 
     expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("retryItem", () => {
+  it("throws when the queue item no longer exists", async () => {
+    mockGetQueue.mockResolvedValue([]);
+    await expect(retryItem(1, "tok")).rejects.toThrow("Queue item not found");
+    expect(mockUpdateItem).not.toHaveBeenCalled();
+  });
+
+  it("marks the item in_progress optimistically before the request resolves", async () => {
+    mockGetQueue.mockResolvedValue([item({ id: 7, status: "failed" })]);
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ results: [{ offline_id: "off-1", canonical_id: "HEC-2026-0100" }] }),
+    }) as unknown as typeof fetch;
+
+    await retryItem(7, "tok");
+
+    expect(mockUpdateItem.mock.calls[0]).toEqual([7, { status: "in_progress" }]);
+  });
+
+  it("sends only the single retried item's payload, not the whole queue", async () => {
+    const target = item({ id: 7, offline_id: "off-7", payload: { offline_id: "off-7" } });
+    mockGetQueue.mockResolvedValue([target, item({ id: 8, offline_id: "off-8" })]);
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ results: [{ offline_id: "off-7", canonical_id: "HEC-2026-0100" }] }),
+    }) as unknown as typeof fetch;
+
+    await retryItem(7, "tok-xyz");
+
+    const [url, init] = (global.fetch as jest.Mock).mock.calls[0];
+    expect(String(url)).toContain("/api/v1/sync/batch");
+    expect(init.headers.Authorization).toBe("Bearer tok-xyz");
+    expect(JSON.parse(init.body)).toEqual({ cases: [target.payload] });
+  });
+
+  it("on confirmed success: updates the draft, deletes the queue row, records last-synced, and dispatches hec-case-synced", async () => {
+    mockGetQueue.mockResolvedValue([item({ id: 7, offline_id: "off-7" })]);
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ results: [{ offline_id: "off-7", canonical_id: "HEC-2026-0100" }] }),
+    }) as unknown as typeof fetch;
+    const dispatchSpy = jest.spyOn(window, "dispatchEvent");
+
+    await retryItem(7, "tok");
+
+    expect(mockUpdateDraft).toHaveBeenCalledWith(
+      "off-7",
+      expect.objectContaining({ canonical_id: "HEC-2026-0100", sync_status: "synced" }),
+    );
+    expect(mockDelete).toHaveBeenCalledWith(7);
+    expect(mockPutSessionValue).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "sync_last_synced_at", synced_at: expect.any(Number) }),
+    );
+    const synced = dispatchSpy.mock.calls
+      .map(([e]) => e as CustomEvent)
+      .find((e) => e.type === "hec-case-synced");
+    expect(synced?.detail).toEqual({ offline_id: "off-7", canonical_id: "HEC-2026-0100" });
+  });
+
+  // 2026-07-09 code review, PO decision (Option B): manual-retry failures share
+  // recordFailedAttempt's backoff bookkeeping with the automatic loop, so `status: "failed"`
+  // still only ever means "exhausted MAX_ATTEMPTS" — not "failed once."
+
+  it("on HTTP error below MAX_ATTEMPTS: reschedules pending with backoff (does not go terminal) and rethrows", async () => {
+    mockGetQueue.mockResolvedValue([item({ id: 7, sync_attempts: 1 })]);
+    global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 500 }) as unknown as typeof fetch;
+
+    await expect(retryItem(7, "tok")).rejects.toThrow("HTTP 500");
+
+    const failureUpdate = mockUpdateItem.mock.calls.at(-1);
+    expect(failureUpdate?.[0]).toBe(7);
+    expect(failureUpdate?.[1]).toMatchObject({ status: "pending", sync_attempts: 2, last_error: "HTTP 500" });
+    expect(failureUpdate?.[1].next_attempt_at).toBeGreaterThan(Date.now());
+    expect(mockDelete).not.toHaveBeenCalled();
+  });
+
+  it("on network error below MAX_ATTEMPTS: reschedules pending with backoff and rethrows", async () => {
+    mockGetQueue.mockResolvedValue([item({ id: 7, sync_attempts: 0 })]);
+    global.fetch = jest.fn().mockRejectedValue(new Error("offline")) as unknown as typeof fetch;
+
+    await expect(retryItem(7, "tok")).rejects.toThrow("offline");
+
+    const failureUpdate = mockUpdateItem.mock.calls.at(-1);
+    expect(failureUpdate?.[1]).toMatchObject({ status: "pending", sync_attempts: 1, last_error: "offline" });
+  });
+
+  it("when the server doesn't confirm the item below MAX_ATTEMPTS: reschedules pending rather than silently succeeding", async () => {
+    mockGetQueue.mockResolvedValue([item({ id: 7, offline_id: "off-7", sync_attempts: 0 })]);
+    global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({ results: [] }) }) as unknown as typeof fetch;
+
+    await expect(retryItem(7, "tok")).rejects.toThrow("not confirmed by server");
+
+    const failureUpdate = mockUpdateItem.mock.calls.at(-1);
+    expect(failureUpdate?.[1]).toMatchObject({ status: "pending", sync_attempts: 1, last_error: "not confirmed by server" });
+    expect(mockDelete).not.toHaveBeenCalled();
+  });
+
+  it("once sync_attempts exceeds MAX_ATTEMPTS: goes terminal failed, matching the automatic loop's boundary", async () => {
+    mockGetQueue.mockResolvedValue([item({ id: 7, sync_attempts: 5 })]);
+    global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 500 }) as unknown as typeof fetch;
+
+    await expect(retryItem(7, "tok")).rejects.toThrow("HTTP 500");
+
+    const failureUpdate = mockUpdateItem.mock.calls.at(-1);
+    expect(failureUpdate?.[1]).toMatchObject({ status: "failed", sync_attempts: 6, last_error: "HTTP 500" });
+  });
+
+  it("logs the raw error to console on failure without rendering it (CRITICAL #3)", async () => {
+    mockGetQueue.mockResolvedValue([item({ id: 7 })]);
+    global.fetch = jest.fn().mockRejectedValue(new Error("boom")) as unknown as typeof fetch;
+
+    await expect(retryItem(7, "tok")).rejects.toThrow("boom");
+
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining("item 7"), expect.any(Error));
+  });
+
+  describe("concurrency guards (2026-07-09 code review)", () => {
+    it("rejects a second concurrent call for the same item without firing a second request", async () => {
+      mockGetQueue.mockResolvedValue([item({ id: 7 })]);
+      let resolveFetch!: (value: unknown) => void;
+      global.fetch = jest
+        .fn()
+        .mockReturnValue(new Promise((resolve) => { resolveFetch = resolve; })) as unknown as typeof fetch;
+
+      const first = retryItem(7, "tok");
+      await expect(retryItem(7, "tok")).rejects.toThrow(/already in progress/i);
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+
+      resolveFetch({ ok: true, json: async () => ({ results: [{ offline_id: "off-1", canonical_id: "HEC-X" }] }) });
+      await first;
+    });
+
+    it("rejects when the read item is already in_progress (lost the race to another caller)", async () => {
+      mockGetQueue.mockResolvedValue([item({ id: 7, status: "in_progress" })]);
+      global.fetch = jest.fn();
+
+      await expect(retryItem(7, "tok")).rejects.toThrow(/already in progress/i);
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it("rejects while an automatic sync batch (runSync) is already in flight", async () => {
+      mockGetQueue.mockResolvedValue([item({ id: 7 })]);
+      global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({ results: [] }) }) as unknown as typeof fetch;
+
+      const runSyncPromise = runSync("tok"); // sets the module's syncInFlight flag synchronously
+      await expect(retryItem(7, "tok")).rejects.toThrow(/already in progress/i);
+
+      await runSyncPromise;
+    });
+
+    it("releases the per-item guard after completion, so a later retry of the same item is allowed", async () => {
+      mockGetQueue.mockResolvedValue([item({ id: 7, offline_id: "off-7" })]);
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ results: [{ offline_id: "off-7", canonical_id: "HEC-X" }] }),
+      }) as unknown as typeof fetch;
+
+      await retryItem(7, "tok");
+      await expect(retryItem(7, "tok")).resolves.toBeUndefined();
+    });
   });
 });

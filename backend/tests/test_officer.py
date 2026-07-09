@@ -49,6 +49,7 @@ class FakeCursor:
     def __init__(self, store):
         self.store = store
         self._rows = []
+        self._result = None
 
     def __enter__(self):
         return self
@@ -57,7 +58,11 @@ class FakeCursor:
         return False
 
     def execute(self, sql, params=()):
-        if "FROM cases" in sql:
+        if "pg_advisory_xact_lock" in sql:
+            self._result = None
+        elif "SELECT hash FROM audit_log" in sql:
+            self._result = (self.store["audit"][-1]["hash"],) if self.store["audit"] else None
+        elif "FROM cases" in sql:
             officer_id, divisions, status_filter, _status2, _limit = params
             rows = []
             for c in self.store["cases"]:
@@ -72,16 +77,26 @@ class FakeCursor:
             rows.sort(key=lambda c: c["submitted_at"], reverse=True)
             self._rows = [tuple(c[col] for col in _PROJECTION) for c in rows]
         elif "INSERT INTO audit_log" in sql:
-            event, actor_id, metadata = params
             import json
+            case_id, event, actor_id, metadata, created_at, hash_, prev_hash = params
             self.store["audit"].append(
-                {"event": event, "actor_id": actor_id, "metadata": json.loads(metadata)}
+                {
+                    "case_id": case_id,
+                    "event": event,
+                    "actor_id": actor_id,
+                    "metadata": json.loads(metadata) if metadata is not None else None,
+                    "hash": hash_,
+                    "prev_hash": prev_hash,
+                }
             )
         else:  # pragma: no cover
             raise AssertionError(f"unexpected SQL: {sql}")
 
     def fetchall(self):
         return self._rows
+
+    def fetchone(self):
+        return self._result
 
 
 class FakeConn:
