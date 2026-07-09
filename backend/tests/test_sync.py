@@ -35,7 +35,11 @@ class FakeCursor:
         if "INSERT INTO cases" in sql and params[0] == self.store.get("fail_offline_id"):
             raise psycopg2.OperationalError("simulated DB failure")
 
-        if "SELECT id, canonical_id" in sql:
+        if "pg_advisory_xact_lock" in sql:
+            self._result = None
+        elif "SELECT hash FROM audit_log" in sql:
+            self._result = (self.store["audit"][-1]["hash"],) if self.store["audit"] else None
+        elif "SELECT id, canonical_id" in sql:
             oid = params[0]
             if oid in self.store["cases"]:
                 row = self.store["rows"][oid]
@@ -92,19 +96,17 @@ class FakeCursor:
                 }
                 self._result = (self.store["case_pk"],)
         elif "INSERT INTO audit_log" in sql:
-            if len(params) == 4:
-                case_id, event, actor_id, metadata = params
-                self.store["audit"].append(
-                    {
-                        "case_id": case_id,
-                        "event": event,
-                        "actor_id": actor_id,
-                        "metadata": json.loads(metadata),
-                    }
-                )
-            else:
-                case_id, event, actor_id = params
-                self.store["audit"].append({"case_id": case_id, "event": event, "actor_id": actor_id})
+            case_id, event, actor_id, metadata, created_at, hash_, prev_hash = params
+            self.store["audit"].append(
+                {
+                    "case_id": case_id,
+                    "event": event,
+                    "actor_id": actor_id,
+                    "metadata": json.loads(metadata) if metadata is not None else None,
+                    "hash": hash_,
+                    "prev_hash": prev_hash,
+                }
+            )
             self._result = None
         else:  # pragma: no cover - unexpected SQL
             raise AssertionError(f"unexpected SQL: {sql}")

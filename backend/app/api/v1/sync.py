@@ -11,12 +11,12 @@ Request/response shape mirrors POST /api/v1/cases/submit exactly (same buildCase
 item shape from frontend/lib/poc.ts), batched under {"cases": [...]}.
 """
 import datetime
-import json
 
 import psycopg2
 from flask import Blueprint, current_app, g, jsonify, request
 
 from app.api.v1.middleware.auth import require_officer
+from app.infrastructure.audit import write_audit_log
 
 sync_bp = Blueprint("sync", __name__)
 
@@ -142,20 +142,16 @@ def _log_uuid_collision_if_content_differs(cur, existing_row, item, officer_id: 
     if not differs:
         return
 
-    cur.execute(
-        "INSERT INTO audit_log (case_id, event, actor_id, metadata) VALUES (%s, %s, %s, %s::jsonb)",
-        (
-            existing_id,
-            "uuid_collision",
-            officer_id,
-            json.dumps(
-                {
-                    "offline_id": item.get("offline_id"),
-                    "existing_case_id": existing_id,
-                    "note": "content differs from stored row with same offline_id",
-                }
-            ),
-        ),
+    write_audit_log(
+        cur,
+        existing_id,
+        "uuid_collision",
+        officer_id,
+        {
+            "offline_id": item.get("offline_id"),
+            "existing_case_id": existing_id,
+            "note": "content differs from stored row with same offline_id",
+        },
     )
 
 
@@ -234,8 +230,5 @@ def _sync_one(cur, item: dict, officer_id: str) -> dict:
         return {"offline_id": offline_id, "canonical_id": won[1], "inserted": False}
 
     case_id = row[0]
-    cur.execute(
-        "INSERT INTO audit_log (case_id, event, actor_id) VALUES (%s, %s, %s)",
-        (case_id, "case_synced", officer_id),
-    )
+    write_audit_log(cur, case_id, "case_synced", officer_id)
     return {"offline_id": offline_id, "canonical_id": canonical_id, "inserted": True}

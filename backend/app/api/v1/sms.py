@@ -18,7 +18,6 @@ than the cryptographic JWT path. Acceptable for a last-resort fallback where the
 record at all; noted as a known limitation in the story.
 """
 import hashlib
-import json
 import re
 import uuid
 from datetime import datetime, timezone
@@ -27,6 +26,7 @@ import psycopg2
 from flask import Blueprint, current_app, request
 from twilio.request_validator import RequestValidator
 
+from app.infrastructure.audit import write_audit_log
 from app.infrastructure.sms.twilio_client import send_sms
 
 sms_bp = Blueprint("sms", __name__)
@@ -179,17 +179,12 @@ def inbound_sms():
                         return reply(f"Case {won[0]} recorded. Ref: {won[1]}")
 
                     case_id = row[0]
-                    cur.execute(
-                        "INSERT INTO audit_log (case_id, event, actor_id, metadata) "
-                        "VALUES (%s, %s, %s, %s::jsonb)",
-                        (
-                            case_id,
-                            "sms_submission",
-                            officer_id,
-                            json.dumps(
-                                {"submitted_via": "sms", "twilio_message_sid": message_sid}
-                            ),
-                        ),
+                    write_audit_log(
+                        cur,
+                        case_id,
+                        "sms_submission",
+                        officer_id,
+                        {"submitted_via": "sms", "twilio_message_sid": message_sid},
                     )
         finally:
             conn.close()

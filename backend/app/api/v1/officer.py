@@ -13,12 +13,11 @@ a division. officer_id / assigned_divisions come ONLY from the verified JWT (g.*
 The payload is PII-free: it never includes citizen_nic_plain or submitter_identity_hash (mirrors
 the status.py rule).
 """
-import json
-
 import psycopg2
 from flask import Blueprint, current_app, g, jsonify, request
 
 from app.api.v1.middleware.auth import require_officer
+from app.infrastructure.audit import write_audit_log
 
 officer_bp = Blueprint("officer", __name__)
 
@@ -85,14 +84,12 @@ def list_cases():
 
                     # AC5 (NFR-3.4): record the officer-action (a read) in the audit log. case_id is
                     # NULL — this event is not about a single case. ip_address lives in metadata.
-                    cur.execute(
-                        "INSERT INTO audit_log (case_id, event, actor_id, metadata) "
-                        "VALUES (NULL, %s, %s, %s::jsonb)",
-                        (
-                            "officer_viewed_cases",
-                            officer_id,
-                            json.dumps({"ip_address": _client_ip(), "result_count": len(cases)}),
-                        ),
+                    write_audit_log(
+                        cur,
+                        None,
+                        "officer_viewed_cases",
+                        officer_id,
+                        {"ip_address": _client_ip(), "result_count": len(cases)},
                     )
         finally:
             conn.close()

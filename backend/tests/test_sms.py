@@ -28,7 +28,11 @@ class FakeCursor:
         return False
 
     def execute(self, sql, params=()):
-        if "SELECT supabase_uid FROM users" in sql:
+        if "pg_advisory_xact_lock" in sql:
+            self._result = None
+        elif "SELECT hash FROM audit_log" in sql:
+            self._result = (self.store["audit"][-1]["hash"],) if self.store["audit"] else None
+        elif "SELECT supabase_uid FROM users" in sql:
             mobile = params[0]
             uid = self.store["users"].get(mobile)
             self._result = (uid,) if uid is not None else None
@@ -76,9 +80,16 @@ class FakeCursor:
                 self.store["cases_by_sid"][message_sid] = row
             self._result = (row["id"],)
         elif "INSERT INTO audit_log" in sql:
-            case_id, event, actor_id, metadata = params
+            case_id, event, actor_id, metadata, created_at, hash_, prev_hash = params
             self.store["audit"].append(
-                {"case_id": case_id, "event": event, "actor_id": actor_id, "metadata": metadata}
+                {
+                    "case_id": case_id,
+                    "event": event,
+                    "actor_id": actor_id,
+                    "metadata": metadata,
+                    "hash": hash_,
+                    "prev_hash": prev_hash,
+                }
             )
             self._result = None
         else:  # pragma: no cover - unexpected SQL
