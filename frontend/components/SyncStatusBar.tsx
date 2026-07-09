@@ -4,6 +4,7 @@
 // Drives the actual retry loop too: every poll tick (and the `online` event) calls
 // runSync() so a due item is retried even if the officer never looks at this bar.
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { getAccessToken } from "@/lib/auth";
 import { getLastSyncedAt, getQueuedItems, runSync } from "@/lib/syncQueue";
 
@@ -47,9 +48,13 @@ export function SyncStatusBar() {
   // lose the notification) on every fresh mount/reload.
   if (failedCount > 0) {
     return (
-      <div role="alert" className="sticky top-0 z-50 w-full bg-status-error px-design-4 py-design-2 text-center text-label text-ink-on-dark">
+      <Link
+        href="/officer/sync"
+        role="alert"
+        className="sticky top-0 z-50 block w-full bg-status-error px-design-4 py-design-2 text-center text-label text-ink-on-dark"
+      >
         Some reports failed to sync after 5 attempts. Tap to review.
-      </div>
+      </Link>
     );
   }
 

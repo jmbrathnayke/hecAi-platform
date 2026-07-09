@@ -8,7 +8,7 @@ import {
   updateSyncQueueItem,
   type SyncQueueItem,
 } from "@/lib/indexeddb";
-import { enqueueCase, getLastSyncedAt, getQueuedItems, runSync } from "@/lib/syncQueue";
+import { enqueueCase, getLastSyncedAt, getQueuedItems, retryItem, runSync } from "@/lib/syncQueue";
 
 jest.mock("@/lib/indexeddb", () => ({
   addSyncQueueItem: jest.fn(),
@@ -220,5 +220,97 @@ describe("runSync", () => {
     await Promise.all([first, second]);
 
     expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("retryItem", () => {
+  it("throws when the queue item no longer exists", async () => {
+    mockGetQueue.mockResolvedValue([]);
+    await expect(retryItem(1, "tok")).rejects.toThrow("Queue item not found");
+    expect(mockUpdateItem).not.toHaveBeenCalled();
+  });
+
+  it("marks the item in_progress optimistically before the request resolves", async () => {
+    mockGetQueue.mockResolvedValue([item({ id: 7, status: "failed" })]);
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ results: [{ offline_id: "off-1", canonical_id: "HEC-2026-0100" }] }),
+    }) as unknown as typeof fetch;
+
+    await retryItem(7, "tok");
+
+    expect(mockUpdateItem.mock.calls[0]).toEqual([7, { status: "in_progress" }]);
+  });
+
+  it("sends only the single retried item's payload, not the whole queue", async () => {
+    const target = item({ id: 7, offline_id: "off-7", payload: { offline_id: "off-7" } });
+    mockGetQueue.mockResolvedValue([target, item({ id: 8, offline_id: "off-8" })]);
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ results: [{ offline_id: "off-7", canonical_id: "HEC-2026-0100" }] }),
+    }) as unknown as typeof fetch;
+
+    await retryItem(7, "tok-xyz");
+
+    const [url, init] = (global.fetch as jest.Mock).mock.calls[0];
+    expect(String(url)).toContain("/api/v1/sync/batch");
+    expect(init.headers.Authorization).toBe("Bearer tok-xyz");
+    expect(JSON.parse(init.body)).toEqual({ cases: [target.payload] });
+  });
+
+  it("on confirmed success: updates the draft, deletes the queue row, records last-synced, and dispatches hec-case-synced", async () => {
+    mockGetQueue.mockResolvedValue([item({ id: 7, offline_id: "off-7" })]);
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ results: [{ offline_id: "off-7", canonical_id: "HEC-2026-0100" }] }),
+    }) as unknown as typeof fetch;
+    const dispatchSpy = jest.spyOn(window, "dispatchEvent");
+
+    await retryItem(7, "tok");
+
+    expect(mockUpdateDraft).toHaveBeenCalledWith(
+      "off-7",
+      expect.objectContaining({ canonical_id: "HEC-2026-0100", sync_status: "synced" }),
+    );
+    expect(mockDelete).toHaveBeenCalledWith(7);
+    expect(mockPutSessionValue).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "sync_last_synced_at", synced_at: expect.any(Number) }),
+    );
+    const synced = dispatchSpy.mock.calls
+      .map(([e]) => e as CustomEvent)
+      .find((e) => e.type === "hec-case-synced");
+    expect(synced?.detail).toEqual({ offline_id: "off-7", canonical_id: "HEC-2026-0100" });
+  });
+
+  it("on HTTP error: marks the item failed immediately (does not reschedule with backoff) and rethrows", async () => {
+    mockGetQueue.mockResolvedValue([item({ id: 7, sync_attempts: 1 })]);
+    global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 500 }) as unknown as typeof fetch;
+
+    await expect(retryItem(7, "tok")).rejects.toThrow("HTTP 500");
+
+    const failureUpdate = mockUpdateItem.mock.calls.at(-1);
+    expect(failureUpdate).toEqual([7, { status: "failed", sync_attempts: 2, last_error: "HTTP 500" }]);
+    expect(mockDelete).not.toHaveBeenCalled();
+  });
+
+  it("on network error: marks the item failed with the error message and rethrows", async () => {
+    mockGetQueue.mockResolvedValue([item({ id: 7, sync_attempts: 0 })]);
+    global.fetch = jest.fn().mockRejectedValue(new Error("offline")) as unknown as typeof fetch;
+
+    await expect(retryItem(7, "tok")).rejects.toThrow("offline");
+
+    const failureUpdate = mockUpdateItem.mock.calls.at(-1);
+    expect(failureUpdate).toEqual([7, { status: "failed", sync_attempts: 1, last_error: "offline" }]);
+  });
+
+  it("when the server doesn't confirm the item: marks it failed rather than silently succeeding", async () => {
+    mockGetQueue.mockResolvedValue([item({ id: 7, offline_id: "off-7", sync_attempts: 0 })]);
+    global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({ results: [] }) }) as unknown as typeof fetch;
+
+    await expect(retryItem(7, "tok")).rejects.toThrow("not confirmed by server");
+
+    const failureUpdate = mockUpdateItem.mock.calls.at(-1);
+    expect(failureUpdate).toEqual([7, { status: "failed", sync_attempts: 1, last_error: "not confirmed by server" }]);
+    expect(mockDelete).not.toHaveBeenCalled();
   });
 });

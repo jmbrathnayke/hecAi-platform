@@ -111,20 +111,7 @@ export async function runSync(jwtToken: string): Promise<void> {
         due.map(async (item) => {
           const canonicalId = canonicalByOfflineId.get(item.offline_id);
           if (canonicalId) {
-            await updateDraft(item.offline_id, {
-              canonical_id: canonicalId,
-              sync_status: "synced",
-              synced_at: Date.now(),
-            });
-            await deleteSyncQueueItem(item.id);
-            await recordLastSyncedNow();
-            // Story 4.3: let an already-open PoC page pick up the canonical id live,
-            // without waiting for a reload.
-            window.dispatchEvent(
-              new CustomEvent("hec-case-synced", {
-                detail: { offline_id: item.offline_id, canonical_id: canonicalId },
-              }),
-            );
+            await applySyncedResult(item, canonicalId);
           } else {
             // The server didn't confirm this item — record it as a failed attempt rather
             // than silently dropping it (a partial-batch response must not look like success).
@@ -142,6 +129,70 @@ export async function runSync(jwtToken: string): Promise<void> {
 
 async function handleBatchFailure(items: SyncQueueItem[], errorMessage: string): Promise<void> {
   await Promise.all(items.map((item) => recordFailedAttempt(item, errorMessage)));
+}
+
+/** Shared "confirmed synced" outcome for a single item — used by both the auto-retry batch
+ * loop above and the manual retryItem() below, so a canonical id is only ever applied and
+ * the queue row only ever removed via this one path. */
+async function applySyncedResult(item: SyncQueueItem, canonicalId: string): Promise<void> {
+  await updateDraft(item.offline_id, {
+    canonical_id: canonicalId,
+    sync_status: "synced",
+    synced_at: Date.now(),
+  });
+  await deleteSyncQueueItem(item.id);
+  await recordLastSyncedNow();
+  // Story 4.3: let an already-open PoC page pick up the canonical id live, without waiting
+  // for a reload.
+  window.dispatchEvent(
+    new CustomEvent("hec-case-synced", {
+      detail: { offline_id: item.offline_id, canonical_id: canonicalId },
+    }),
+  );
+}
+
+/**
+ * Manually retry a single queue item right now (Story 4.4), bypassing its backoff window —
+ * the officer is actively looking at the Sync Queue screen, so a failure here is reported
+ * immediately as "failed" rather than silently rescheduled like an unattended auto-retry.
+ * Marks the item `in_progress` optimistically for the UI, but only removes it from the queue
+ * once the server has explicitly confirmed it (same confirmed-only rule as runSync).
+ */
+export async function retryItem(queueId: number, jwtToken: string): Promise<void> {
+  const items = await getSyncQueue();
+  const item = items.find((i) => i.id === queueId);
+  if (!item) throw new Error("Queue item not found");
+
+  await updateSyncQueueItem(queueId, { status: "in_progress" });
+
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/sync/batch`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${jwtToken}`,
+      },
+      body: JSON.stringify({ cases: [item.payload] }),
+    });
+
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    const data = (await res.json()) as {
+      results?: { offline_id: string; canonical_id: string }[];
+    };
+    const result = (data.results ?? []).find((r) => r.offline_id === item.offline_id);
+    if (!result) throw new Error("not confirmed by server");
+
+    await applySyncedResult(item, result.canonical_id);
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : "network error";
+    await updateSyncQueueItem(queueId, {
+      status: "failed",
+      sync_attempts: item.sync_attempts + 1,
+      last_error: errorMessage,
+    });
+    throw err;
+  }
 }
 
 async function recordFailedAttempt(item: SyncQueueItem, errorMessage: string): Promise<void> {

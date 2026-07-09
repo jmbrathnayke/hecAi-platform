@@ -68,6 +68,15 @@ test("shows the max-attempts notice for a failed item, even on a fresh mount (no
   );
 });
 
+test("the max-attempts notice is a live link to the Sync Queue screen (Story 4.4)", async () => {
+  mockGetQueuedItems.mockResolvedValue([
+    { id: 1, offline_id: "a", payload: {}, status: "failed", sync_attempts: 6, queued_at: 1, next_attempt_at: 0 },
+  ]);
+  render(<SyncStatusBar />);
+  const link = await screen.findByRole("alert");
+  expect(link).toHaveAttribute("href", "/officer/sync");
+});
+
 test("calls runSync with the access token on the poll tick", async () => {
   render(<SyncStatusBar />);
   await waitFor(() => expect(mockRunSync).toHaveBeenCalledWith("tok-1"));
