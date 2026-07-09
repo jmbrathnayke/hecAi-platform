@@ -4,6 +4,7 @@
 // Drives the actual retry loop too: every poll tick (and the `online` event) calls
 // runSync() so a due item is retried even if the officer never looks at this bar.
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { getAccessToken } from "@/lib/auth";
 import { getLastSyncedAt, getQueuedItems, runSync } from "@/lib/syncQueue";
 
@@ -46,9 +47,17 @@ export function SyncStatusBar() {
   // "exceeded 5 attempts" — no need for a separate live-event flag that would reset (and
   // lose the notification) on every fresh mount/reload.
   if (failedCount > 0) {
+    // role="alert" belongs on a non-interactive live-region wrapper — putting it directly on
+    // the <Link> would override its native "link" role in the accessibility tree, hiding from
+    // screen readers that it's clickable (2026-07-09 code review).
     return (
-      <div role="alert" className="sticky top-0 z-50 w-full bg-status-error px-design-4 py-design-2 text-center text-label text-ink-on-dark">
-        Some reports failed to sync after 5 attempts. Tap to review.
+      <div role="alert" className="sticky top-0 z-50 w-full bg-status-error">
+        <Link
+          href="/officer/sync"
+          className="block w-full px-design-4 py-design-2 text-center text-label text-ink-on-dark"
+        >
+          Some reports failed to sync after 5 attempts. Tap to review.
+        </Link>
       </div>
     );
   }

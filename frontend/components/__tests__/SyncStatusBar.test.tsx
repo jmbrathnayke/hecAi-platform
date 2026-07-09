@@ -68,6 +68,19 @@ test("shows the max-attempts notice for a failed item, even on a fresh mount (no
   );
 });
 
+test("the max-attempts notice is a live link to the Sync Queue screen (Story 4.4)", async () => {
+  // 2026-07-09 code review: role="alert" belongs on the non-interactive wrapper, not the
+  // <Link> itself (ARIA misuse would strip its link semantics) — so the alert and the link
+  // are two separate, correctly-roled elements.
+  mockGetQueuedItems.mockResolvedValue([
+    { id: 1, offline_id: "a", payload: {}, status: "failed", sync_attempts: 6, queued_at: 1, next_attempt_at: 0 },
+  ]);
+  render(<SyncStatusBar />);
+  await screen.findByRole("alert");
+  const link = screen.getByRole("link", { name: /tap to review/i });
+  expect(link).toHaveAttribute("href", "/officer/sync");
+});
+
 test("calls runSync with the access token on the poll tick", async () => {
   render(<SyncStatusBar />);
   await waitFor(() => expect(mockRunSync).toHaveBeenCalledWith("tok-1"));

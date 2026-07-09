@@ -3,6 +3,7 @@
 // Fetches GET /api/v1/officer/cases with the officer's Supabase JWT; the backend scopes the list
 // to the officer (own cases OR their assigned divisions) and audits the view. PII is never sent.
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { getAccessToken } from "@/lib/auth";
 import { useOfficerSession } from "@/hooks/useOfficerSession";
 import { KNOWN_STATUSES } from "@/lib/status";
@@ -76,7 +77,12 @@ export default function OfficerDashboardPage() {
     <main className="min-h-screen bg-surface-base px-design-4 py-design-6">
       <div className="mx-auto max-w-2xl space-y-design-4">
         <header className="space-y-design-1">
-          <h1 className="text-title text-ink-primary">Officer Portal</h1>
+          <div className="flex items-center justify-between gap-design-2">
+            <h1 className="text-title text-ink-primary">Officer Portal</h1>
+            <Link href="/officer/sync" className="text-label font-semibold text-forest">
+              Sync Queue
+            </Link>
+          </div>
           {officer_id && (
             <p className="text-caption text-ink-secondary">
               {assigned_divisions.length > 0
