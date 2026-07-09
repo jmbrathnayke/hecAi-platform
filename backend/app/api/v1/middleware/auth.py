@@ -55,6 +55,55 @@ def require_officer():
     return decorator
 
 
+def require_admin():
+    """Guard admin-owned routes (Story 5.1). Mirrors require_officer()'s independent JWT
+    validation and error-code conventions; a district admin's `district_id` is never trusted
+    from the client — every admin-scoped route re-derives it here from a signature-verified
+    token."""
+    def decorator(f):
+        @functools.wraps(f)
+        def wrapper(*args, **kwargs):
+            secret = current_app.config.get("SUPABASE_JWT_SECRET")
+            if not secret:
+                return jsonify({"error": "server_misconfigured"}), 500
+
+            auth = request.headers.get("Authorization", "")
+            if not auth.startswith("Bearer "):
+                return jsonify({"error": "missing_token"}), 401
+            token = auth.split(" ", 1)[1]
+            try:
+                claims = jwt.decode(
+                    token, secret, algorithms=["HS256"], options={"verify_aud": False}
+                )
+            except jwt.ExpiredSignatureError:
+                return jsonify({"error": "token_expired"}), 401
+            except jwt.PyJWTError:
+                return jsonify({"error": "invalid_token"}), 401
+
+            metadata = claims.get("user_metadata", {})
+            if not isinstance(metadata, dict) or metadata.get("role") != "admin":
+                # An officer token (or any non-admin) must never grant admin access.
+                return jsonify({"error": "forbidden"}), 403
+
+            admin_id = claims.get("sub")
+            if not admin_id:
+                # A validly-signed token missing `sub` is malformed — don't let a None admin_id
+                # flow into district-scoped queries/audit writes.
+                return jsonify({"error": "invalid_token"}), 401
+
+            district_id = metadata.get("district_id")
+            g.admin_id = admin_id
+            # A malformed claim (array/object/number) must not flow unchecked toward future
+            # district-scoped queries/audit writes (code review 2026-07-09) — mirrors the
+            # frontend's useAdminSession coercion of the same claim.
+            g.district_id = district_id if isinstance(district_id, str) else None
+            return f(*args, **kwargs)
+
+        return wrapper
+
+    return decorator
+
+
 def require_citizen():
     """Guard citizen-owned routes (Story 4.0). Mirrors require_officer()'s independent JWT
     validation, but a citizen is a plain authenticated Supabase user with NO staff role: any
