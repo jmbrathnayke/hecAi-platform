@@ -65,6 +65,11 @@ export interface VerifyChainResult {
   broken_id: number | null;
 }
 
+// Story 5.5. escalate/request_info both keep the case in "Under Review" server-side -- there
+// is no "Escalated" status (FR-6.2's status-label list is closed) -- the distinction lives in
+// which action was taken, recorded in the audit trail, not in cases.status.
+export type AdminCaseAction = "approve" | "reject" | "request_info" | "escalate" | "mark_paid";
+
 export { UNAUTHORIZED };
 
 export async function fetchAdminCaseDetail(
@@ -93,6 +98,39 @@ export async function verifyAuditChain(
     if (res.status === 401 || res.status === 403) return UNAUTHORIZED;
     if (!res.ok) return null;
     return (await res.json()) as VerifyChainResult;
+  } catch {
+    return null;
+  }
+}
+
+// Resolves to the SAME AdminCaseDetailResponse shape as fetchAdminCaseDetail (Story 5.5 Dev
+// Notes Sec Response Shape Reuse) -- the backend returns the just-updated case/audit trail in
+// one payload, so the caller can setData() directly with no follow-up fetch. A non-2xx
+// response (validation failures like reason_required/case_closed/invalid_transition) resolves
+// to null, same as any other failure -- the caller reads response status via a thrown/caught
+// path is avoided on purpose to keep this symmetric with fetchAdminCaseDetail's own contract.
+export async function performCaseAction(
+  token: string,
+  offlineId: string,
+  action: AdminCaseAction,
+  options: { amountLkr?: number; reason?: string } = {},
+): Promise<AdminCaseDetailResponse | null | typeof UNAUTHORIZED> {
+  try {
+    const body: Record<string, unknown> = { action };
+    if (options.amountLkr !== undefined) body.amount_lkr = options.amountLkr;
+    if (options.reason !== undefined) body.reason = options.reason;
+
+    const res = await fetch(
+      `${API_BASE}/api/v1/admin/cases/${encodeURIComponent(offlineId)}/action`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify(body),
+      },
+    );
+    if (res.status === 401 || res.status === 403) return UNAUTHORIZED;
+    if (!res.ok) return null;
+    return (await res.json()) as AdminCaseDetailResponse;
   } catch {
     return null;
   }

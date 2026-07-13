@@ -11,6 +11,8 @@ import { PhotoGallery } from "@/components/admin/PhotoGallery";
 import { AIResultPanel } from "@/components/admin/AIResultPanel";
 import { CompensationPanel } from "@/components/admin/CompensationPanel";
 import { AuditTrail } from "@/components/admin/AuditTrail";
+import { CaseActionPanel } from "@/components/admin/CaseActionPanel";
+import { STATUS_STYLES } from "@/components/admin/statusVocabulary";
 
 interface CaseDetailPanelProps {
   offlineId: string;
@@ -101,7 +103,19 @@ export function CaseDetailPanel({ offlineId }: CaseDetailPanelProps) {
   return (
     <div className="space-y-design-4">
       <div className="rounded-md border border-border-default bg-surface-raised p-design-4 space-y-design-2">
-        <h2 className="text-heading-3 text-ink-primary">{c.canonical_id ?? "—"}</h2>
+        <div className="flex items-center gap-design-3">
+          <h2 className="text-heading-3 text-ink-primary">{c.canonical_id ?? "—"}</h2>
+          {/* Status (Story 5.5 Task 5) -- not previously rendered anywhere in this panel;
+              the action panel's own button set depends on it, so the admin needs to see it
+              too. Reuses the same badge styling as CaseListTable's status column. */}
+          <span
+            className={`rounded-full px-design-2 py-0.5 text-caption font-medium ${
+              STATUS_STYLES[c.status] ?? "bg-surface-tint text-ink-secondary"
+            }`}
+          >
+            {c.status}
+          </span>
+        </div>
         <dl className="grid grid-cols-2 gap-design-2 text-body">
           <div>
             <dt className="text-label text-ink-disabled">Channel</dt>
@@ -139,6 +153,13 @@ export function CaseDetailPanel({ offlineId }: CaseDetailPanelProps) {
       <AIResultPanel aiResult={ai_result} />
       <CompensationPanel compensation={compensation} />
       <AuditTrail trail={audit_trail} />
+      <CaseActionPanel
+        offlineId={offlineId}
+        status={c.status}
+        hasEstimate={compensation != null}
+        estimateAmountLkr={compensation?.amount_lkr ?? null}
+        onActionComplete={setData}
+      />
     </div>
   );
 }
