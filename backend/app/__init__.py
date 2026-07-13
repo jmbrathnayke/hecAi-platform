@@ -32,6 +32,7 @@ def create_app(config=None):
     from app.api.v1.sms import sms_bp
     from app.api.v1.citizen import citizen_bp
     from app.api.v1.sync import sync_bp
+    from app.api.v1.admin import admin_bp
 
     app.register_blueprint(health_bp, url_prefix="/api/v1")
     app.register_blueprint(cases_bp, url_prefix="/api/v1")
@@ -41,5 +42,6 @@ def create_app(config=None):
     app.register_blueprint(sms_bp, url_prefix="/api/v1")
     app.register_blueprint(citizen_bp, url_prefix="/api/v1")
     app.register_blueprint(sync_bp, url_prefix="/api/v1/sync")
+    app.register_blueprint(admin_bp, url_prefix="/api/v1")
 
     return app
