@@ -15,6 +15,8 @@ three intake channels support it) is excluded from every admin's view; there is 
 inclusive fallback the way officer's ds_division_id/officer_id OR-condition works, because
 admin has no equivalent "cases I personally touched" concept.
 """
+from datetime import date
+
 import psycopg2
 from flask import Blueprint, current_app, g, jsonify, request
 
@@ -44,6 +46,23 @@ def _int_param(args, name, default):
         return default
 
 
+def _parse_date(value):
+    """Returns a `date` for a valid ISO date/datetime string, or `_INVALID` sentinel for
+    a non-empty-but-unparseable value (distinct from `None`, which means "not supplied
+    at all" -- code review fix: malformed from/to previously reached Postgres unvalidated
+    and surfaced as an opaque 500 instead of a 400, unlike every other endpoint's
+    reject-bad-input-early convention (e.g. sync.py's _validate_item)."""
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(value[:10])
+    except ValueError:
+        return _INVALID
+
+
+_INVALID = object()
+
+
 def _build_conditions(district, args):
     """Every condition is `c.<col> = %s`-shaped so the same list works unmodified against
     every query below (all queries alias cases as `c`) -- avoids ever having to rewrite a
@@ -55,12 +74,16 @@ def _build_conditions(district, args):
     if status_filter:
         conditions.append("c.status = %s")
         params.append(status_filter)
-    from_date = args.get("from")
-    if from_date:
+    from_date = _parse_date(args.get("from"))
+    if from_date is _INVALID:
+        return None, None
+    if from_date is not None:
         conditions.append("c.submitted_at >= %s")
         params.append(from_date)
-    to_date = args.get("to")
-    if to_date:
+    to_date = _parse_date(args.get("to"))
+    if to_date is _INVALID:
+        return None, None
+    if to_date is not None:
         conditions.append("c.submitted_at <= %s")
         params.append(to_date)
     damage_type = args.get("type")
@@ -79,6 +102,12 @@ def _build_conditions(district, args):
 @require_admin()
 def list_cases():
     district = g.district_id  # verified JWT claim -- never from the request
+    if not district:
+        # Code review fix: an admin JWT missing/empty district_id previously fell through
+        # to a query that always returns zero rows, indistinguishable from "my district
+        # genuinely has no cases yet." Surface the real problem instead.
+        return jsonify({"error": "no_district_assigned"}), 403
+
     args = request.args
 
     page = max(1, _int_param(args, "page", 1))
@@ -91,6 +120,8 @@ def list_cases():
     sort_dir = "ASC" if args.get("dir", "desc").lower() == "asc" else "DESC"
 
     conditions, params = _build_conditions(district, args)
+    if conditions is None:
+        return jsonify({"error": "invalid_date"}), 400
     where = " AND ".join(conditions)
 
     try:
@@ -101,15 +132,32 @@ def list_cases():
                     cur.execute(f"SELECT COUNT(*) FROM cases c WHERE {where}", params)
                     total = cur.fetchone()[0]
 
+                    # Clamp offset to total (code review fix) -- an absurdly large `page`
+                    # otherwise still runs a full scan-and-discard OFFSET for no benefit.
+                    offset = min(offset, total)
+
                     # Explicit column list (never SELECT *) -- no submitter_identity_hash,
-                    # no citizen_nic_plain, ever (CRITICAL #3).
+                    # no citizen_nic_plain, ever (CRITICAL #3). inference_log's confidence is
+                    # pulled via a LATERAL subquery (code review fix), not a plain LEFT JOIN --
+                    # inference_log has no uniqueness constraint on case_id and is append-only
+                    # (an officer override is a second inserted row, not an update), so a plain
+                    # join could duplicate a case in `items` once a case has >1 inference_log
+                    # row -- exactly the fan-out class of bug the KPI queries were already
+                    # written to avoid (CRITICAL #4). A tiebreaker (`c.id`) is added to ORDER BY
+                    # so LIMIT/OFFSET pagination is deterministic across pages even when the
+                    # sort column has duplicate values (code review fix).
                     cur.execute(
                         f"""SELECT c.canonical_id, c.offline_id, c.damage_category, c.status,
                                    c.submitted_at, c.updated_at, il.confidence
                               FROM cases c
-                              LEFT JOIN inference_log il ON il.case_id = c.id
+                              LEFT JOIN LATERAL (
+                                SELECT confidence FROM inference_log
+                                 WHERE case_id = c.id
+                                 ORDER BY created_at DESC
+                                 LIMIT 1
+                              ) il ON true
                              WHERE {where}
-                             ORDER BY c.{sort_col} {sort_dir}
+                             ORDER BY c.{sort_col} {sort_dir}, c.id {sort_dir}
                              LIMIT %s OFFSET %s""",
                         params + [limit, offset],
                     )
@@ -141,8 +189,12 @@ def list_cases():
                     )
                     total_approved = cur.fetchone()[0]
 
+                    # COALESCE(updated_at, now()) (code review fix, matches Task 1's literal
+                    # spec): updated_at is nullable by schema -- without this, a case that
+                    # left 'Submitted' without updated_at ever being set would silently drop
+                    # out of the AVG() instead of counting as "still processing."
                     cur.execute(
-                        "SELECT AVG(EXTRACT(EPOCH FROM (updated_at - submitted_at)) / 86400) "
+                        "SELECT AVG(EXTRACT(EPOCH FROM (COALESCE(updated_at, now()) - submitted_at)) / 86400) "
                         "FROM cases WHERE district = %s AND status != 'Submitted'",
                         [district],
                     )

@@ -10,6 +10,7 @@ import { createClient } from "@/lib/supabase";
 import { getAccessToken } from "@/lib/auth";
 import {
   fetchAdminCases,
+  UNAUTHORIZED,
   type AdminCaseListResponse,
   type AdminCaseListParams,
 } from "@/lib/adminCases";
@@ -19,6 +20,12 @@ import { AdminKpiCards } from "@/components/admin/AdminKpiCards";
 
 type LoadState = "loading" | "error" | "ready";
 const PAGE_SIZE = 20;
+
+// Mirrors backend/app/api/v1/admin.py's ALLOWED_SORT (code review fix) -- without this, a
+// bookmarked/hand-edited ?sort=foo sets the UI's active-sort indicator to a non-existent
+// column while the backend silently falls back to submitted_at server-side, a desync
+// between what the UI shows and what's actually applied.
+const ALLOWED_SORT = new Set<SortColumn>(["submitted_at", "canonical_id", "damage_category", "status"]);
 
 // useSearchParams() requires a Suspense boundary (Next.js App Router) or the build fails
 // with a static-bailout error — this page has no meaningful pre-search-params content to
@@ -83,8 +90,17 @@ function AdminCasesPageContent() {
     [searchParams],
   );
   const page = Math.max(1, Number(searchParams.get("page") ?? "1") || 1);
-  const sortCol = (searchParams.get("sort") as SortColumn) || "submitted_at";
-  const sortDir = (searchParams.get("dir") as SortDirection) || "desc";
+  // Raw (undefaulted) sort param, kept alongside the resolved/whitelisted value below so
+  // handleSort can distinguish "never explicitly touched" from "explicitly cycled back
+  // here" (code review fix, AC3) -- resolving sortCol to "submitted_at" as a default made
+  // the Submission Date column indistinguishable from having been explicitly clicked back
+  // to its own default, so a fresh page load's first click on it was a no-op instead of
+  // going ascending.
+  const rawSort = searchParams.get("sort");
+  const explicitSortCol: SortColumn | null =
+    rawSort && ALLOWED_SORT.has(rawSort as SortColumn) ? (rawSort as SortColumn) : null;
+  const sortCol: SortColumn = explicitSortCol ?? "submitted_at";
+  const sortDir: SortDirection = searchParams.get("dir") === "asc" ? "asc" : "desc";
 
   const [data, setData] = useState<AdminCaseListResponse | null>(null);
   const [state, setState] = useState<LoadState>("loading");
@@ -95,12 +111,18 @@ function AdminCasesPageContent() {
     (next: Partial<AdminCaseFilters & { page: number; sort: SortColumn; dir: SortDirection }>) => {
       const qs = new URLSearchParams(searchParams.toString());
       const merged = { ...filters, page, sort: sortCol, dir: sortDir, ...next };
+      // sort/dir are only omittable as a pair when they JOINTLY equal the true default
+      // (code review fix) -- omitting `sort=submitted_at` unconditionally regardless of
+      // `dir` meant an explicit ascending sort on the default column (sort=submitted_at,
+      // dir=asc) lost its `sort` param on the next URL update, leaving only `dir=asc` in
+      // the URL, which the reader would then misinterpret as descending-on-default.
+      const sortIsDefault = merged.sort === "submitted_at" && merged.dir === "desc";
       const isDefault = (key: string, value: unknown) =>
         value === "" ||
         value == null ||
         (key === "page" && value === 1) ||
-        (key === "sort" && value === "submitted_at") ||
-        (key === "dir" && value === "desc");
+        (key === "sort" && sortIsDefault) ||
+        (key === "dir" && sortIsDefault);
       for (const [key, value] of Object.entries(merged)) {
         if (isDefault(key, value)) {
           qs.delete(key);
@@ -137,6 +159,12 @@ function AdminCasesPageContent() {
       };
       const result = await fetchAdminCases(token, params);
       if (!active) return;
+      if (result === UNAUTHORIZED) {
+        // Session actually expired -- Retry would just replay the same failing request
+        // forever, so redirect to re-authenticate instead (code review fix).
+        router.replace("/admin/login");
+        return;
+      }
       if (!result) {
         setState("error");
         return;
@@ -150,8 +178,16 @@ function AdminCasesPageContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [checked, filters.status, filters.from, filters.to, filters.type, filters.division, page, sortCol, sortDir, reloadNonce]);
 
+  // Reset the Story 5.4 seam's selection whenever filters/sort/page change (code review
+  // fix) -- otherwise a previously-selected case stays "selected" even after it's scrolled
+  // out of the current filtered/paged result set.
+  useEffect(() => {
+    setSelectedOfflineId(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters.status, filters.from, filters.to, filters.type, filters.division, page, sortCol, sortDir]);
+
   function handleSort(col: SortColumn) {
-    if (sortCol !== col) {
+    if (explicitSortCol !== col) {
       updateUrl({ sort: col, dir: "asc", page: 1 });
     } else if (sortDir === "asc") {
       updateUrl({ sort: col, dir: "desc", page: 1 });
@@ -172,6 +208,15 @@ function AdminCasesPageContent() {
   if (!checked) return null;
 
   const totalPages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1;
+
+  // Extracted (code review fix) so the desktop and mobile panes below can't drift out of
+  // sync when Story 5.4 replaces one copy and forgets the other -- previously hand-
+  // duplicated, byte-identical JSX.
+  const selectedDetailContent = (
+    <div className="rounded-md border border-border-default bg-surface-raised p-design-4 text-body text-ink-secondary">
+      Case detail coming in Story 5.4 (selected: {selectedOfflineId}).
+    </div>
+  );
 
   return (
     <main className="min-h-screen bg-surface-base px-design-4 py-design-6">
@@ -248,9 +293,7 @@ function AdminCasesPageContent() {
             {/* Right pane is a layout seam for Story 5.4's case detail view — not built here. */}
             <div className="hidden lg:block lg:w-[60%]">
               {selectedOfflineId ? (
-                <div className="rounded-md border border-border-default bg-surface-raised p-design-4 text-body text-ink-secondary">
-                  Case detail coming in Story 5.4 (selected: {selectedOfflineId}).
-                </div>
+                selectedDetailContent
               ) : (
                 <div className="rounded-md border border-dashed border-border-default p-design-4 text-body text-ink-disabled">
                   Select a case to view details.
@@ -258,13 +301,7 @@ function AdminCasesPageContent() {
               )}
             </div>
 
-            {selectedOfflineId && (
-              <div className="lg:hidden">
-                <div className="rounded-md border border-border-default bg-surface-raised p-design-4 text-body text-ink-secondary">
-                  Case detail coming in Story 5.4 (selected: {selectedOfflineId}).
-                </div>
-              </div>
-            )}
+            {selectedOfflineId && <div className="lg:hidden">{selectedDetailContent}</div>}
           </div>
         )}
       </div>

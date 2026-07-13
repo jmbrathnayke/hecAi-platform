@@ -115,14 +115,18 @@ class FakeCursor:
                 if c["status"] == "Approved"
             )
             self._result = (total,)
-        elif "AVG(EXTRACT(EPOCH FROM (updated_at" in sql:
+        elif "AVG(EXTRACT(EPOCH FROM (COALESCE(updated_at" in sql:
             (district,) = params
             non_submitted = [
                 c for c in self._district_cases(district) if c["status"] != "Submitted"
             ]
             if non_submitted:
+                # COALESCE(updated_at, now()) -- no fixture case leaves updated_at unset
+                # (see `_case`'s default), so `or c["submitted_at"]` never actually fires;
+                # kept only so a future None-updated_at fixture wouldn't crash the fake.
                 avg_seconds = sum(
-                    (c["updated_at"] - c["submitted_at"]).total_seconds() for c in non_submitted
+                    ((c["updated_at"] or c["submitted_at"]) - c["submitted_at"]).total_seconds()
+                    for c in non_submitted
                 ) / len(non_submitted)
                 self._result = (avg_seconds / 86400,)
             else:
@@ -392,3 +396,47 @@ def test_non_admin_403(client, store):
     res = client.get("/api/v1/admin/cases", headers=_auth(role="officer"))
     assert res.status_code == 403
     assert store["audit"] == []
+
+
+# --- code review fixes --------------------------------------------------------------------
+
+
+def test_no_district_assigned_returns_403_not_silent_empty_list(client, store):
+    # Code review fix: an admin JWT with no district_id claim previously fell through to a
+    # query that always returns zero rows, indistinguishable from "my district genuinely
+    # has no cases yet." Must surface a distinguishing error instead.
+    res = client.get("/api/v1/admin/cases", headers=_auth(district_id=""))
+    assert res.status_code == 403
+    assert res.get_json()["error"] == "no_district_assigned"
+    assert store["audit"] == []
+
+
+def test_invalid_from_date_returns_400_not_500(client):
+    # Code review fix: a malformed date previously reached Postgres unvalidated.
+    res = client.get("/api/v1/admin/cases?from=not-a-date", headers=_auth())
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "invalid_date"
+
+
+def test_invalid_to_date_returns_400_not_500(client):
+    res = client.get("/api/v1/admin/cases?to=not-a-date", headers=_auth())
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "invalid_date"
+
+
+def test_valid_from_to_date_still_filters_correctly(client):
+    # Regression guard alongside the two tests above -- validation must reject garbage
+    # without rejecting legitimate ISO dates.
+    res = client.get("/api/v1/admin/cases?from=2026-07-01&to=2026-07-31", headers=_auth())
+    assert res.status_code == 200
+    ids = {c["canonical_id"] for c in res.get_json()["items"]}
+    assert ids == {"HEC-2026-0001", "HEC-2026-0002"}  # excludes the 2026-06 Approved case
+
+
+def test_page_beyond_total_returns_empty_not_error(client):
+    # Code review fix: an absurdly large `page` must not error even though the offset is
+    # now clamped to `total` server-side before the paginated query runs.
+    res = client.get("/api/v1/admin/cases?page=999&limit=2", headers=_auth())
+    assert res.status_code == 200
+    assert res.get_json()["items"] == []
+    assert res.get_json()["total"] == 3

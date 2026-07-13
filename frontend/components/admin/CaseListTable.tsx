@@ -4,6 +4,7 @@
 // this list is deliberately PII-free, mirroring officer.py's "the payload is PII-free"
 // convention; case detail (Story 5.4) is where an admin with a specific case open sees more.
 import type { AdminCaseListItem } from "@/lib/adminCases";
+import { STATUS_STYLES } from "@/components/admin/statusVocabulary";
 
 export type SortColumn = "submitted_at" | "canonical_id" | "damage_category" | "status";
 export type SortDirection = "asc" | "desc";
@@ -16,16 +17,6 @@ interface CaseListTableProps {
   onSelect: (offlineId: string) => void;
   selectedOfflineId?: string | null;
 }
-
-// Only "Submitted" is reachable in real data today (Story 5.5 builds the other
-// transitions) — all 5 are styled anyway so Story 5.5 doesn't need to touch this file.
-const STATUS_STYLES: Record<string, string> = {
-  Submitted: "bg-civic-pale text-civic",
-  "Under Review": "bg-amber-pale text-amber",
-  Approved: "bg-forest-pale text-forest",
-  Rejected: "bg-status-error/10 text-status-error",
-  "Payment Processed": "bg-surface-tint text-ink-secondary",
-};
 
 const COLUMNS: { key: SortColumn | null; label: string }[] = [
   { key: "canonical_id", label: "Canonical ID" },
@@ -42,7 +33,11 @@ function formatDate(iso: string | null): string {
   return Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString();
 }
 
-function daysPending(iso: string | null): string {
+function daysPending(iso: string | null, status: string): string {
+  // Only meaningful while a case is still "Submitted" (code review fix) -- matches the
+  // backend's avg_processing_days KPI, which freezes at updated_at - submitted_at once a
+  // case leaves 'Submitted' instead of counting time after resolution.
+  if (status !== "Submitted") return "—";
   if (!iso) return "—";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "—";
@@ -82,13 +77,28 @@ export function CaseListTable({
         </tr>
       </thead>
       <tbody>
-        {cases.map((c) => {
-          const key = c.offline_id ?? c.canonical_id ?? Math.random().toString(36);
+        {cases.map((c, i) => {
+          // Array index fallback (code review fix): offline_id is UUID NOT NULL by schema
+          // (migration 002), so this branch should never run in practice -- but a key that
+          // changes every render (the old Math.random() fallback) defeats React
+          // reconciliation and forces a full remount on every re-render, making the
+          // "should never happen" case worse than a no-op.
+          const key = c.offline_id ?? c.canonical_id ?? `row-${i}`;
           const selected = !!c.offline_id && c.offline_id === selectedOfflineId;
+          const select = () => c.offline_id && onSelect(c.offline_id);
           return (
             <tr
               key={key}
-              onClick={() => c.offline_id && onSelect(c.offline_id)}
+              onClick={select}
+              tabIndex={0}
+              role="button"
+              aria-pressed={selected}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  select();
+                }
+              }}
               className={`cursor-pointer border-b border-border-default ${
                 selected ? "bg-forest-pale" : "hover:bg-surface-tint"
               }`}
@@ -115,7 +125,7 @@ export function CaseListTable({
                 {formatDate(c.submitted_at)}
               </td>
               <td className="px-design-3 py-design-2 text-ink-secondary">
-                {daysPending(c.submitted_at)}
+                {daysPending(c.submitted_at, c.status)}
               </td>
             </tr>
           );

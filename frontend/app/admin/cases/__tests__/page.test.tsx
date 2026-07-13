@@ -1,6 +1,6 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import AdminCasesPage from "../page";
-import { fetchAdminCases } from "@/lib/adminCases";
+import { fetchAdminCases, UNAUTHORIZED } from "@/lib/adminCases";
 import { getAccessToken } from "@/lib/auth";
 
 const mockReplace = jest.fn();
@@ -27,7 +27,7 @@ jest.mock("@/lib/supabase", () => ({
 }));
 
 jest.mock("@/lib/auth", () => ({ getAccessToken: jest.fn() }));
-jest.mock("@/lib/adminCases", () => ({ fetchAdminCases: jest.fn() }));
+jest.mock("@/lib/adminCases", () => ({ fetchAdminCases: jest.fn(), UNAUTHORIZED: "unauthorized" }));
 
 const mockGetAccessToken = getAccessToken as jest.Mock;
 const mockFetchAdminCases = fetchAdminCases as jest.Mock;
@@ -257,4 +257,88 @@ test("no results for the current filters shows an empty-state message, not an er
   mockFetchAdminCases.mockResolvedValue(makeResponse({ items: [], total: 0 }));
   render(<AdminCasesPage />);
   expect(await screen.findByText(/no cases match your current filters/i)).toBeInTheDocument();
+});
+
+// --- code review fixes -------------------------------------------------------------------
+
+test("clicking Submission Date on a fresh page load sorts ascending, not a no-op (AC3 code review fix)", async () => {
+  // Regression guard for the exact bug the review caught: sortCol defaulted to
+  // "submitted_at" even with no explicit URL param, making the default column
+  // indistinguishable from "already cycled back to default" on its very first click.
+  mockAdmin();
+  render(<AdminCasesPage />);
+  await screen.findByText("HEC-2026-0001");
+  screen.getByRole("button", { name: /sort by submission date/i }).click();
+  expect(mockPush).toHaveBeenCalledWith("/admin/cases?sort=submitted_at&dir=asc");
+});
+
+test("an invalid bookmarked sort param falls back to submitted_at, matching the backend's whitelist (code review fix)", async () => {
+  mockAdmin();
+  currentSearch = "sort=district"; // not in ALLOWED_SORT
+  render(<AdminCasesPage />);
+  await waitFor(() => expect(mockFetchAdminCases).toHaveBeenCalledTimes(1));
+  const [, params] = mockFetchAdminCases.mock.calls[0];
+  expect(params).toMatchObject({ sort: "submitted_at" });
+});
+
+test("a 401/403 from fetchAdminCases redirects to re-authenticate instead of a dead-end Retry (code review fix)", async () => {
+  mockAdmin();
+  mockFetchAdminCases.mockResolvedValue(UNAUTHORIZED);
+  render(<AdminCasesPage />);
+  await waitFor(() => expect(mockReplace).toHaveBeenCalledWith("/admin/login"));
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+});
+
+test("selecting a case then changing filters clears the stale Story 5.4 selection (code review fix)", async () => {
+  mockAdmin();
+  const { rerender } = render(<AdminCasesPage />);
+  await screen.findByText("HEC-2026-0001");
+  screen.getByText("HEC-2026-0001").closest("tr")!.click();
+  expect((await screen.findAllByText(/coming in story 5\.4/i)).length).toBeGreaterThanOrEqual(1);
+
+  currentSearch = "status=Approved"; // simulate a filter having been applied
+  rerender(<AdminCasesPage />);
+  await waitFor(() => expect(screen.queryByText(/coming in story 5\.4/i)).not.toBeInTheDocument());
+  expect(screen.getAllByText(/select a case to view details/i).length).toBeGreaterThanOrEqual(1);
+});
+
+test("a case row is keyboard-selectable via Enter, not mouse-only (code review fix)", async () => {
+  mockAdmin();
+  render(<AdminCasesPage />);
+  const row = (await screen.findByText("HEC-2026-0001")).closest("tr")!;
+  fireEvent.keyDown(row, { key: "Enter" });
+  expect((await screen.findAllByText(/coming in story 5\.4/i)).length).toBeGreaterThanOrEqual(1);
+});
+
+test("Days Pending shows — for a case that has left Submitted, not a stale day count (code review fix)", async () => {
+  mockAdmin();
+  mockFetchAdminCases.mockResolvedValue(
+    makeResponse({
+      items: [
+        makeItem({
+          canonical_id: "HEC-2026-0009",
+          status: "Approved",
+          submitted_at: "2020-01-01T00:00:00.000Z",
+        }),
+      ],
+    }),
+  );
+  render(<AdminCasesPage />);
+  const row = (await screen.findByText("HEC-2026-0009")).closest("tr") as HTMLTableRowElement;
+  // Column order: canonical_id, damage_category, ai_confidence, status, submitted_at,
+  // days_pending — the last cell is the one under test.
+  expect(row.cells[row.cells.length - 1]).toHaveTextContent("—");
+});
+
+test("FilterBar visibly resets after Clear Filters, not just the URL (code review fix)", async () => {
+  mockAdmin();
+  currentSearch = "status=Approved";
+  const { rerender } = render(<AdminCasesPage />);
+  await screen.findByText("HEC-2026-0001");
+  expect((screen.getByLabelText("Status") as HTMLSelectElement).value).toBe("Approved");
+
+  currentSearch = ""; // simulate router.push("/admin/cases") having navigated
+  rerender(<AdminCasesPage />);
+  await screen.findByText("HEC-2026-0001");
+  expect((screen.getByLabelText("Status") as HTMLSelectElement).value).toBe("");
 });

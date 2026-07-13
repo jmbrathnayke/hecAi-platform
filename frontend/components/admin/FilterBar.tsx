@@ -4,6 +4,8 @@
 // admin's district is their fixed RBAC scope (g.district_id, server-enforced), not a
 // user-selectable filter, correcting the older UX mockup's stale "All Districts" dropdown
 // that predates the RBAC design. Filter state lives in the URL (bookmarkable).
+import { STATUS_VALUES } from "@/components/admin/statusVocabulary";
+
 export interface AdminCaseFilters {
   status: string;
   from: string;
@@ -20,7 +22,6 @@ export const EMPTY_FILTERS: AdminCaseFilters = {
   division: "",
 };
 
-const STATUS_OPTIONS = ["Submitted", "Under Review", "Approved", "Rejected", "Payment Processed"];
 const DAMAGE_TYPE_OPTIONS = ["crop", "property", "combined"];
 
 interface FilterBarProps {
@@ -48,6 +49,11 @@ export function FilterBar({ value, onApply, onClear }: FilterBarProps) {
 
   return (
     <form
+      // Keying on a serialization of `value` forces a remount whenever the filters change
+      // externally (Clear Filters, browser back/forward) -- code review fix: these inputs
+      // are uncontrolled `defaultValue`, which React never re-applies on props changing
+      // without a remount, so the visible and actually-applied filter state could diverge.
+      key={JSON.stringify(value)}
       id={formId}
       onSubmit={handleSubmit}
       className="flex flex-wrap items-end gap-design-3"
@@ -64,7 +70,7 @@ export function FilterBar({ value, onApply, onClear }: FilterBarProps) {
           className="min-h-touch-target rounded-md border border-border-default bg-surface-raised px-design-3 text-body text-ink-primary"
         >
           <option value="">All Statuses</option>
-          {STATUS_OPTIONS.map((s) => (
+          {STATUS_VALUES.map((s) => (
             <option key={s} value={s}>
               {s}
             </option>
@@ -126,7 +132,7 @@ export function FilterBar({ value, onApply, onClear }: FilterBarProps) {
           name="division"
           type="text"
           defaultValue={value.division}
-          placeholder="Search division…"
+          placeholder="Exact division name"
           className="min-h-touch-target rounded-md border border-border-default bg-surface-raised px-design-3 text-body text-ink-primary"
         />
       </div>

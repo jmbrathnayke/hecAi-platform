@@ -40,10 +40,16 @@ export interface AdminCaseListParams {
   dir?: "asc" | "desc";
 }
 
+// Distinguishes an expired/invalid session from a generic failure (code review fix) -- a
+// 401/403 means Retry will just replay the same failing request forever; the caller should
+// redirect to re-authenticate instead, the same "fail closed" pattern already used by this
+// page's role gate.
+export const UNAUTHORIZED = "unauthorized" as const;
+
 export async function fetchAdminCases(
   token: string,
   params: AdminCaseListParams = {},
-): Promise<AdminCaseListResponse | null> {
+): Promise<AdminCaseListResponse | null | typeof UNAUTHORIZED> {
   const qs = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
     if (value !== null && value !== undefined && value !== "") qs.set(key, String(value));
@@ -54,6 +60,7 @@ export async function fetchAdminCases(
     const res = await fetch(`${API_BASE}/api/v1/admin/cases${query ? `?${query}` : ""}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
+    if (res.status === 401 || res.status === 403) return UNAUTHORIZED;
     if (!res.ok) return null;
     return (await res.json()) as AdminCaseListResponse;
   } catch {
