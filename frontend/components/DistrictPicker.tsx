@@ -11,7 +11,7 @@
 // Labels are passed in as props (not read via useTranslations internally) so this
 // component works unmodified on both the localized citizen tree (Story 2.1) and the
 // English-only officer tree (Story 3.5, FR-9.3, no next-intl provider).
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import districtReference from "@/public/data/district_reference.json";
 
 export interface DistrictSelection {
@@ -42,19 +42,39 @@ export function DistrictPicker({
   const [district, setDistrict] = useState(value?.district ?? "");
   const divisions = useMemo(() => (district ? (REFERENCE[district] ?? []) : []), [district]);
 
+  // Code review fix: `value` can change out from under us after mount (e.g. a caller
+  // reloading a saved draft, or a future "clear form" action) — resync local state
+  // instead of only reading the prop once at construction time.
+  //
+  // `lastEmitted` distinguishes an external reset from our own onChange echoing back
+  // through the parent's state. Picking a district alone calls onChange(null) (an
+  // incomplete pair) — without this guard, that null would come back around as a
+  // "value changed" signal and immediately stomp the district the user just picked.
+  const lastEmitted = useRef<DistrictSelection | null>(null);
+
+  useEffect(() => {
+    if (value === lastEmitted.current) return;
+    setDistrict(value?.district ?? "");
+  }, [value]);
+
+  function emit(next: DistrictSelection | null) {
+    lastEmitted.current = next;
+    onChange(next);
+  }
+
   function handleDistrictChange(next: string) {
     setDistrict(next);
     // Changing (or clearing) the district invalidates any previously selected division —
     // a division belongs to exactly one district, so a stale pairing must never be sent.
-    onChange(null);
+    emit(null);
   }
 
   function handleDivisionChange(next: string) {
     if (!district || !next) {
-      onChange(null);
+      emit(null);
       return;
     }
-    onChange({ district, dsDivision: next });
+    emit({ district, dsDivision: next });
   }
 
   return (
@@ -91,7 +111,11 @@ export function DistrictPicker({
           </label>
           <select
             id="district-picker-division"
-            value={value?.district === district ? value.dsDivision : ""}
+            value={
+              value?.district === district && divisions.includes(value.dsDivision)
+                ? value.dsDivision
+                : ""
+            }
             onChange={(e) => handleDivisionChange(e.target.value)}
             className="min-h-touch-target rounded-md border border-border-default bg-surface-raised px-design-3 text-body text-ink-primary"
           >

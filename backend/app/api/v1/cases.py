@@ -48,6 +48,8 @@ def submit_case():
     damage_category = body.get("damage_category")
     if not damage_category:
         return jsonify({"error": "damage_category_required"}), 400
+    if not isinstance(damage_category, str):
+        return jsonify({"error": "invalid_damage_category"}), 400
 
     # Officer-assisted submission (Story 3.5, FR-1.2). Branch on a strict-bool flag so the
     # anonymous/citizen path (flag absent or false) is completely unchanged. When set, the
@@ -93,14 +95,11 @@ def submit_case():
     # optional, additive fields; absent on every submission that predates the picker or
     # never had an AI classification step (e.g. every citizen self-service case).
     district = body.get("district")
-    if not isinstance(district, str):
-        district = None
+    district = district if isinstance(district, str) and district else None
     ds_division = body.get("ds_division")
-    if not isinstance(ds_division, str):
-        ds_division = None
+    ds_division = ds_division if isinstance(ds_division, str) and ds_division else None
     ai_severity = body.get("ai_severity")
-    if not isinstance(ai_severity, str):
-        ai_severity = None
+    ai_severity = ai_severity if isinstance(ai_severity, str) and ai_severity else None
 
     conn = _get_connection()
     try:

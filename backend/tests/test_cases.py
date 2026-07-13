@@ -165,6 +165,20 @@ def test_submit_requires_damage_category(client):
     assert res.get_json()["error"] == "damage_category_required"
 
 
+def test_submit_rejects_wrong_type_damage_category(client, store):
+    # Code review fix: a non-empty non-string (e.g. a JSON list) passed the old
+    # truthiness-only check and reached compensation._map_damage_category()'s
+    # dict.get() unguarded, raising an uncaught TypeError outside estimate_and_store's
+    # own try/except (500 instead of this endpoint's normal {"error": ...} 400 contract).
+    body = _body(damage_category=["crop"])
+    res = client.post(
+        "/api/v1/cases/submit", json=body, headers={"Authorization": f"Bearer {_token()}"}
+    )
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "invalid_damage_category"
+    assert len(store["cases"]) == 0
+
+
 def test_submit_creates_case_with_canonical_id(client, store):
     res = client.post(
         "/api/v1/cases/submit", json=_body(), headers={"Authorization": f"Bearer {_token()}"}
@@ -375,4 +389,22 @@ def test_submit_wrong_type_district_is_ignored_not_500(client, store, estimate_s
     )
     assert res.status_code == 201
     assert estimate_spy[0]["district"] is None
+    assert estimate_spy[0]["ai_severity"] is None
+
+
+def test_submit_empty_string_district_stored_as_none_not_empty_string(client, store, estimate_spy):
+    # Code review fix: "" used to pass the isinstance(str) guard unmodified, so
+    # cases.district ended up storing '' instead of NULL, and estimate_and_store
+    # received "" instead of None.
+    body = _body(district="", ds_division="", ai_severity="")
+    res = client.post(
+        "/api/v1/cases/submit", json=body,
+        headers={"Authorization": f"Bearer {_token()}"},
+    )
+    assert res.status_code == 201
+    row = store["rows"][body["offline_id"]]
+    assert row["district"] is None
+    assert row["ds_division"] is None
+    assert estimate_spy[0]["district"] is None
+    assert estimate_spy[0]["ds_division_id"] is None
     assert estimate_spy[0]["ai_severity"] is None

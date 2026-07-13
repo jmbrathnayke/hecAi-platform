@@ -509,3 +509,19 @@ def test_batch_item_wrong_type_district_is_ignored_not_500(client, store, estima
     assert res.status_code == 200
     assert estimate_spy[0]["district"] is None
     assert estimate_spy[0]["ai_severity"] is None
+
+
+def test_batch_item_empty_string_district_stored_as_none_not_empty_string(client, store, estimate_spy):
+    item = _item(
+        "11111111-1111-4111-8111-111111111111", district="", ds_division="", ai_severity="",
+    )
+    res = client.post(
+        "/api/v1/sync/batch", json={"cases": [item]}, headers=_auth(_officer_token())
+    )
+    assert res.status_code == 200
+    stored = store["rows"][item["offline_id"]]
+    assert stored["district"] is None
+    assert stored["ds_division"] is None
+    assert estimate_spy[0]["district"] is None
+    assert estimate_spy[0]["ds_division_id"] is None
+    assert estimate_spy[0]["ai_severity"] is None

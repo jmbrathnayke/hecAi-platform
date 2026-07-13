@@ -121,13 +121,33 @@ def estimate_and_store(cur, case_id, damage_category, ds_division_id, submitted_
                         district=None, ai_severity=None):
     """Best-effort: returns the stored dict on success, None on any skip/failure.
     Never raises -- a bug here must not fail the case insert/sync/sms it's
-    piggybacking on."""
+    piggybacking on. `district`/`ds_division_id`/`ai_severity` are string-or-None;
+    an empty string is treated the same as absent."""
+    district = district or None
+    ds_division_id = ds_division_id or None
+    ai_severity = ai_severity or None
+
     damage_type = _map_damage_category(damage_category)
     if damage_type is None:
         return None  # "none" (no damage) or an unrecognized category -> no claim to estimate
 
     if not is_model_available():
         logger.warning("Compensation model unavailable; skipping estimate for case %s", case_id)
+        return None
+
+    # Isolate this function's own SQL in a SAVEPOINT. `cur` is the CALLER's cursor,
+    # shared with the case INSERT + audit-log write already committed earlier in the
+    # same transaction -- a bare Python try/except here catches the exception, but a
+    # psycopg2.Error from one of THIS function's own queries still leaves the shared
+    # connection's transaction in Postgres's "aborted" state. The caller's enclosing
+    # `with conn:` block then calls commit() on exit (no exception propagated to it),
+    # and PostgreSQL silently treats COMMIT-on-aborted as a ROLLBACK -- discarding the
+    # case row and audit log too, with the API still reporting success. The SAVEPOINT
+    # confines a failure to just this function's own work.
+    try:
+        cur.execute("SAVEPOINT compensation_estimate")
+    except Exception:
+        logger.exception("Could not open savepoint for case %s; skipping estimate", case_id)
         return None
 
     try:
@@ -175,7 +195,14 @@ def estimate_and_store(cur, case_id, damage_category, ds_division_id, submitted_
              json.dumps(result["feature_values"]), result["model_version"],
              result["dataset_version"]),
         )
+        cur.execute("RELEASE SAVEPOINT compensation_estimate")
         return result
     except Exception:
         logger.exception("Compensation estimation failed for case %s", case_id)
+        try:
+            cur.execute("ROLLBACK TO SAVEPOINT compensation_estimate")
+        except Exception:
+            logger.exception(
+                "Failed to roll back to savepoint after estimation failure for case %s", case_id
+            )
         return None

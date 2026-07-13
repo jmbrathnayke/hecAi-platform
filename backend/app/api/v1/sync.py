@@ -199,14 +199,11 @@ def _sync_one(cur, item: dict, officer_id: str) -> dict:
     # District/DS-division picker (Story 5.2 Task 7) and AI severity (Task 8) -- both
     # optional, additive fields on the synced item, same shape as the one-shot submit path.
     district = item.get("district")
-    if not isinstance(district, str):
-        district = None
+    district = district if isinstance(district, str) and district else None
     ds_division = item.get("ds_division")
-    if not isinstance(ds_division, str):
-        ds_division = None
+    ds_division = ds_division if isinstance(ds_division, str) and ds_division else None
     ai_severity = item.get("ai_severity")
-    if not isinstance(ai_severity, str):
-        ai_severity = None
+    ai_severity = ai_severity if isinstance(ai_severity, str) and ai_severity else None
 
     # Race-safe insert: a concurrent sync of the same offline_id yields no row.
     cur.execute(

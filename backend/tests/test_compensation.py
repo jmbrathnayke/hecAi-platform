@@ -43,11 +43,24 @@ class FakeCursor:
         self._result = None
 
     def execute(self, sql, params=()):
-        if "SELECT cap_amount_lkr FROM compensation_caps" in sql:
+        if sql == "SAVEPOINT compensation_estimate":
+            self.store.setdefault("savepoint_events", []).append("SAVEPOINT")
+            self._result = None
+        elif sql == "RELEASE SAVEPOINT compensation_estimate":
+            self.store.setdefault("savepoint_events", []).append("RELEASE")
+            self._result = None
+        elif sql == "ROLLBACK TO SAVEPOINT compensation_estimate":
+            self.store.setdefault("savepoint_events", []).append("ROLLBACK")
+            self._result = None
+        elif "SELECT cap_amount_lkr FROM compensation_caps" in sql:
             district, damage_type = params
             cap = self.store["caps"].get((district, damage_type))
             self._result = (cap,) if cap is not None else None
         elif "INSERT INTO compensation_estimates" in sql:
+            if self.store.get("fail_on_insert"):
+                # Simulates a psycopg2.Error from this module's own SQL (e.g. a
+                # constraint violation) to verify the SAVEPOINT/ROLLBACK isolation.
+                raise RuntimeError("simulated DB error on INSERT INTO compensation_estimates")
             (case_id, amount_lkr, raw_estimate_lkr, capped, feature_values_json,
              model_version, dataset_version) = params
             self.store["estimates"].append({
@@ -335,3 +348,67 @@ def test_real_bundle_degrades_gracefully_for_unknown_district(store):
     )
     assert result is not None  # AC7: must not crash, must still produce SOME estimate
     assert result["feature_values"]["district"] == "unknown"
+
+
+# --- Code review fix: empty-string district/ds_division/ai_severity coerced to None -------
+
+
+def test_empty_string_district_and_ds_division_treated_as_absent(store):
+    log_amount = np.log1p(50000.0)
+    compensation._bundle = make_bundle(gate=True, log_amount=log_amount)
+    result = compensation.estimate_and_store(
+        FakeCursor(store), 7, "property", "", SUBMITTED_AT, district="", ai_severity="",
+    )
+    assert result is not None
+    assert result["feature_values"]["district"] == "unknown"
+    assert result["feature_values"]["ds_division"] == "unknown"
+    assert result["feature_values"]["severity_multiplier"] == 1.0  # empty string -> neutral
+
+
+# --- Code review fix: SAVEPOINT isolation so a DB error here can't poison the caller's --
+# --- shared transaction (case insert + audit log must survive an estimation failure)   --
+
+
+def test_happy_path_issues_savepoint_then_release(store):
+    log_amount = np.log1p(50000.0)
+    compensation._bundle = make_bundle(gate=True, log_amount=log_amount)
+    result = compensation.estimate_and_store(
+        FakeCursor(store), 7, "property", None, SUBMITTED_AT
+    )
+    assert result is not None
+    assert store["savepoint_events"] == ["SAVEPOINT", "RELEASE"]
+
+
+def test_db_error_on_insert_rolls_back_to_savepoint_not_the_whole_transaction(store):
+    log_amount = np.log1p(50000.0)
+    compensation._bundle = make_bundle(gate=True, log_amount=log_amount)
+    store["fail_on_insert"] = True
+    result = compensation.estimate_and_store(
+        FakeCursor(store), 7, "property", None, SUBMITTED_AT
+    )
+    # Never raises out to the caller (CRITICAL #4) -- degrades to None.
+    assert result is None
+    # No partial/corrupt row was left behind.
+    assert store["estimates"] == []
+    # Crucially: ROLLBACK TO SAVEPOINT was issued, not a bare swallow -- confirms the
+    # caller's shared connection/transaction is left in a valid (not aborted) state,
+    # so its own commit() on exit won't silently discard the case row + audit log.
+    assert store["savepoint_events"] == ["SAVEPOINT", "ROLLBACK"]
+
+
+def test_savepoint_open_failure_itself_degrades_gracefully(store, monkeypatch):
+    """If even opening the SAVEPOINT fails (e.g. the connection is already in a bad
+    state), estimate_and_store must still return None rather than raise."""
+    compensation._bundle = make_bundle(gate=True, log_amount=np.log1p(1000.0))
+
+    class SavepointFailsCursor(FakeCursor):
+        def execute(self, sql, params=()):
+            if sql == "SAVEPOINT compensation_estimate":
+                raise RuntimeError("connection already aborted")
+            return super().execute(sql, params)
+
+    result = compensation.estimate_and_store(
+        SavepointFailsCursor(store), 7, "property", None, SUBMITTED_AT
+    )
+    assert result is None
+    assert store["estimates"] == []
