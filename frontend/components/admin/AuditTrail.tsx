@@ -25,6 +25,10 @@ function formatTimestamp(iso: string | null): string {
 
 export function AuditTrail({ trail }: AuditTrailProps) {
   const [verifyState, setVerifyState] = useState<VerifyState>("idle");
+  // Code review fix: the backend deliberately returns an opaque audit_log.id for the broken
+  // row (safe -- no case/district join) specifically so something actionable could be shown;
+  // the UI previously discarded it, leaving admins with a generic message they couldn't act on.
+  const [brokenId, setBrokenId] = useState<number | null>(null);
 
   async function handleVerify() {
     setVerifyState("checking");
@@ -42,6 +46,7 @@ export function AuditTrail({ trail }: AuditTrailProps) {
       setVerifyState("error");
       return;
     }
+    setBrokenId(result.broken_id);
     setVerifyState(result.valid ? "valid" : "invalid");
   }
 
@@ -66,7 +71,8 @@ export function AuditTrail({ trail }: AuditTrailProps) {
       )}
       {verifyState === "invalid" && (
         <p className="text-label text-status-error" role="alert">
-          Tampering detected in the audit log.
+          Tampering detected in the audit log
+          {brokenId != null ? ` (row #${brokenId}).` : "."}
         </p>
       )}
       {verifyState === "unauthorized" && (

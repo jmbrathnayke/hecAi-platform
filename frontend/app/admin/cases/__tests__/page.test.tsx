@@ -278,13 +278,24 @@ test("selecting a case shows the real Story 5.4 CaseDetailPanel, not a crash", a
   render(<AdminCasesPage />);
   await screen.findByText("HEC-2026-0001");
   screen.getByText("HEC-2026-0001").closest("tr")!.click();
-  // Rendered once per responsive breakpoint (desktop pane + mobile pane); jsdom applies no
-  // real CSS media queries, so both exist in the DOM simultaneously in this test — assert
-  // at least one, not exactly one. "Not yet AI-classified" is AIResultPanel's empty state,
-  // a marker only the real CaseDetailPanel (not the old placeholder) renders.
-  const matches = await screen.findAllByText(/not yet ai-classified/i);
-  expect(matches.length).toBeGreaterThanOrEqual(1);
+  // "Not yet AI-classified" is AIResultPanel's empty state, a marker only the real
+  // CaseDetailPanel (not the old placeholder) renders.
+  expect(await screen.findByText(/not yet ai-classified/i)).toBeInTheDocument();
   expect(mockFetchAdminCaseDetail).toHaveBeenCalledWith("tok-123", "off-1");
+});
+
+test("selecting a case mounts CaseDetailPanel exactly once, not once per responsive pane (code review fix)", async () => {
+  // Regression guard: the seam used to render selectedDetailContent at two separate JSX
+  // positions (a desktop `hidden lg:block` wrapper + a mobile `lg:hidden` wrapper). CSS
+  // display:none doesn't stop a component from mounting, so both silently mounted their own
+  // CaseDetailPanel instance, doubling every fetch and audit-log write per case selection.
+  mockAdmin();
+  render(<AdminCasesPage />);
+  await screen.findByText("HEC-2026-0001");
+  screen.getByText("HEC-2026-0001").closest("tr")!.click();
+  await screen.findByText(/not yet ai-classified/i);
+  expect(screen.getAllByText(/not yet ai-classified/i)).toHaveLength(1);
+  expect(mockFetchAdminCaseDetail).toHaveBeenCalledTimes(1);
 });
 
 test("no results for the current filters shows an empty-state message, not an error", async () => {

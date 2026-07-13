@@ -35,10 +35,15 @@ export function CompensationPanel({ compensation }: CompensationPanelProps) {
       <div>
         <p className="text-label text-ink-disabled">Recommended Amount</p>
         <p className="text-title font-bold text-ink-primary">{formatLkr(compensation.amount_lkr)}</p>
-        {compensation.capped && (
+        {/* Code review fix (AC3/Task 7): always show the yes/no cap status, not just when
+            capped -- previously nothing rendered for the common capped=false case, so an
+            admin couldn't tell "checked, not capped" from "field not rendered". */}
+        {compensation.capped ? (
           <p className="text-caption text-amber">
-            Cap applied — raw estimate: {formatLkr(compensation.raw_estimate_lkr)}
+            Cap applied: Yes — raw estimate: {formatLkr(compensation.raw_estimate_lkr)}
           </p>
+        ) : (
+          <p className="text-caption text-ink-disabled">Cap applied: No</p>
         )}
       </div>
 

@@ -17,8 +17,14 @@ export function AIResultPanel({ aiResult }: AIResultPanelProps) {
     );
   }
 
+  // Clamped to [0,100] (code review fix): the backend validates confidence is 0..1 at write
+  // time (inference.py), so this is defensive rather than currently reachable -- but an
+  // out-of-range value must not produce a progress bar wider than its container or a
+  // negative width.
   const confidencePct =
-    aiResult.confidence != null ? Math.round(aiResult.confidence * 100) : null;
+    aiResult.confidence != null
+      ? Math.min(100, Math.max(0, Math.round(aiResult.confidence * 100)))
+      : null;
 
   return (
     <div className="rounded-md border border-border-default bg-surface-raised p-design-4 space-y-design-2">

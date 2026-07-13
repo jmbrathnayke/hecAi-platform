@@ -126,9 +126,10 @@ test("no GPS map link when coordinates are null", async () => {
   expect(screen.queryByRole("link")).not.toBeInTheDocument();
 });
 
-test("photo placeholder is shown, not a real gallery", async () => {
+test("photo placeholder is shown, not a real gallery, with no internal doc reference (code review fix)", async () => {
   render(<CaseDetailPanel offlineId="off-1" />);
-  expect(await screen.findByText(/not yet centrally stored/i)).toBeInTheDocument();
+  expect(await screen.findByText(/photo viewing isn.?t available yet/i)).toBeInTheDocument();
+  expect(screen.queryByText(/deferred-work\.md/i)).not.toBeInTheDocument();
 });
 
 test("AI result panel shows the empty state when ai_result is null", async () => {
@@ -174,7 +175,22 @@ test("compensation panel shows amount, disclaimer, and cap note when capped", as
   render(<CaseDetailPanel offlineId="off-1" />);
   expect(await screen.findByText(/ai recommendation — admin approval required/i)).toBeInTheDocument();
   expect(screen.getByText("Rs. 100,000")).toBeInTheDocument();
-  expect(screen.getByText(/cap applied/i)).toBeInTheDocument();
+  expect(screen.getByText(/cap applied: yes/i)).toBeInTheDocument();
+});
+
+test("compensation panel explicitly shows Cap applied: No when not capped (code review fix, AC3/Task 7)", async () => {
+  mockFetchAdminCaseDetail.mockResolvedValue(
+    makeResponse({
+      compensation: {
+        amount_lkr: 45000, raw_estimate_lkr: 45000, capped: false,
+        feature_values: { damage_type: "crop", year: 2026 },
+        model_version: "rf_compensation_v2", dataset_version: "2021",
+        created_at: "2026-07-08T10:06:00.000Z",
+      },
+    }),
+  );
+  render(<CaseDetailPanel offlineId="off-1" />);
+  expect(await screen.findByText(/cap applied: no/i)).toBeInTheDocument();
 });
 
 test("audit trail renders entries chronologically as returned by the backend", async () => {
@@ -197,10 +213,11 @@ test("Verify chain integrity button reports a valid chain", async () => {
   expect(await screen.findByText(/chain intact/i)).toBeInTheDocument();
 });
 
-test("Verify chain integrity button reports tampering", async () => {
+test("Verify chain integrity button reports tampering and shows the broken row id (code review fix)", async () => {
   mockVerifyAuditChain.mockResolvedValue({ valid: false, broken_id: 3 });
   render(<CaseDetailPanel offlineId="off-1" />);
   await screen.findByText("HEC-2026-0001");
   fireEvent.click(screen.getByRole("button", { name: /verify chain integrity/i }));
   expect(await screen.findByText(/tampering detected/i)).toBeInTheDocument();
+  expect(screen.getByText(/row #3/i)).toBeInTheDocument();
 });

@@ -210,12 +210,22 @@ function AdminCasesPageContent() {
 
   const totalPages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1;
 
-  // Extracted (Story 5.3 code review fix) so the desktop and mobile panes below can't drift
-  // out of sync -- previously hand-duplicated, byte-identical JSX. Story 5.4 fills this seam
-  // with the real case detail panel instead of the old placeholder text.
+  // Story 5.4 code review fix: a single mount point, not two. selectedDetailContent used to
+  // be inserted at two separate JSX positions (a desktop `hidden lg:block` wrapper + a second
+  // `lg:hidden` wrapper) -- safe when this seam held static placeholder text (Story 5.3), but
+  // CSS `display:none` doesn't stop a component from mounting, and React doesn't dedupe by
+  // JSX object identity across tree positions. Once this seam held a real, side-effecting
+  // CaseDetailPanel, that pattern silently mounted TWO independent instances per case
+  // selection -- doubling every fetch and every admin_viewed_case_detail audit-log write.
+  // Rendered once here; the empty-state placeholder stays `hidden lg:block`-only so mobile
+  // still shows nothing when no case is selected (unchanged from before).
   const selectedDetailContent = selectedOfflineId ? (
     <CaseDetailPanel offlineId={selectedOfflineId} />
-  ) : null;
+  ) : (
+    <div className="hidden rounded-md border border-dashed border-border-default p-design-4 text-body text-ink-disabled lg:block">
+      Select a case to view details.
+    </div>
+  );
 
   return (
     <main className="min-h-screen bg-surface-base px-design-4 py-design-6">
@@ -289,18 +299,10 @@ function AdminCasesPageContent() {
               )}
             </div>
 
-            {/* Right pane: case detail (Story 5.4). */}
-            <div className="hidden lg:block lg:w-[60%]">
-              {selectedOfflineId ? (
-                selectedDetailContent
-              ) : (
-                <div className="rounded-md border border-dashed border-border-default p-design-4 text-body text-ink-disabled">
-                  Select a case to view details.
-                </div>
-              )}
-            </div>
-
-            {selectedOfflineId && <div className="lg:hidden">{selectedDetailContent}</div>}
+            {/* Right pane: case detail (Story 5.4). Single mount point (code review fix) --
+                lg:w-[60%] makes it sit beside the list on desktop and full-width, stacked
+                below the list, on mobile (flex-col parent); no separate mobile-only copy. */}
+            <div className="lg:w-[60%]">{selectedDetailContent}</div>
           </div>
         )}
       </div>

@@ -202,7 +202,8 @@ class FakeCursor:
             )
         elif "FROM cases WHERE offline_id" in sql:
             # Story 5.4 case-detail lookup: offline_id + district, both must match (a
-            # wrong-district match must miss, same as a nonexistent offline_id).
+            # wrong-district match must miss, same as a nonexistent offline_id). No
+            # submitter_identity_hash (code review fix -- dropped from the real SELECT).
             offline_id, district = params
             matches = [
                 c for c in self.store["cases"]
@@ -213,8 +214,7 @@ class FakeCursor:
                 self._result = (
                     c["canonical_id"], c["offline_id"], c["damage_category"], c["status"],
                     c.get("gps_lat"), c.get("gps_lng"), c["submitted_at"], c["updated_at"],
-                    c.get("submitted_via", "app"), c.get("submitter_identity_hash"),
-                    c.get("approved_amount"), c["id"],
+                    c.get("submitted_via", "app"), c.get("approved_amount"), c["id"],
                 )
             else:
                 self._result = None
@@ -242,11 +242,15 @@ class FakeCursor:
                 if rows else None
             )
         elif "FROM audit_log WHERE case_id" in sql:
-            # Per-case audit trail (Story 5.4 Task 1) -- chronological, capped.
+            # Per-case audit trail (Story 5.4 Task 1). Code review fix: the real query is
+            # `ORDER BY id DESC LIMIT %s` (newest N, in descending order) -- the endpoint
+            # itself reverses to ascending in Python -- NOT `ASC LIMIT %s` (which would keep
+            # the oldest N forever once a case exceeds the cap).
             case_id, limit = params
             rows = sorted(
                 (a for a in self.store["audit"] if a["case_id"] == case_id),
                 key=lambda a: a["id"],
+                reverse=True,
             )[:limit]
             self._rows = [
                 (a["id"], a["event"], a["actor_id"], a["metadata"], a["created_at"], a["hash"], a["prev_hash"])
@@ -587,14 +591,16 @@ def test_case_detail_happy_path_shape(client):
 
 def test_case_detail_never_returns_citizen_nic_plain(client):
     # CRITICAL #2: migration 009 -- citizen_nic_plain must never be returned by any read
-    # endpoint, including this more-privileged detail view.
+    # endpoint, including this more-privileged detail view. Code review fix: nor does
+    # submitter_identity_hash appear here anymore -- unused by the frontend, not required by
+    # any AC, dropped as an unnecessary exposure surface.
     res = client.get(f"/api/v1/admin/cases/{_CASE_1_OFFLINE_ID}", headers=_auth())
     body = res.get_json()
     assert "citizen_nic_plain" not in body["case"]
+    assert "submitter_identity_hash" not in body["case"]
     assert set(body["case"].keys()) == {
         "canonical_id", "offline_id", "damage_category", "status", "gps_lat", "gps_lng",
-        "submitted_at", "updated_at", "submitted_via", "submitter_identity_hash",
-        "approved_amount",
+        "submitted_at", "updated_at", "submitted_via", "approved_amount",
     }
 
 
@@ -746,3 +752,37 @@ def test_verify_chain_response_never_includes_case_id(client, store):
     _seed_audit(store, _CASE_1_ID, "submitted", "citizen-app")
     res = client.get("/api/v1/admin/audit/verify-chain", headers=_auth())
     assert "case_id" not in res.get_json()
+
+
+# --- code review fixes (Story 5.4) ----------------------------------------------------------
+
+
+def test_verify_chain_no_district_assigned_returns_403(client):
+    # Code review fix: mirror get_case_detail's guard -- an admin JWT with no district_id
+    # shouldn't be able to use ANY admin route, even one whose response carries no case data.
+    res = client.get("/api/v1/admin/audit/verify-chain", headers=_auth(district_id=""))
+    assert res.status_code == 403
+    assert res.get_json()["error"] == "no_district_assigned"
+
+
+def test_verify_chain_action_is_itself_audited(client, store):
+    # Code review fix: this security-sensitive action previously wrote no audit event at all.
+    client.get("/api/v1/admin/audit/verify-chain", headers=_auth())
+    verify_events = [a for a in store["audit"] if a["event"] == "admin_verified_chain"]
+    assert len(verify_events) == 1
+    assert verify_events[0]["actor_id"] == "admin-1"
+    assert verify_events[0]["metadata"]["valid"] is True
+
+
+def test_case_detail_audit_trail_keeps_newest_rows_not_oldest_when_over_cap(client, store):
+    # Code review fix: the original `ORDER BY id ASC LIMIT %s` kept the OLDEST rows forever
+    # once a case exceeds MAX_AUDIT_TRAIL_ROWS (200) -- permanently hiding newer events. The
+    # trail must show the most recent events, in chronological order.
+    for i in range(205):
+        _seed_audit(store, _CASE_1_ID, f"event_{i}", "admin-1")
+    res = client.get(f"/api/v1/admin/cases/{_CASE_1_OFFLINE_ID}", headers=_auth())
+    events = [e["event"] for e in res.get_json()["audit_trail"]]
+    assert len(events) == 200
+    assert events[0] == "event_5"  # oldest 5 dropped, not the newest 5
+    assert events[-1] == "event_204"  # most recent event survives
+    assert events == sorted(events, key=lambda e: int(e.split("_")[1]))  # chronological

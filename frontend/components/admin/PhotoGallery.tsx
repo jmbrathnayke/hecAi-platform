@@ -8,8 +8,9 @@
 export function PhotoGallery() {
   return (
     <div className="rounded-md border border-dashed border-border-default p-design-4 text-body text-ink-disabled">
-      Photos captured on the submitting device are not yet centrally stored — see
-      deferred-work.md for the photo-upload pipeline this needs.
+      {/* Code review fix: user-facing copy shouldn't reference an internal engineering doc
+          (deferred-work.md) that admins have no access to or knowledge of. */}
+      Photo viewing isn&apos;t available yet.
     </div>
   );
 }

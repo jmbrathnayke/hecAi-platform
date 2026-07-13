@@ -8,17 +8,17 @@ no citizen_nic_plain) -- case detail (Story 5.4) is a separate, more privileged 
 
 GET /api/v1/admin/cases/<offline_id> -- Story 5.4 case detail. Same district-scoping rule.
 Never returns citizen_nic_plain (migration 009: write-only, must never be returned by any
-read endpoint); submitter_identity_hash IS returned here (unlike the list endpoint) since
-this is the more-privileged single-case view the module docstring above already promises --
-it is a one-way SHA-256 tag, not a reversible identity, so surfacing it here is not a NIC
-disclosure.
+read endpoint) or submitter_identity_hash (code review fix: unused by the frontend, not
+required by any AC, and an unnecessary exposure surface -- see deferred-work.md).
 
 GET /api/v1/admin/audit/verify-chain -- Story 5.4 AC4. Wraps the existing, unmodified
 infrastructure/audit.py::verify_chain() over the WHOLE audit_log table. The hash chain is
 global (prev_hash links across every case/district in insertion order, not scoped to one
 case) -- see infrastructure/audit.py's own docstring -- so this deliberately is NOT filtered
 by case_id or district; a per-case "verification" would compare against the wrong prev_hash
-and be cryptographically meaningless.
+and be cryptographically meaningless. Requires g.district_id like every other admin route
+(code review fix: consistency guard, not a data-leak fix -- the response carries no case or
+district data regardless) and is itself audited (admin_verified_chain, code review fix).
 
 District-scoping convention (Story 5.3 PO-Ratified Resolution 1): admin user_metadata.
 district_id holds the REAL Sinhala district name (matching district_reference.json's
@@ -294,10 +294,13 @@ def get_case_detail(offline_id):
                     # No row found -> 404 whether the case doesn't exist or belongs to a
                     # different district (CRITICAL #5 lineage) -- never distinguish, so a
                     # wrong-district admin can't probe for another district's case IDs.
+                    # No submitter_identity_hash (code review fix): unused by the frontend,
+                    # not required by any AC, and an unnecessary exposure surface for a value
+                    # whose construction differs by intake channel (see deferred-work.md).
                     cur.execute(
                         """SELECT canonical_id, offline_id, damage_category, status,
                                   gps_lat, gps_lng, submitted_at, updated_at, submitted_via,
-                                  submitter_identity_hash, approved_amount, id
+                                  approved_amount, id
                              FROM cases WHERE offline_id = %s AND district = %s""",
                         (offline_id, district),
                     )
@@ -305,7 +308,7 @@ def get_case_detail(offline_id):
                     if row is None:
                         return jsonify({"error": "not_found"}), 404
 
-                    case_id = row[11]
+                    case_id = row[10]
 
                     # ai_result: latest inference_log row only (CRITICAL: one row carries
                     # both the original prediction AND any override fields -- see
@@ -329,13 +332,18 @@ def get_case_detail(offline_id):
                     )
                     comp_row = cur.fetchone()
 
+                    # Code review fix: the naive `ORDER BY id ASC LIMIT %s` kept the OLDEST
+                    # rows forever once a case exceeds the cap, permanently hiding newer
+                    # events -- close to a functional inversion of "show what happened to
+                    # this case." Select the most recent MAX_AUDIT_TRAIL_ROWS by id DESC,
+                    # then re-sort ascending in Python for chronological display.
                     cur.execute(
                         """SELECT id, event, actor_id, metadata, created_at, hash, prev_hash
                              FROM audit_log WHERE case_id = %s
-                            ORDER BY id ASC LIMIT %s""",
+                            ORDER BY id DESC LIMIT %s""",
                         (case_id, MAX_AUDIT_TRAIL_ROWS),
                     )
-                    audit_rows = cur.fetchall()
+                    audit_rows = list(reversed(cur.fetchall()))
 
                     # View-audit AFTER reading the trail above, so this view event doesn't
                     # appear in the trail it just rendered (cosmetic; it will show up next
@@ -360,8 +368,7 @@ def get_case_detail(offline_id):
         "submitted_at": row[6].isoformat() if row[6] else None,
         "updated_at": row[7].isoformat() if row[7] else None,
         "submitted_via": row[8],
-        "submitter_identity_hash": row[9],
-        "approved_amount": float(row[10]) if row[10] is not None else None,
+        "approved_amount": float(row[9]) if row[9] is not None else None,
     }
 
     ai_result = None
@@ -420,12 +427,24 @@ def get_case_detail(offline_id):
 @admin_bp.route("/admin/audit/verify-chain", methods=["GET"])
 @require_admin()
 def get_verify_chain():
+    # Code review fix: mirror get_case_detail's guard for consistency -- an admin account in
+    # the same "not yet provisioned" state shouldn't be able to use ANY admin route, even one
+    # whose response carries no case/district data.
+    if not g.district_id:
+        return jsonify({"error": "no_district_assigned"}), 403
+
     try:
         conn = _get_connection()
         try:
             with conn:
                 with conn.cursor() as cur:
                     valid, broken_id = verify_chain(cur)
+                    # Code review fix: this security-sensitive action was previously never
+                    # audited -- no record of who ran an integrity check or when.
+                    write_audit_log(
+                        cur, None, "admin_verified_chain", g.admin_id,
+                        {"ip_address": _client_ip(), "valid": valid, "broken_id": broken_id},
+                    )
         finally:
             conn.close()
     except psycopg2.Error:
