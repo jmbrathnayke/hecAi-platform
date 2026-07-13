@@ -70,6 +70,8 @@ class FakeCursor:
                 submitter_identity_hash,
                 officer_id,
                 submitted_by_officer,
+                district,
+                ds_division,
             ) = params
             if offline_id == self.store.get("race_offline_id") and offline_id not in self.store["cases"]:
                 # Simulate a concurrent winner committing between our fast-path SELECT
@@ -93,6 +95,8 @@ class FakeCursor:
                     "submitter_identity_hash": submitter_identity_hash,
                     "officer_id": officer_id,
                     "submitted_by_officer": submitted_by_officer,
+                    "district": district,
+                    "ds_division": ds_division,
                 }
                 self._result = (self.store["case_pk"],)
         elif "INSERT INTO audit_log" in sql:
@@ -139,7 +143,26 @@ def store():
 
 
 @pytest.fixture
-def client(monkeypatch, store):
+def estimate_spy(monkeypatch):
+    """Story 5.2: isolate sync.py's behavioral tests from the real ML model (avoids
+    coupling unrelated tests to RF inference latency/behavior) while still letting tests
+    assert exactly how estimate_and_store() was called."""
+    calls = []
+
+    def fake_estimate_and_store(cur, case_id, damage_category, ds_division_id, submitted_at,
+                                 district=None, ai_severity=None):
+        calls.append({
+            "case_id": case_id, "damage_category": damage_category,
+            "ds_division_id": ds_division_id, "district": district, "ai_severity": ai_severity,
+        })
+        return None
+
+    monkeypatch.setattr("app.api.v1.sync.compensation.estimate_and_store", fake_estimate_and_store)
+    return calls
+
+
+@pytest.fixture
+def client(monkeypatch, store, estimate_spy):
     app = create_app(
         {"TESTING": True, "DATABASE_URL": "postgresql://fake", "SUPABASE_JWT_SECRET": SECRET}
     )
@@ -434,3 +457,71 @@ def test_lost_race_branch_also_logs_collision_when_content_differs(client, store
 
     collisions = [a for a in store["audit"] if a["event"] == "uuid_collision"]
     assert len(collisions) == 1
+
+
+# --- Story 5.2: compensation estimation wired into the sync path ---
+
+
+def test_batch_insert_triggers_compensation_estimate(client, store, estimate_spy):
+    item = _item("11111111-1111-4111-8111-111111111111")
+    res = client.post(
+        "/api/v1/sync/batch", json={"cases": [item]}, headers=_auth(_officer_token())
+    )
+    assert res.status_code == 200
+    assert len(estimate_spy) == 1
+    assert estimate_spy[0]["damage_category"] == "crop"
+    assert estimate_spy[0]["district"] is None
+    assert estimate_spy[0]["ai_severity"] is None
+
+
+def test_batch_retry_does_not_re_trigger_compensation_estimate(client, store, estimate_spy):
+    item = _item("11111111-1111-4111-8111-111111111111")
+    client.post("/api/v1/sync/batch", json={"cases": [item]}, headers=_auth(_officer_token()))
+    client.post("/api/v1/sync/batch", json={"cases": [item]}, headers=_auth(_officer_token()))
+    # The fast-path (already-synced) branch returns before estimate_and_store() would run.
+    assert len(estimate_spy) == 1
+
+
+def test_batch_item_with_district_and_severity_persists_and_forwards(client, store, estimate_spy):
+    item = _item(
+        "11111111-1111-4111-8111-111111111111",
+        district="අනුරාධපුරය",
+        ds_division="ඉපලෝගම",
+        ai_severity="Severe",
+    )
+    res = client.post(
+        "/api/v1/sync/batch", json={"cases": [item]}, headers=_auth(_officer_token())
+    )
+    assert res.status_code == 200
+    stored = store["rows"][item["offline_id"]]
+    assert stored["district"] == "අනුරාධපුරය"
+    assert stored["ds_division"] == "ඉපලෝගම"
+    assert estimate_spy[0]["district"] == "අනුරාධපුරය"
+    assert estimate_spy[0]["ds_division_id"] == "ඉපලෝගම"
+    assert estimate_spy[0]["ai_severity"] == "Severe"
+
+
+def test_batch_item_wrong_type_district_is_ignored_not_500(client, store, estimate_spy):
+    bad = _item("11111111-1111-4111-8111-111111111111", district=12345, ai_severity=["Severe"])
+    res = client.post(
+        "/api/v1/sync/batch", json={"cases": [bad]}, headers=_auth(_officer_token())
+    )
+    assert res.status_code == 200
+    assert estimate_spy[0]["district"] is None
+    assert estimate_spy[0]["ai_severity"] is None
+
+
+def test_batch_item_empty_string_district_stored_as_none_not_empty_string(client, store, estimate_spy):
+    item = _item(
+        "11111111-1111-4111-8111-111111111111", district="", ds_division="", ai_severity="",
+    )
+    res = client.post(
+        "/api/v1/sync/batch", json={"cases": [item]}, headers=_auth(_officer_token())
+    )
+    assert res.status_code == 200
+    stored = store["rows"][item["offline_id"]]
+    assert stored["district"] is None
+    assert stored["ds_division"] is None
+    assert estimate_spy[0]["district"] is None
+    assert estimate_spy[0]["ds_division_id"] is None
+    assert estimate_spy[0]["ai_severity"] is None

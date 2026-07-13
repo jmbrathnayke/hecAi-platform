@@ -135,7 +135,26 @@ def sent():
 
 
 @pytest.fixture
-def client(monkeypatch, store, sent):
+def estimate_spy(monkeypatch):
+    """Story 5.2: isolate sms.py's behavioral tests from the real ML model while still
+    letting tests assert exactly how estimate_and_store() was called. SMS has no
+    district picker or AI classification, so district/ai_severity should always be None."""
+    calls = []
+
+    def fake_estimate_and_store(cur, case_id, damage_category, ds_division_id, submitted_at,
+                                 district=None, ai_severity=None):
+        calls.append({
+            "case_id": case_id, "damage_category": damage_category,
+            "ds_division_id": ds_division_id, "district": district, "ai_severity": ai_severity,
+        })
+        return None
+
+    monkeypatch.setattr("app.api.v1.sms.compensation.estimate_and_store", fake_estimate_and_store)
+    return calls
+
+
+@pytest.fixture
+def client(monkeypatch, store, sent, estimate_spy):
     app = create_app(
         {
             "TESTING": True,
@@ -280,3 +299,27 @@ def test_distinct_message_sids_create_distinct_cases(client, store):
     )
     assert len(store["cases"]) == 2
     assert store["cases"][0]["canonical_id"] != store["cases"][1]["canonical_id"]
+
+
+# --- Story 5.2: compensation estimation wired into the SMS path, always district/severity-blind ---
+
+
+def test_sms_case_triggers_compensation_estimate_with_no_district_or_severity(
+    client, store, estimate_spy
+):
+    res = client.post(
+        "/api/v1/sms/inbound", data=_form("REPORT 200012345678 7.2906,80.6337 CROP")
+    )
+    assert res.status_code == 200
+    assert len(estimate_spy) == 1
+    assert estimate_spy[0]["damage_category"] == "crop"
+    assert estimate_spy[0]["district"] is None
+    assert estimate_spy[0]["ds_division_id"] is None
+    assert estimate_spy[0]["ai_severity"] is None
+
+
+def test_sms_redelivery_does_not_re_trigger_compensation_estimate(client, store, estimate_spy):
+    form = _form("REPORT 200012345678 7.29,80.63 CROP", sid="SM-dup2")
+    client.post("/api/v1/sms/inbound", data=form)
+    client.post("/api/v1/sms/inbound", data=form)
+    assert len(estimate_spy) == 1

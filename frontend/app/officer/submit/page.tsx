@@ -28,6 +28,7 @@ import { AIResultCard } from "@/components/AIResultCard";
 import { OverrideForm } from "@/components/OverrideForm";
 import { DamageCard } from "@/components/DamageCard";
 import { OFFICER_POC_NIC_KEY, clearOfficerPocMask } from "@/lib/officerPoc";
+import { DistrictPicker, type DistrictSelection } from "@/components/DistrictPicker";
 import type { LatLng } from "@/components/MapPinPicker";
 
 const MapPinPicker = dynamic(() => import("@/components/MapPinPicker"), { ssr: false });
@@ -80,6 +81,8 @@ export default function OfficerSubmitPage() {
   // Location step.
   const [locStatus, setLocStatus] = useState<"idle" | "detecting" | "gps" | "manual">("idle");
   const [coords, setCoords] = useState<LatLng | null>(null);
+  // District/DS-division (Story 5.2 Task 7) — optional, never blocks the GPS/manual flow below.
+  const [district, setDistrict] = useState<DistrictSelection | null>(null);
 
   // Damage step.
   const [damage, setDamage] = useState<DamageCategory | null>(null);
@@ -216,6 +219,8 @@ export default function OfficerSubmitPage() {
         location_lat: loc.lat,
         location_lng: loc.lng,
         location_source: source,
+        district: district?.district,
+        ds_division: district?.dsDivision,
       });
       if (mountedRef.current) setStep("damage");
     } catch {
@@ -453,6 +458,14 @@ export default function OfficerSubmitPage() {
 
         {step === "location" && (
           <div className="space-y-design-4">
+            <DistrictPicker
+              value={district}
+              onChange={setDistrict}
+              districtLabel="District (optional)"
+              districtPlaceholder="Select district"
+              dsDivisionLabel="DS Division (optional)"
+              dsDivisionPlaceholder="Select division"
+            />
             {locStatus === "detecting" && (
               <div className="flex flex-col items-center gap-design-3 py-design-7" role="status" aria-live="polite">
                 <span className="h-8 w-8 animate-spin rounded-full border-2 border-border-default border-t-forest" aria-hidden="true" />

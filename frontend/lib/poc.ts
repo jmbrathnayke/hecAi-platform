@@ -19,6 +19,13 @@ export interface PoCRecord {
   // anonymous citizen path leaves both undefined so its request body is byte-for-byte unchanged.
   submitted_by_officer?: boolean;
   officer_id?: string;
+  // District/DS-division picker (Story 5.2 Task 7) — optional on every path, undefined
+  // (not null) when absent so the existing toPoCRecord byte-shape tests stay unaffected.
+  district?: string;
+  ds_division?: string;
+  // AI severity (Story 5.2 Task 8) — only ever present on officer-classified drafts;
+  // citizen self-service drafts have no AI classification step and never set this.
+  ai_severity?: string;
 }
 
 export interface SubmitResult {
@@ -59,6 +66,9 @@ export function toPoCRecord(
     damage_category: typeof draft.damage_category === "string" ? draft.damage_category : null,
     submitter_identity_hash: identityHash,
     sync_status: draft.sync_status === "synced" ? "synced" : "pending",
+    district: typeof draft.district === "string" ? draft.district : undefined,
+    ds_division: typeof draft.ds_division === "string" ? draft.ds_division : undefined,
+    ai_severity: typeof draft.ai_severity === "string" ? draft.ai_severity : undefined,
   };
 }
 
@@ -112,6 +122,12 @@ export function buildCasePayload(record: PoCRecord): Record<string, unknown> {
     body.submitted_by_officer = true;
     body.officer_id = record.officer_id;
   }
+  // District/DS-division (Story 5.2 Task 7) and AI severity (Task 8) — additive, only
+  // included when present so the anonymous citizen request body stays unchanged when
+  // neither was captured.
+  if (record.district) body.district = record.district;
+  if (record.ds_division) body.ds_division = record.ds_division;
+  if (record.ai_severity) body.ai_severity = record.ai_severity;
   return body;
 }
 

@@ -252,6 +252,16 @@ export async function putSessionValue(
   });
 }
 
+export async function deleteSessionValue(id: string): Promise<void> {
+  const { tx, store } = await openStore("officer_session", "readwrite");
+  return new Promise<void>((resolve, reject) => {
+    store.delete(id);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  });
+}
+
 /**
  * Merge `fields` into an existing case draft (read-merge-write in one transaction).
  * Creates a minimal record if the draft does not yet exist.
@@ -305,6 +315,21 @@ export async function saveClassification(
   classification: CaseClassification,
 ): Promise<void> {
   return updateDraft(offlineId, { ...classification });
+}
+
+// ---------------------------------------------------------------------------
+// District / DS-division picker (Story 5.2, Task 7) — additive, optional fields on the
+// case draft. Set directly via `putCase`/`updateDraft` at the two call sites that own
+// location capture (`app/[locale]/report/location/page.tsx`'s `saveAndNext`,
+// `app/officer/submit/page.tsx`'s `saveLocation`) rather than through a dedicated save
+// helper, since both already write `location_lat`/`location_lng` in the same call.
+// `district`/`ds_division` are the picker's direct output (Sinhala strings matching the
+// RF compensation model's own training vocabulary) — see `DistrictPicker`/`compensation.py`.
+// ---------------------------------------------------------------------------
+
+export interface CaseLocation {
+  district?: string;
+  ds_division?: string;
 }
 
 // ---------------------------------------------------------------------------

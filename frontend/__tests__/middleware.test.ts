@@ -69,12 +69,54 @@ test("/officerx (boundary, not an officer route) is not treated as protected", a
   expect(innerIntlMiddleware()).toHaveBeenCalled();
 });
 
-test("/admin routes are still bypassed unaffected by officer logic", async () => {
+// Admin route protection (Story 5.1). Mirrors the officer block: /admin/* is English-only (never
+// routed through next-intl) AND session-gated, /admin/login excluded, boundary-matched.
+test("unauthenticated admin route redirects to /admin/login", async () => {
+  mockGetUser.mockResolvedValue({ data: { user: null } });
   const req = new NextRequest(new URL("http://localhost/admin/cases"));
+  const res = await middleware(req);
+  expect(res.status).toBe(307);
+  expect(res.headers.get("location")).toBe("http://localhost/admin/login");
+});
+
+test("authenticated admin route passes through, never routed to next-intl (English-only)", async () => {
+  mockGetUser.mockResolvedValue({ data: { user: { id: "admin-1" } } });
+  const req = new NextRequest(new URL("http://localhost/admin/cases"));
+  const res = await middleware(req);
+  expect(res.status).toBe(200);
+  expect(res.headers.get("location")).toBeNull();
+  expect(innerIntlMiddleware()).not.toHaveBeenCalled();
+});
+
+test("/admin/login itself is not protected (no redirect loop) and is not localized", async () => {
+  const req = new NextRequest(new URL("http://localhost/admin/login"));
   const res = await middleware(req);
   expect(res.status).toBe(200);
   expect(mockGetUser).not.toHaveBeenCalled();
   expect(innerIntlMiddleware()).not.toHaveBeenCalled();
+});
+
+test("/adminx (boundary, not an admin route) is not treated as protected", async () => {
+  const req = new NextRequest(new URL("http://localhost/adminx"));
+  await middleware(req);
+  expect(mockGetUser).not.toHaveBeenCalled();
+  expect(innerIntlMiddleware()).toHaveBeenCalled();
+});
+
+test("getUser() failure on an admin route fails closed with a redirect to /admin/login", async () => {
+  mockGetUser.mockRejectedValue(new Error("network down"));
+  const req = new NextRequest(new URL("http://localhost/admin/cases"));
+  const res = await middleware(req);
+  expect(res.status).toBe(307);
+  expect(res.headers.get("location")).toBe("http://localhost/admin/login");
+});
+
+test("case-differing admin path (/Admin/cases) is still gated, not bypassed", async () => {
+  mockGetUser.mockResolvedValue({ data: { user: null } });
+  const req = new NextRequest(new URL("http://localhost/Admin/cases"));
+  const res = await middleware(req);
+  expect(res.status).toBe(307);
+  expect(res.headers.get("location")).toBe("http://localhost/admin/login");
 });
 
 test("non-admin, non-officer routes still go through next-intl middleware", async () => {
