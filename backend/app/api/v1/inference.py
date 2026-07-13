@@ -18,13 +18,13 @@ import psycopg2
 from flask import Blueprint, current_app, g, jsonify, request
 
 from app.api.v1.middleware.auth import require_officer
+from app.domain.validation import MIN_REASON_LENGTH
 
 inference_bp = Blueprint("inference", __name__)
 
 # The 3 model classes (ClassId). `combined` is a derived case-level rollup, never a per-photo
 # class, so it is NOT a valid override target.
 VALID_CATEGORIES = {"crop_damage", "no_damage", "property_damage"}
-MIN_REASON_LENGTH = 10
 
 # Known model families (AC5 metric filters on model_type). Anything else is a client error.
 VALID_MODEL_TYPES = {"mobilenetv2", "random_forest"}

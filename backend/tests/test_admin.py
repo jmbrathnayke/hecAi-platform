@@ -167,7 +167,7 @@ class FakeCursor:
             total = sum(
                 c["approved_amount"] or 0
                 for c in self._district_cases(district)
-                if c["status"] == "Approved"
+                if c["status"] in ("Approved", "Payment Processed")
             )
             self._result = (total,)
         elif "AVG(EXTRACT(EPOCH FROM (COALESCE(updated_at" in sql:
@@ -264,6 +264,32 @@ class FakeCursor:
                 (a["id"], a["case_id"], a["event"], a["actor_id"], a["metadata"], a["created_at"], a["hash"], a["prev_hash"])
                 for a in rows
             ]
+        elif "UPDATE cases SET status = 'Approved'" in sql:
+            # Story 5.5 approve action: status + approved_amount + updated_at together.
+            # RETURNING updated_at: the endpoint fetches this back to build its response
+            # without a second SELECT, so the fake must hand it back the same way.
+            amount, case_id = params
+            for c in self.store["cases"]:
+                if c["id"] == case_id:
+                    c["status"] = "Approved"
+                    c["approved_amount"] = amount
+                    c["updated_at"] = datetime(2026, 7, 13, 12, 0, 0)  # fixed "now" for tests
+                    self._result = (c["updated_at"],)
+                    break
+        elif "UPDATE cases SET status = %s, updated_at = now()" in sql:
+            # Story 5.5 reject/request_info/escalate/mark_paid: status + updated_at.
+            new_status, case_id = params
+            for c in self.store["cases"]:
+                if c["id"] == case_id:
+                    c["status"] = new_status
+                    c["updated_at"] = datetime(2026, 7, 13, 12, 0, 0)
+                    self._result = (c["updated_at"],)
+                    break
+        elif "INSERT INTO payment_authorizations" in sql:
+            case_id, amount, authorized_by = params
+            self.store["payment_authorizations"].append(
+                {"case_id": case_id, "amount_lkr": amount, "authorized_by": authorized_by}
+            )
         else:  # pragma: no cover
             raise AssertionError(f"unexpected SQL: {sql}")
 
@@ -333,6 +359,7 @@ def store():
         "audit": [],
         "inference_log": [],
         "compensation_estimates": [],
+        "payment_authorizations": [],
     }
 
 
@@ -488,6 +515,16 @@ def test_kpis_scoped_to_district_independent_of_list_filters(client):
 
 def test_total_approved_sums_approved_amount_not_ai_estimate(client):
     # CRITICAL #5 regression guard.
+    res = client.get("/api/v1/admin/cases", headers=_auth())
+    assert res.get_json()["kpis"]["total_approved_lkr"] == 50000.0
+
+
+def test_total_approved_lkr_still_counts_a_case_once_it_is_paid(client, store):
+    # Code review fix regression guard: Story 5.5's mark_paid moves a case from 'Approved' to
+    # 'Payment Processed' -- the KPI must not drop the case's approved_amount just because it
+    # was subsequently paid out.
+    case_3 = next(c for c in store["cases"] if c["id"] == 3)
+    case_3["status"] = "Payment Processed"
     res = client.get("/api/v1/admin/cases", headers=_auth())
     assert res.get_json()["kpis"]["total_approved_lkr"] == 50000.0
 
@@ -786,3 +823,222 @@ def test_case_detail_audit_trail_keeps_newest_rows_not_oldest_when_over_cap(clie
     assert events[0] == "event_5"  # oldest 5 dropped, not the newest 5
     assert events[-1] == "event_204"  # most recent event survives
     assert events == sorted(events, key=lambda e: int(e.split("_")[1]))  # chronological
+
+
+# --- case review actions (Story 5.5) --------------------------------------------------------
+
+_CASE_2_OFFLINE_ID = str(uuid.uuid5(uuid.NAMESPACE_DNS, "HEC-2026-0002"))
+_CASE_2_ID = 2
+_CASE_3_OFFLINE_ID = str(uuid.uuid5(uuid.NAMESPACE_DNS, "HEC-2026-0003"))  # fixture: Approved
+_CASE_3_ID = 3
+_CASE_4_OFFLINE_ID = str(uuid.uuid5(uuid.NAMESPACE_DNS, "HEC-2026-0004"))  # fixture: DISTRICT_B
+
+VALID_REASON = "Adjusted after re-inspecting the photos on file."  # >= 10 chars
+
+
+def _action(client, offline_id, action, **body):
+    return client.post(
+        f"/api/v1/admin/cases/{offline_id}/action",
+        headers=_auth(),
+        json={"action": action, **body},
+    )
+
+
+def test_action_approve_defaults_to_rf_estimate_when_no_amount_given(client, store):
+    store["compensation_estimates"].append(_compensation_row(_CASE_1_ID, amount_lkr=45000.0))
+    res = _action(client, _CASE_1_OFFLINE_ID, "approve")
+    assert res.status_code == 200
+    body = res.get_json()
+    assert body["case"]["status"] == "Approved"
+    assert body["case"]["approved_amount"] == 45000.0
+    assert store["payment_authorizations"] == [
+        {"case_id": _CASE_1_ID, "amount_lkr": 45000.0, "authorized_by": "admin-1"}
+    ]
+
+
+def test_action_approve_with_matching_amount_no_reason_required(client, store):
+    store["compensation_estimates"].append(_compensation_row(_CASE_1_ID, amount_lkr=45000.0))
+    res = _action(client, _CASE_1_OFFLINE_ID, "approve", amount_lkr=45000.0)
+    assert res.status_code == 200
+
+
+def test_action_approve_with_differing_amount_and_no_reason_400(client, store):
+    store["compensation_estimates"].append(_compensation_row(_CASE_1_ID, amount_lkr=45000.0))
+    res = _action(client, _CASE_1_OFFLINE_ID, "approve", amount_lkr=60000.0)
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "reason_required"
+
+
+def test_action_approve_with_short_reason_400(client, store):
+    store["compensation_estimates"].append(_compensation_row(_CASE_1_ID, amount_lkr=45000.0))
+    res = _action(client, _CASE_1_OFFLINE_ID, "approve", amount_lkr=60000.0, reason="too short")
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "reason_required"
+
+
+def test_action_approve_with_differing_amount_and_valid_reason_succeeds(client, store):
+    store["compensation_estimates"].append(_compensation_row(_CASE_1_ID, amount_lkr=45000.0))
+    res = _action(client, _CASE_1_OFFLINE_ID, "approve", amount_lkr=60000.0, reason=VALID_REASON)
+    assert res.status_code == 200
+    assert res.get_json()["case"]["approved_amount"] == 60000.0
+
+
+def test_action_approve_no_estimate_no_amount_400(client):
+    res = _action(client, _CASE_1_OFFLINE_ID, "approve")
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "amount_required"
+
+
+def test_action_approve_no_estimate_with_amount_requires_reason(client):
+    res = _action(client, _CASE_1_OFFLINE_ID, "approve", amount_lkr=30000.0)
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "reason_required"
+
+
+def test_action_approve_no_estimate_with_amount_and_reason_succeeds(client):
+    res = _action(client, _CASE_1_OFFLINE_ID, "approve", amount_lkr=30000.0, reason=VALID_REASON)
+    assert res.status_code == 200
+    assert res.get_json()["case"]["approved_amount"] == 30000.0
+
+
+def test_action_approve_amount_must_not_be_negative(client, store):
+    store["compensation_estimates"].append(_compensation_row(_CASE_1_ID, amount_lkr=45000.0))
+    res = _action(client, _CASE_1_OFFLINE_ID, "approve", amount_lkr=-100)
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "invalid_amount"
+
+
+def test_action_approve_at_a_zero_rf_estimate_succeeds(client, store):
+    # Code review fix regression guard: a genuine 0 LKR RF estimate (no assessed damage) must
+    # still be approvable at that amount -- amount_lkr=0 is valid, only negative amounts aren't.
+    store["compensation_estimates"].append(_compensation_row(_CASE_1_ID, amount_lkr=0.0))
+    res = _action(client, _CASE_1_OFFLINE_ID, "approve", amount_lkr=0)
+    assert res.status_code == 200
+    assert res.get_json()["case"]["approved_amount"] == 0.0
+
+
+def test_action_reject_no_reason_400(client):
+    res = _action(client, _CASE_1_OFFLINE_ID, "reject")
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "reason_required"
+
+
+def test_action_reject_short_reason_400(client):
+    res = _action(client, _CASE_1_OFFLINE_ID, "reject", reason="nope")
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "reason_required"
+
+
+def test_action_reject_valid_reason_succeeds(client, store):
+    res = _action(client, _CASE_1_OFFLINE_ID, "reject", reason=VALID_REASON)
+    assert res.status_code == 200
+    assert res.get_json()["case"]["status"] == "Rejected"
+    events = [a for a in store["audit"] if a["event"] == "case_rejected"]
+    assert len(events) == 1
+    assert events[0]["metadata"]["reason"] == VALID_REASON
+
+
+def test_action_request_info_no_reason_ok(client):
+    res = _action(client, _CASE_1_OFFLINE_ID, "request_info")
+    assert res.status_code == 200
+    assert res.get_json()["case"]["status"] == "Under Review"
+
+
+def test_action_escalate_no_reason_ok(client, store):
+    res = _action(client, _CASE_1_OFFLINE_ID, "escalate")
+    assert res.status_code == 200
+    assert res.get_json()["case"]["status"] == "Under Review"
+    events = [a for a in store["audit"] if a["event"] == "case_escalated"]
+    assert len(events) == 1
+
+
+def test_action_mark_paid_from_approved_succeeds(client, store):
+    res = _action(client, _CASE_3_OFFLINE_ID, "mark_paid")
+    assert res.status_code == 200
+    assert res.get_json()["case"]["status"] == "Payment Processed"
+
+
+def test_action_mark_paid_records_a_supplied_reason(client, store):
+    # Code review fix regression guard: mark_paid previously force-dropped any supplied
+    # reason to {}, silently discarding it. It's optional, but if given, it must be recorded.
+    res = _action(client, _CASE_3_OFFLINE_ID, "mark_paid", reason="Disbursed via bank transfer.")
+    assert res.status_code == 200
+    events = [a for a in store["audit"] if a["event"] == "case_paid"]
+    assert len(events) == 1
+    assert events[0]["metadata"]["reason"] == "Disbursed via bank transfer."
+
+
+def test_action_mark_paid_from_submitted_returns_invalid_transition(client):
+    res = _action(client, _CASE_1_OFFLINE_ID, "mark_paid")
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "invalid_transition"
+
+
+def test_action_on_rejected_case_returns_case_closed(client):
+    _action(client, _CASE_1_OFFLINE_ID, "reject", reason=VALID_REASON)
+    res = _action(client, _CASE_1_OFFLINE_ID, "approve", amount_lkr=1000)
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "case_closed"
+
+
+def test_action_on_payment_processed_case_returns_case_closed(client):
+    _action(client, _CASE_3_OFFLINE_ID, "mark_paid")
+    res = _action(client, _CASE_3_OFFLINE_ID, "escalate")
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "case_closed"
+
+
+def test_action_wrong_district_returns_404(client):
+    res = _action(client, _CASE_4_OFFLINE_ID, "escalate")  # DISTRICT_B, admin is DISTRICT_A
+    assert res.status_code == 404
+    assert res.get_json()["error"] == "not_found"
+
+
+def test_action_invalid_action_value_returns_400(client):
+    res = _action(client, _CASE_1_OFFLINE_ID, "delete_everything")
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "invalid_action"
+
+
+def test_action_no_district_assigned_returns_403(client):
+    res = client.post(
+        f"/api/v1/admin/cases/{_CASE_1_OFFLINE_ID}/action",
+        headers=_auth(district_id=""),
+        json={"action": "escalate"},
+    )
+    assert res.status_code == 403
+    assert res.get_json()["error"] == "no_district_assigned"
+
+
+def test_action_malformed_offline_id_returns_400(client):
+    res = client.post(
+        "/api/v1/admin/cases/not-a-uuid/action", headers=_auth(), json={"action": "escalate"},
+    )
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "invalid_offline_id"
+
+
+def test_action_bumps_updated_at(client, store):
+    # CRITICAL #2: Story 5.3's avg_processing_days KPI depends on updated_at reflecting the
+    # last real state change.
+    before = store["cases"][0]["updated_at"]
+    _action(client, _CASE_1_OFFLINE_ID, "escalate")
+    after = next(c for c in store["cases"] if c["id"] == _CASE_1_ID)["updated_at"]
+    assert after != before
+
+
+def test_action_response_includes_the_just_written_audit_event(client):
+    # Unlike get_case_detail's view-audit (deliberately written AFTER reading the trail), the
+    # action endpoint writes its event BEFORE loading the response, so it IS visible here.
+    res = _action(client, _CASE_1_OFFLINE_ID, "escalate")
+    events = [e["event"] for e in res.get_json()["audit_trail"]]
+    assert "case_escalated" in events
+
+
+def test_verify_chain_still_valid_after_a_sequence_of_actions(client):
+    _action(client, _CASE_1_OFFLINE_ID, "escalate")
+    _action(client, _CASE_1_OFFLINE_ID, "request_info")
+    _action(client, _CASE_2_OFFLINE_ID, "reject", reason=VALID_REASON)
+    _action(client, _CASE_3_OFFLINE_ID, "mark_paid")
+    res = client.get("/api/v1/admin/audit/verify-chain", headers=_auth())
+    assert res.get_json() == {"valid": True, "broken_id": None}

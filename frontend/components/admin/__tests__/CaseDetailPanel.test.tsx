@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { CaseDetailPanel } from "../CaseDetailPanel";
-import { fetchAdminCaseDetail, verifyAuditChain } from "@/lib/adminCaseDetail";
+import { fetchAdminCaseDetail, verifyAuditChain, performCaseAction } from "@/lib/adminCaseDetail";
 import { getAccessToken } from "@/lib/auth";
 
 const mockReplace = jest.fn();
@@ -12,12 +12,14 @@ jest.mock("@/lib/auth", () => ({ getAccessToken: jest.fn() }));
 jest.mock("@/lib/adminCaseDetail", () => ({
   fetchAdminCaseDetail: jest.fn(),
   verifyAuditChain: jest.fn(),
+  performCaseAction: jest.fn(),
   UNAUTHORIZED: "unauthorized",
 }));
 
 const mockGetAccessToken = getAccessToken as jest.Mock;
 const mockFetchAdminCaseDetail = fetchAdminCaseDetail as jest.Mock;
 const mockVerifyAuditChain = verifyAuditChain as jest.Mock;
+const mockPerformCaseAction = performCaseAction as jest.Mock;
 
 function makeResponse(overrides: Record<string, unknown> = {}) {
   return {
@@ -46,6 +48,7 @@ beforeEach(() => {
   mockGetAccessToken.mockReset().mockResolvedValue("tok-123");
   mockFetchAdminCaseDetail.mockReset().mockResolvedValue(makeResponse());
   mockVerifyAuditChain.mockReset().mockResolvedValue({ valid: true, broken_id: null });
+  mockPerformCaseAction.mockReset().mockResolvedValue(makeResponse());
 });
 
 test("shows a loading state, then the fetched case", async () => {
@@ -220,4 +223,38 @@ test("Verify chain integrity button reports tampering and shows the broken row i
   fireEvent.click(screen.getByRole("button", { name: /verify chain integrity/i }));
   expect(await screen.findByText(/tampering detected/i)).toBeInTheDocument();
   expect(screen.getByText(/row #3/i)).toBeInTheDocument();
+});
+
+// --- case review actions (Story 5.5 integration) --------------------------------------------
+
+test("shows the case status badge", async () => {
+  render(<CaseDetailPanel offlineId="off-1" />);
+  await screen.findByText("HEC-2026-0001");
+  // "Submitted" also appears as the dt label for the submission-timestamp field, so scope to
+  // the status badge specifically rather than a bare text match.
+  const badges = screen.getAllByText("Submitted").filter((el) => el.tagName === "SPAN");
+  expect(badges).toHaveLength(1);
+});
+
+test("completing an action updates the panel's status and audit trail from the single response, with no second fetch", async () => {
+  mockPerformCaseAction.mockResolvedValue(
+    makeResponse({
+      case: { ...makeResponse().case, status: "Under Review" },
+      audit_trail: [
+        {
+          id: 1, event: "case_escalated", actor_id: "admin-1", metadata: null,
+          created_at: "2026-07-08T10:10:00.000Z", hash: "abc123", prev_hash: null,
+        },
+      ],
+    }),
+  );
+  render(<CaseDetailPanel offlineId="off-1" />);
+  await screen.findByText("HEC-2026-0001");
+
+  fireEvent.click(screen.getByRole("button", { name: /^escalate$/i }));
+  fireEvent.click(screen.getByRole("button", { name: /^confirm$/i }));
+
+  expect(await screen.findByText("case_escalated")).toBeInTheDocument();
+  expect(screen.getByText("Under Review")).toBeInTheDocument();
+  expect(mockFetchAdminCaseDetail).toHaveBeenCalledTimes(1);
 });

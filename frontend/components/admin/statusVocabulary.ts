@@ -18,3 +18,8 @@ export const STATUS_STYLES: Record<string, string> = {
   Rejected: "bg-status-error/10 text-status-error",
   "Payment Processed": "bg-surface-tint text-ink-secondary",
 };
+
+// Terminal statuses -- no further case-review action is possible once a case reaches one of
+// these (code review fix, Story 5.5: CaseActionPanel previously hand-duplicated this pair
+// instead of reusing this file, the same anti-pattern this file was created to avoid).
+export const CLOSED_STATUSES: ReadonlySet<string> = new Set(["Rejected", "Payment Processed"]);
