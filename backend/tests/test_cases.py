@@ -49,6 +49,8 @@ class FakeCursor:
                 "officer_id": params[6],
                 "submitted_by_officer": params[7],
                 "citizen_id": params[8],
+                "district": params[9],
+                "ds_division": params[10],
             }
             self._result = (self.store["case_pk"],)
         elif "INSERT INTO audit_log" in sql:
@@ -91,7 +93,25 @@ def _officer_token(sub="officer-1", role="officer"):
 
 
 @pytest.fixture
-def client(monkeypatch, store):
+def estimate_spy(monkeypatch):
+    """Story 5.2: isolate cases.py's behavioral tests from the real ML model while still
+    letting tests assert exactly how estimate_and_store() was called."""
+    calls = []
+
+    def fake_estimate_and_store(cur, case_id, damage_category, ds_division_id, submitted_at,
+                                 district=None, ai_severity=None):
+        calls.append({
+            "case_id": case_id, "damage_category": damage_category,
+            "ds_division_id": ds_division_id, "district": district, "ai_severity": ai_severity,
+        })
+        return None
+
+    monkeypatch.setattr("app.api.v1.cases.compensation.estimate_and_store", fake_estimate_and_store)
+    return calls
+
+
+@pytest.fixture
+def client(monkeypatch, store, estimate_spy):
     app = create_app(
         {"TESTING": True, "DATABASE_URL": "postgresql://fake", "SUPABASE_JWT_SECRET": SECRET}
     )
@@ -309,3 +329,50 @@ def test_officer_token_without_assist_flag_leaves_citizen_id_null(client, store)
     row = store["rows"][_body()["offline_id"]]
     assert row["citizen_id"] is None
     assert row["officer_id"] is None  # not officer-assisted → officer_id also null
+
+
+# --- Story 5.2: compensation estimation wired into the submit path --------------------------
+
+
+def test_submit_triggers_compensation_estimate(client, store, estimate_spy):
+    res = client.post(
+        "/api/v1/cases/submit", json=_body(),
+        headers={"Authorization": f"Bearer {_token()}"},
+    )
+    assert res.status_code == 201
+    assert len(estimate_spy) == 1
+    assert estimate_spy[0]["damage_category"] == "crop"
+    assert estimate_spy[0]["district"] is None
+
+
+def test_submit_retry_does_not_re_trigger_compensation_estimate(client, store, estimate_spy):
+    headers = {"Authorization": f"Bearer {_token()}"}
+    client.post("/api/v1/cases/submit", json=_body(), headers=headers)
+    client.post("/api/v1/cases/submit", json=_body(), headers=headers)
+    assert len(estimate_spy) == 1
+
+
+def test_submit_with_district_and_severity_persists_and_forwards(client, store, estimate_spy):
+    body = _body(district="අනුරාධපුරය", ds_division="ඉපලෝගම", ai_severity="Moderate")
+    res = client.post(
+        "/api/v1/cases/submit", json=body,
+        headers={"Authorization": f"Bearer {_token()}"},
+    )
+    assert res.status_code == 201
+    row = store["rows"][body["offline_id"]]
+    assert row["district"] == "අනුරාධපුරය"
+    assert row["ds_division"] == "ඉපලෝගම"
+    assert estimate_spy[0]["district"] == "අනුරාධපුරය"
+    assert estimate_spy[0]["ds_division_id"] == "ඉපලෝගම"
+    assert estimate_spy[0]["ai_severity"] == "Moderate"
+
+
+def test_submit_wrong_type_district_is_ignored_not_500(client, store, estimate_spy):
+    body = _body(district=999, ai_severity={"x": 1})
+    res = client.post(
+        "/api/v1/cases/submit", json=body,
+        headers={"Authorization": f"Bearer {_token()}"},
+    )
+    assert res.status_code == 201
+    assert estimate_spy[0]["district"] is None
+    assert estimate_spy[0]["ai_severity"] is None

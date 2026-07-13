@@ -17,6 +17,7 @@ from flask import Blueprint, current_app, g, jsonify, request
 
 from app.api.v1.middleware.auth import require_officer
 from app.infrastructure.audit import write_audit_log
+from app.infrastructure.ml import compensation
 
 sync_bp = Blueprint("sync", __name__)
 
@@ -195,13 +196,25 @@ def _sync_one(cur, item: dict, officer_id: str) -> dict:
     submitted_by_officer = item.get("submitted_by_officer") is True
     item_officer_id = officer_id if submitted_by_officer else None
 
+    # District/DS-division picker (Story 5.2 Task 7) and AI severity (Task 8) -- both
+    # optional, additive fields on the synced item, same shape as the one-shot submit path.
+    district = item.get("district")
+    if not isinstance(district, str):
+        district = None
+    ds_division = item.get("ds_division")
+    if not isinstance(ds_division, str):
+        ds_division = None
+    ai_severity = item.get("ai_severity")
+    if not isinstance(ai_severity, str):
+        ai_severity = None
+
     # Race-safe insert: a concurrent sync of the same offline_id yields no row.
     cur.execute(
         """INSERT INTO cases
              (offline_id, canonical_id, damage_category,
               gps_lat, gps_lng, submitter_identity_hash,
-              officer_id, submitted_by_officer)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+              officer_id, submitted_by_officer, district, ds_division_id)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
            ON CONFLICT (offline_id) DO NOTHING
            RETURNING id""",
         (
@@ -213,6 +226,8 @@ def _sync_one(cur, item: dict, officer_id: str) -> dict:
             item.get("submitter_identity_hash"),
             item_officer_id,
             submitted_by_officer,
+            district,
+            ds_division,
         ),
     )
     row = cur.fetchone()
@@ -231,4 +246,9 @@ def _sync_one(cur, item: dict, officer_id: str) -> dict:
 
     case_id = row[0]
     write_audit_log(cur, case_id, "case_synced", officer_id)
+    compensation.estimate_and_store(
+        cur, case_id, item.get("damage_category"), ds_division,
+        datetime.datetime.now(datetime.timezone.utc),
+        district=district, ai_severity=ai_severity,
+    )
     return {"offline_id": offline_id, "canonical_id": canonical_id, "inserted": True}

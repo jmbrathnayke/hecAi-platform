@@ -1,0 +1,2082 @@
+{
+  "අනුරාධපුරය|ඉපලෝගම|death": {
+    "prior_year_amount": 500000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "අනුරාධපුරය|ඉපලෝගම|injury": {
+    "prior_year_amount": 35000.0,
+    "prior_year_incident_count": 1.0,
+    "prior_year_had_payout": true
+  },
+  "අනුරාධපුරය|ඉපලෝගම|property": {
+    "prior_year_amount": 31850.0,
+    "prior_year_incident_count": 2.0,
+    "prior_year_had_payout": true
+  },
+  "අනුරාධපුරය|කහටගස්දිගිලිය|death": {
+    "prior_year_amount": 500000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "අනුරාධපුරය|කහටගස්දිල්ලිය|injury": {
+    "prior_year_amount": 44100.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "අනුරාධපුරය|කහටගස්දිල්ලිය|property": {
+    "prior_year_amount": 46000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "අනුරාධපුරය|කැකිරාව|death": {
+    "prior_year_amount": 500000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "අනුරාධපුරය|කැකිරාව|injury": {
+    "prior_year_amount": 74677.0,
+    "prior_year_incident_count": 3.0,
+    "prior_year_had_payout": true
+  },
+  "අනුරාධපුරය|කැකිරාව|property": {
+    "prior_year_amount": 198500.0,
+    "prior_year_incident_count": 6.0,
+    "prior_year_had_payout": true
+  },
+  "අනුරාධපුරය|කැබිතිගොල්ලැව|death": {
+    "prior_year_amount": 1000000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "අනුරාධපුරය|කැබිතිගොල්ලැව|injury": {
+    "prior_year_amount": 41750.0,
+    "prior_year_incident_count": 1.0,
+    "prior_year_had_payout": true
+  },
+  "අනුරාධපුරය|කැබිතිගොල්ලැව|property": {
+    "prior_year_amount": 149000.0,
+    "prior_year_incident_count": 12.0,
+    "prior_year_had_payout": true
+  },
+  "අනුරාධපුරය|ගල්නැව|death": {
+    "prior_year_amount": 500000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "අනුරාධපුරය|ගල්නැව|injury": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "අනුරාධපුරය|ගල්නැව|property": {
+    "prior_year_amount": 59700.0,
+    "prior_year_incident_count": 2.0,
+    "prior_year_had_payout": true
+  },
+  "අනුරාධපුරය|ගලෙන්බිදුනුවැව|death": {
+    "prior_year_amount": 500000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "අනුරාධපුරය|ගලෙන්බිදුනුවැව|injury": {
+    "prior_year_amount": 64000.0,
+    "prior_year_incident_count": 1.0,
+    "prior_year_had_payout": true
+  },
+  "අනුරාධපුරය|ගලෙන්බිදුනුවැව|property": {
+    "prior_year_amount": 87000.0,
+    "prior_year_incident_count": 7.0,
+    "prior_year_had_payout": true
+  },
+  "අනුරාධපුරය|තඹුත්තේගම|death": {
+    "prior_year_amount": 500000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "අනුරාධපුරය|තඹුත්තේගම|injury": {
+    "prior_year_amount": 2750.0,
+    "prior_year_incident_count": 1.0,
+    "prior_year_had_payout": true
+  },
+  "අනුරාධපුරය|තඹුත්තේගම|property": {
+    "prior_year_amount": 29500.0,
+    "prior_year_incident_count": 32.0,
+    "prior_year_had_payout": true
+  },
+  "අනුරාධපුරය|තලාව|death": {
+    "prior_year_amount": 500000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "අනුරාධපුරය|තලාව|injury": {
+    "prior_year_amount": 59750.0,
+    "prior_year_incident_count": 1.0,
+    "prior_year_had_payout": true
+  },
+  "අනුරාධපුරය|තලාව|property": {
+    "prior_year_amount": 320000.0,
+    "prior_year_incident_count": 13.0,
+    "prior_year_had_payout": true
+  },
+  "අනුරාධපුරය|තිරප්පනේ|death": {
+    "prior_year_amount": 500000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "අනුරාධපුරය|තිරප්පනේ|injury": {
+    "prior_year_amount": 38750.0,
+    "prior_year_incident_count": 1.0,
+    "prior_year_had_payout": true
+  },
+  "අනුරාධපුරය|තිරප්පනේ|property": {
+    "prior_year_amount": 111000.0,
+    "prior_year_incident_count": 4.0,
+    "prior_year_had_payout": true
+  },
+  "අනුරාධපුරය|නාච්චදුව|death": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "අනුරාධපුරය|නාච්චදුව|injury": {
+    "prior_year_amount": 2500.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "අනුරාධපුරය|නාච්චදුව|property": {
+    "prior_year_amount": 86250.0,
+    "prior_year_incident_count": 4.0,
+    "prior_year_had_payout": true
+  },
+  "අනුරාධපුරය|නැ.නු.ප.|property": {
+    "prior_year_amount": 135500.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "අනුරාධපුරය|නොච්චියාගම|death": {
+    "prior_year_amount": 500000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "අනුරාධපුරය|නොච්චියාගම|injury": {
+    "prior_year_amount": 49050.0,
+    "prior_year_incident_count": 2.0,
+    "prior_year_had_payout": true
+  },
+  "අනුරාධපුරය|නොච්චියාගම|property": {
+    "prior_year_amount": 18000.0,
+    "prior_year_incident_count": 11.0,
+    "prior_year_had_payout": true
+  },
+  "අනුරාධපුරය|පදවිය|death": {
+    "prior_year_amount": 500000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "අනුරාධපුරය|පදවිය|injury": {
+    "prior_year_amount": 29053.0,
+    "prior_year_incident_count": 2.0,
+    "prior_year_had_payout": true
+  },
+  "අනුරාධපුරය|පදවිය|property": {
+    "prior_year_amount": 179000.0,
+    "prior_year_incident_count": 5.0,
+    "prior_year_had_payout": true
+  },
+  "අනුරාධපුරය|පලාගල|death": {
+    "prior_year_amount": 500000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "අනුරාධපුරය|පලාගල|injury": {
+    "prior_year_amount": 500000.0,
+    "prior_year_incident_count": 1.0,
+    "prior_year_had_payout": true
+  },
+  "අනුරාධපුරය|පලාගල|property": {
+    "prior_year_amount": 56000.0,
+    "prior_year_incident_count": 2.0,
+    "prior_year_had_payout": true
+  },
+  "අනුරාධපුරය|පලුගස්වැව|death": {
+    "prior_year_amount": 500000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "අනුරාධපුරය|පලුගස්වැව|injury": {
+    "prior_year_amount": 58250.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "අනුරාධපුරය|පලුගස්වැව|property": {
+    "prior_year_amount": 60000.0,
+    "prior_year_incident_count": 1.0,
+    "prior_year_had_payout": true
+  },
+  "අනුරාධපුරය|මධ්‍යම නුවරගම් පලාත|death": {
+    "prior_year_amount": 500000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "අනුරාධපුරය|මධ්‍යම නුවරගම් පලාත|injury": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "අනුරාධපුරය|මධ්‍යම නුවරගම් පලාත|property": {
+    "prior_year_amount": 90000.0,
+    "prior_year_incident_count": 3.0,
+    "prior_year_had_payout": true
+  },
+  "අනුරාධපුරය|මහවිලච්චිය|death": {
+    "prior_year_amount": 450000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "අනුරාධපුරය|මහවිලච්චිය|injury": {
+    "prior_year_amount": 45750.0,
+    "prior_year_incident_count": 3.0,
+    "prior_year_had_payout": true
+  },
+  "අනුරාධපුරය|මහවිලච්චිය|property": {
+    "prior_year_amount": 189000.0,
+    "prior_year_incident_count": 32.0,
+    "prior_year_had_payout": true
+  },
+  "අනුරාධපුරය|මැදවච්චිය|death": {
+    "prior_year_amount": 500000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "අනුරාධපුරය|මැදවච්චිය|injury": {
+    "prior_year_amount": 39500.0,
+    "prior_year_incident_count": 1.0,
+    "prior_year_had_payout": true
+  },
+  "අනුරාධපුරය|මැදවච්චිය|property": {
+    "prior_year_amount": 38000.0,
+    "prior_year_incident_count": 23.0,
+    "prior_year_had_payout": true
+  },
+  "අනුරාධපුරය|මිහින්තලේ|death": {
+    "prior_year_amount": 500000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "අනුරාධපුරය|මිහින්තලේ|injury": {
+    "prior_year_amount": 51000.0,
+    "prior_year_incident_count": 1.0,
+    "prior_year_had_payout": true
+  },
+  "අනුරාධපුරය|මිහින්තලේ|property": {
+    "prior_year_amount": 139050.0,
+    "prior_year_incident_count": 6.0,
+    "prior_year_had_payout": true
+  },
+  "අනුරාධපුරය|රඹෑව|death": {
+    "prior_year_amount": 500000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "අනුරාධපුරය|රඹෑව|injury": {
+    "prior_year_amount": 4600.0,
+    "prior_year_incident_count": 1.0,
+    "prior_year_had_payout": true
+  },
+  "අනුරාධපුරය|රඹෑව|property": {
+    "prior_year_amount": 186440.0,
+    "prior_year_incident_count": 19.0,
+    "prior_year_had_payout": true
+  },
+  "අනුරාධපුරය|රාජාංගනය|injury": {
+    "prior_year_amount": 50969.0,
+    "prior_year_incident_count": 1.0,
+    "prior_year_had_payout": true
+  },
+  "අනුරාධපුරය|ශ්‍රාවස්තිපුර|death": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "අනුරාධපුරය|ශ්‍රාවස්තිපුර|property": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "අනුරාධපුරය|හොරොව්පතාන|death": {
+    "prior_year_amount": 1000000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "අනුරාධපුරය|හොරොව්පතාන|injury": {
+    "prior_year_amount": 85850.0,
+    "prior_year_incident_count": 1.0,
+    "prior_year_had_payout": true
+  },
+  "අනුරාධපුරය|හොරොව්පතාන|property": {
+    "prior_year_amount": 30000.0,
+    "prior_year_incident_count": 49.0,
+    "prior_year_had_payout": true
+  },
+  "අම්පාර|අක්කරෙයිපත්තු|injury": {
+    "prior_year_amount": 7100.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "අම්පාර|අක්කරෙයිපත්තු|property": {
+    "prior_year_amount": 150000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "අම්පාර|අක්කරේපත්තු|death": {
+    "prior_year_amount": 500000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "අම්පාර|අඩ්ඩවාලච්චේන|death": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "අම්පාර|අඩ්ඩාලච්චේන|injury": {
+    "prior_year_amount": 12350.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "අම්පාර|අඩ්ඩාලච්චේන|property": {
+    "prior_year_amount": 98200.0,
+    "prior_year_incident_count": 0.0,
+    "prior_year_had_payout": true
+  },
+  "අම්පාර|අම්පාර|death": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "අම්පාර|අම්පාර|injury": {
+    "prior_year_amount": 89575.0,
+    "prior_year_incident_count": 0.0,
+    "prior_year_had_payout": true
+  },
+  "අම්පාර|අම්පාර|property": {
+    "prior_year_amount": 350000.0,
+    "prior_year_incident_count": 16.0,
+    "prior_year_had_payout": true
+  },
+  "අම්පාර|අලියඩිවෙම්බු|death": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "අම්පාර|අලියවෙඩිවෙම්බු|injury": {
+    "prior_year_amount": 61250.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "අම්පාර|අලියවෙඩිවෙම්බු|property": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "අම්පාර|ඉරක්කමම්|death": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "අම්පාර|ඉරක්කමම්|injury": {
+    "prior_year_amount": 7100.0,
+    "prior_year_incident_count": 2.0,
+    "prior_year_had_payout": true
+  },
+  "අම්පාර|ඉරක්කමම්|property": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": 1.0,
+    "prior_year_had_payout": false
+  },
+  "අම්පාර|උහන|death": {
+    "prior_year_amount": 1950000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "අම්පාර|උහන|injury": {
+    "prior_year_amount": 111865.0,
+    "prior_year_incident_count": 4.0,
+    "prior_year_had_payout": true
+  },
+  "අම්පාර|උහන|property": {
+    "prior_year_amount": 3103820.0,
+    "prior_year_incident_count": 114.0,
+    "prior_year_had_payout": true
+  },
+  "අම්පාර|කල්මුනේ|death": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "අම්පාර|කල්මුනේ|injury": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": 1.0,
+    "prior_year_had_payout": false
+  },
+  "අම්පාර|කල්මුනේ|property": {
+    "prior_year_amount": 65000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "අම්පාර|කාරතිව්|death": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "අම්පාර|කාරතිව්|injury": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "අම්පාර|කාරතිව්|property": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "අම්පාර|තිරික්කොවිල්|death": {
+    "prior_year_amount": 50000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "අම්පාර|තිරික්කොවිල්|injury": {
+    "prior_year_amount": 23600.0,
+    "prior_year_incident_count": 1.0,
+    "prior_year_had_payout": true
+  },
+  "අම්පාර|තිරික්කොවිල්|property": {
+    "prior_year_amount": 43000.0,
+    "prior_year_incident_count": 14.0,
+    "prior_year_had_payout": true
+  },
+  "අම්පාර|දමන|death": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "අම්පාර|දමන|injury": {
+    "prior_year_amount": 25500.0,
+    "prior_year_incident_count": 1.0,
+    "prior_year_had_payout": true
+  },
+  "අම්පාර|දමන|property": {
+    "prior_year_amount": 808800.0,
+    "prior_year_incident_count": 18.0,
+    "prior_year_had_payout": true
+  },
+  "අම්පාර|දෙහිඅත්තකණ්ඩිය|death": {
+    "prior_year_amount": 950000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "අම්පාර|දෙහිඅත්තකණ්ඩිය|injury": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "අම්පාර|දෙහිඅත්තකණ්ඩිය|property": {
+    "prior_year_amount": 60000.0,
+    "prior_year_incident_count": 13.0,
+    "prior_year_had_payout": true
+  },
+  "අම්පාර|නවත්තවේලි|death": {
+    "prior_year_amount": 500000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "අම්පාර|නවිතන්වේලි|injury": {
+    "prior_year_amount": 23550.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "අම්පාර|නවිතන්වේලි|property": {
+    "prior_year_amount": 85500.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "අම්පාර|නින්දවුර්|death": {
+    "prior_year_amount": 500000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "අම්පාර|නින්දවුර්|injury": {
+    "prior_year_amount": 34000.0,
+    "prior_year_incident_count": 1.0,
+    "prior_year_had_payout": true
+  },
+  "අම්පාර|නින්දවුර්|property": {
+    "prior_year_amount": 327540.0,
+    "prior_year_incident_count": 1.0,
+    "prior_year_had_payout": true
+  },
+  "අම්පාර|පදියතලාව|death": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "අම්පාර|පදියතලාව|injury": {
+    "prior_year_amount": 300000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "අම්පාර|පදියතලාව|property": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "අම්පාර|පොතුවිල්|death": {
+    "prior_year_amount": 500000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "අම්පාර|පොතුවිල්|injury": {
+    "prior_year_amount": 55800.0,
+    "prior_year_incident_count": 1.0,
+    "prior_year_had_payout": true
+  },
+  "අම්පාර|පොතුවිල්|property": {
+    "prior_year_amount": 641000.0,
+    "prior_year_incident_count": 13.0,
+    "prior_year_had_payout": true
+  },
+  "අම්පාර|මහඔය|death": {
+    "prior_year_amount": 950000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "අම්පාර|මහඔය|injury": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "අම්පාර|මහඔය|property": {
+    "prior_year_amount": 179500.0,
+    "prior_year_incident_count": 25.0,
+    "prior_year_had_payout": true
+  },
+  "අම්පාර|ලාහුගල|death": {
+    "prior_year_amount": 500000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "අම්පාර|ලාහුගල|injury": {
+    "prior_year_amount": 19800.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "අම්පාර|ලාහුගල|property": {
+    "prior_year_amount": 134800.0,
+    "prior_year_incident_count": 8.0,
+    "prior_year_had_payout": true
+  },
+  "අම්පාර|සම්මන්තුරේ|death": {
+    "prior_year_amount": 450000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "අම්පාර|සම්මන්තුරේ|injury": {
+    "prior_year_amount": 87880.0,
+    "prior_year_incident_count": 2.0,
+    "prior_year_had_payout": true
+  },
+  "අම්පාර|සම්මන්තුරේ|property": {
+    "prior_year_amount": 1233560.0,
+    "prior_year_incident_count": 21.0,
+    "prior_year_had_payout": true
+  },
+  "අම්පාර|සයින්දමරුතු|death": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "අම්පාර|සයින්දමරුතු|injury": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "අම්පාර|සයින්දමරුතු|property": {
+    "prior_year_amount": 35000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "කිළිනොච්චිය|කණ්ඩාවලෙයි|death": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "කිළිනොච්චිය|කරච්චි|death": {
+    "prior_year_amount": 500000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "කිළිනොච්චිය|පූනාකරී|death": {
+    "prior_year_amount": 1000000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "කුරුණැගල|අඹන්පොල|death": {
+    "prior_year_amount": 550000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "කුරුණැගල|ඇහැටුවැව|death": {
+    "prior_year_amount": 500000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "කුරුණැගල|ඉබ්බාගමුව|death": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "කුරුණැගල|කොටවෙහෙර|death": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "කුරුණැගල|කොබෙයිගනේ|death": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "කුරුණැගල|ගල්ගමුව|death": {
+    "prior_year_amount": 1000000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "කුරුණැගල|ගිරිබාව|death": {
+    "prior_year_amount": 500000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "කුරුණැගල|නිකවැරටිය|death": {
+    "prior_year_amount": 500000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "කුරුණැගල|පඩුවස්නුවර|death": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "කුරුණැගල|පොල්පිතිගම|death": {
+    "prior_year_amount": 500000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "කුරුණැගල|මහව|death": {
+    "prior_year_amount": 500000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "කුරුණැගල|රස්නායකපුර|death": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "කුරුණැගල|වාරියපොල|death": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "කුරුණෑගල|අඹන්පොල|injury": {
+    "prior_year_amount": 10350.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "කුරුණෑගල|අඹන්පොල|property": {
+    "prior_year_amount": 606570.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "කුරුණෑගල|ඇහැටුවැව|injury": {
+    "prior_year_amount": 42021.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "කුරුණෑගල|ඇහැටුවැව|property": {
+    "prior_year_amount": 459945.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "කුරුණෑගල|ඉබ්බාගමුව|injury": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "කුරුණෑගල|ඉබ්බාගමුව|property": {
+    "prior_year_amount": 67000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "කුරුණෑගල|කොටවෙහෙර|injury": {
+    "prior_year_amount": 53200.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "කුරුණෑගල|කොටවෙහෙර|property": {
+    "prior_year_amount": 937285.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "කුරුණෑගල|කොබෙයිගනේ|injury": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "කුරුණෑගල|කොබෙයිගනේ|property": {
+    "prior_year_amount": 200000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "කුරුණෑගල|ගනේවත්ත|injury": {
+    "prior_year_amount": 38000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "කුරුණෑගල|ගල්ගමුව|injury": {
+    "prior_year_amount": 121330.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "කුරුණෑගල|ගල්ගමුව|property": {
+    "prior_year_amount": 1435845.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "කුරුණෑගල|ගිරිබාව|injury": {
+    "prior_year_amount": 60000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "කුරුණෑගල|ගිරිබාව|property": {
+    "prior_year_amount": 67000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "කුරුණෑගල|නිකවැරටිය|injury": {
+    "prior_year_amount": 7950.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "කුරුණෑගල|නිකවැරටිය|property": {
+    "prior_year_amount": 100000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "කුරුණෑගල|පොල්පිතිගම|injury": {
+    "prior_year_amount": 39500.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "කුරුණෑගල|පොල්පිතිගම|property": {
+    "prior_year_amount": 140982.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "කුරුණෑගල|බිංගිරිය|injury": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "කුරුණෑගල|බිංගිරිය|property": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "කුරුණෑගල|මහව|injury": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "කුරුණෑගල|මහව|property": {
+    "prior_year_amount": 216860.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "කුරුණෑගල|රස්නායකපුර|injury": {
+    "prior_year_amount": 19950.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "කුරුණෑගල|රස්නායකපුර|property": {
+    "prior_year_amount": 100000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "කුරුණෑගල|වාරියපොල|injury": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "කුරුණෑගල|වාරියපොල|property": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "ත්‍රිකුණාමලය|කන්තලේ|death": {
+    "prior_year_amount": 500000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "ත්‍රිකුණාමලය|කන්තලේ|injury": {
+    "prior_year_amount": 500000.0,
+    "prior_year_incident_count": 4.0,
+    "prior_year_had_payout": true
+  },
+  "ත්‍රිකුණාමලය|කන්තලේ|property": {
+    "prior_year_amount": 599821.0,
+    "prior_year_incident_count": 3.0,
+    "prior_year_had_payout": true
+  },
+  "ත්‍රිකුණාමලය|කින්නියා|death": {
+    "prior_year_amount": 1000000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "ත්‍රිකුණාමලය|කින්නියා|injury": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "ත්‍රිකුණාමලය|කින්නියා|property": {
+    "prior_year_amount": 70100.0,
+    "prior_year_incident_count": 0.0,
+    "prior_year_had_payout": true
+  },
+  "ත්‍රිකුණාමලය|කුච්චවේලි|death": {
+    "prior_year_amount": 2000000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "ත්‍රිකුණාමලය|කුච්චවේලි|injury": {
+    "prior_year_amount": 121250.0,
+    "prior_year_incident_count": 1.0,
+    "prior_year_had_payout": true
+  },
+  "ත්‍රිකුණාමලය|කුච්චවේලි|property": {
+    "prior_year_amount": 18000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "ත්‍රිකුණාමලය|ගොමරන්කඩවල|injury": {
+    "prior_year_amount": 75000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "ත්‍රිකුණාමලය|ගොමරන්කඩවල|property": {
+    "prior_year_amount": 13825.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "ත්‍රිකුණාමලය|ගෝමරන්කඩවල|death": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "ත්‍රිකුණාමලය|තඹලගමුව|death": {
+    "prior_year_amount": 600000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "ත්‍රිකුණාමලය|තඹලගමුව|injury": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": 4.0,
+    "prior_year_had_payout": false
+  },
+  "ත්‍රිකුණාමලය|තඹලගමුව|property": {
+    "prior_year_amount": 25000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "ත්‍රිකුණාමලය|නගර හා කඩවත්|death": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "ත්‍රිකුණාමලය|නගර හා කඩවත්|injury": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "ත්‍රිකුණාමලය|නගර හා කඩවත්|property": {
+    "prior_year_amount": 105810.0,
+    "prior_year_incident_count": 2.0,
+    "prior_year_had_payout": true
+  },
+  "ත්‍රිකුණාමලය|පදවි ශ්‍රී පුර|death": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "ත්‍රිකුණාමලය|පදවි ශ්‍රී පුර|injury": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "ත්‍රිකුණාමලය|පදවි ශ්‍රී පුර|property": {
+    "prior_year_amount": 467920.0,
+    "prior_year_incident_count": 0.0,
+    "prior_year_had_payout": true
+  },
+  "ත්‍රිකුණාමලය|මුතුර්|death": {
+    "prior_year_amount": 500000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "ත්‍රිකුණාමලය|මුතුර්|injury": {
+    "prior_year_amount": 20250.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "ත්‍රිකුණාමලය|මුතුර්|property": {
+    "prior_year_amount": 200000.0,
+    "prior_year_incident_count": 4.0,
+    "prior_year_had_payout": true
+  },
+  "ත්‍රිකුණාමලය|මොරවැව|death": {
+    "prior_year_amount": 50000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "ත්‍රිකුණාමලය|මොරවැව|injury": {
+    "prior_year_amount": 121000.0,
+    "prior_year_incident_count": 0.0,
+    "prior_year_had_payout": true
+  },
+  "ත්‍රිකුණාමලය|මොරවැව|property": {
+    "prior_year_amount": 59525.0,
+    "prior_year_incident_count": 1.0,
+    "prior_year_had_payout": true
+  },
+  "ත්‍රිකුණාමලය|වෙරුගල්|death": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "ත්‍රිකුණාමලය|සේරුවිල|death": {
+    "prior_year_amount": 1000000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "ත්‍රිකුණාමලය|සේරුවිල|injury": {
+    "prior_year_amount": 53000.0,
+    "prior_year_incident_count": 1.0,
+    "prior_year_had_payout": true
+  },
+  "ත්‍රිකුණාමලය|සේරුවිල|property": {
+    "prior_year_amount": 1190660.0,
+    "prior_year_incident_count": 6.0,
+    "prior_year_had_payout": true
+  },
+  "නුවරඑලිය|වලපනේ|death": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "නුවරඑලිය|වලපනේ|injury": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "නුවරඑලිය|වලපනේ|property": {
+    "prior_year_amount": 6250.0,
+    "prior_year_incident_count": 0.0,
+    "prior_year_had_payout": true
+  },
+  "නුවරඑලිය|හගුරන්කෙත|death": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "නුවරඑලිය|හගුරන්කෙත|injury": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "නුවරඑලිය|හගුරන්කෙත|property": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": 0.0,
+    "prior_year_had_payout": false
+  },
+  "පුත්තලම|ආණමඩුව|death": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "පුත්තලම|ආණමඩුව|injury": {
+    "prior_year_amount": 500000.0,
+    "prior_year_incident_count": 1.0,
+    "prior_year_had_payout": true
+  },
+  "පුත්තලම|ආණමඩුව|property": {
+    "prior_year_amount": 28000.0,
+    "prior_year_incident_count": 4.0,
+    "prior_year_had_payout": true
+  },
+  "පුත්තලම|ආරච්චිකට්ටුව|injury": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "පුත්තලම|ආරච්චිකට්ටුව|property": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": 0.0,
+    "prior_year_had_payout": false
+  },
+  "පුත්තලම|කරුවලගස්වැව|death": {
+    "prior_year_amount": 500000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "පුත්තලම|කරුවලගස්වැව|injury": {
+    "prior_year_amount": 17750.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "පුත්තලම|කරුවලගස්වැව|property": {
+    "prior_year_amount": 39300.0,
+    "prior_year_incident_count": 4.0,
+    "prior_year_had_payout": true
+  },
+  "පුත්තලම|නවගත්තේගම|death": {
+    "prior_year_amount": 1000000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "පුත්තලම|නවගත්තේගම|injury": {
+    "prior_year_amount": 43650.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "පුත්තලම|නවගත්තේගම|property": {
+    "prior_year_amount": 491045.0,
+    "prior_year_incident_count": 10.0,
+    "prior_year_had_payout": true
+  },
+  "පුත්තලම|පල්ලම|death": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "පුත්තලම|පල්ලම|injury": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "පුත්තලම|පල්ලම|property": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": 0.0,
+    "prior_year_had_payout": false
+  },
+  "පුත්තලම|පුත්තලම|death": {
+    "prior_year_amount": 500000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "පුත්තලම|පුත්තලම|injury": {
+    "prior_year_amount": 26350.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "පුත්තලම|පුත්තලම|property": {
+    "prior_year_amount": 144250.0,
+    "prior_year_incident_count": 5.0,
+    "prior_year_had_payout": true
+  },
+  "පුත්තලම|මහකුඹුක්කඩවල|death": {
+    "prior_year_amount": 500000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "පුත්තලම|මහකුඹුක්කඩවල|injury": {
+    "prior_year_amount": 44850.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "පුත්තලම|මහකුඹුක්කඩවල|property": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": 1.0,
+    "prior_year_had_payout": false
+  },
+  "පුත්තලම|මාදම්පේ|injury": {
+    "prior_year_amount": 8250.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "පුත්තලම|වනාතවිල්ලුව|death": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "පුත්තලම|වනාතවිල්ලුව|injury": {
+    "prior_year_amount": 13450.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "පුත්තලම|වනාතවිල්ලුව|property": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": 0.0,
+    "prior_year_had_payout": false
+  },
+  "පොළොන්නරුව|ඇලහැර|death": {
+    "prior_year_amount": 1050000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "පොළොන්නරුව|ඇලහැර|injury": {
+    "prior_year_amount": 102500.0,
+    "prior_year_incident_count": 2.0,
+    "prior_year_had_payout": true
+  },
+  "පොළොන්නරුව|ඇලහැර|property": {
+    "prior_year_amount": 522458.0,
+    "prior_year_incident_count": 18.0,
+    "prior_year_had_payout": true
+  },
+  "පොළොන්නරුව|තමන්කඩුව|death": {
+    "prior_year_amount": 500000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "පොළොන්නරුව|තමන්කඩුව|injury": {
+    "prior_year_amount": 44150.0,
+    "prior_year_incident_count": 0.0,
+    "prior_year_had_payout": true
+  },
+  "පොළොන්නරුව|තමන්කඩුව|property": {
+    "prior_year_amount": 1549778.0,
+    "prior_year_incident_count": 75.0,
+    "prior_year_had_payout": true
+  },
+  "පොළොන්නරුව|දිඹුලාගල|death": {
+    "prior_year_amount": 4250000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "පොළොන්නරුව|දිඹුලාගල|injury": {
+    "prior_year_amount": 161020.0,
+    "prior_year_incident_count": 5.0,
+    "prior_year_had_payout": true
+  },
+  "පොළොන්නරුව|දිඹුලාගල|property": {
+    "prior_year_amount": 7223655.0,
+    "prior_year_incident_count": 79.0,
+    "prior_year_had_payout": true
+  },
+  "පොළොන්නරුව|මැදිරිගිරිය|death": {
+    "prior_year_amount": 2800000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "පොළොන්නරුව|මැදිරිගිරිය|injury": {
+    "prior_year_amount": 77500.0,
+    "prior_year_incident_count": 2.0,
+    "prior_year_had_payout": true
+  },
+  "පොළොන්නරුව|මැදිරිගිරිය|property": {
+    "prior_year_amount": 440735.0,
+    "prior_year_incident_count": 9.0,
+    "prior_year_had_payout": true
+  },
+  "පොළොන්නරුව|ලංකාපුර|death": {
+    "prior_year_amount": 450000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "පොළොන්නරුව|ලංකාපුර|injury": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "පොළොන්නරුව|ලංකාපුර|property": {
+    "prior_year_amount": 84000.0,
+    "prior_year_incident_count": 0.0,
+    "prior_year_had_payout": true
+  },
+  "පොළොන්නරුව|වැලිකන්ද|death": {
+    "prior_year_amount": 450000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "පොළොන්නරුව|වැලිකන්ද|injury": {
+    "prior_year_amount": 63650.0,
+    "prior_year_incident_count": 2.0,
+    "prior_year_had_payout": true
+  },
+  "පොළොන්නරුව|වැලිකන්ද|property": {
+    "prior_year_amount": 5776781.0,
+    "prior_year_incident_count": 51.0,
+    "prior_year_had_payout": true
+  },
+  "පොළොන්නරුව|හිගුරක්ගොඩ|death": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "පොළොන්නරුව|හිගුරක්ගොඩ|property": {
+    "prior_year_amount": 1352063.0,
+    "prior_year_incident_count": 33.0,
+    "prior_year_had_payout": true
+  },
+  "පොළොන්නරුව|හිඟුරක්ගොඩ|injury": {
+    "prior_year_amount": 32500.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "බදුල්ල|කන්දකැටිය|death": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "බදුල්ල|කන්දකැටිය|injury": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "බදුල්ල|කන්දකැටිය|property": {
+    "prior_year_amount": 60000.0,
+    "prior_year_incident_count": 1.0,
+    "prior_year_had_payout": true
+  },
+  "බදුල්ල|මහියංගණය|death": {
+    "prior_year_amount": 3000000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "බදුල්ල|මහියංගණය|injury": {
+    "prior_year_amount": 17800.0,
+    "prior_year_incident_count": 2.0,
+    "prior_year_had_payout": true
+  },
+  "බදුල්ල|මහියංගණය|property": {
+    "prior_year_amount": 1555885.0,
+    "prior_year_incident_count": 111.0,
+    "prior_year_had_payout": true
+  },
+  "බදුල්ල|රිදීමාලියද්ද|death": {
+    "prior_year_amount": 500000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "බදුල්ල|රිදීමාලියද්ද|injury": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "බදුල්ල|රිදීමාලියද්ද|property": {
+    "prior_year_amount": 1320035.0,
+    "prior_year_incident_count": 33.0,
+    "prior_year_had_payout": true
+  },
+  "බදුල්ල|හල්දුම්මුල්ල|injury": {
+    "prior_year_amount": 24000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "බදුල්ල|හල්දුම්මුල්ල|property": {
+    "prior_year_amount": 1003220.0,
+    "prior_year_incident_count": 10.0,
+    "prior_year_had_payout": true
+  },
+  "බදුල්ල|හල්දුමුල්ල|death": {
+    "prior_year_amount": 700000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "බදුල්ල|හාලිඇල|death": {
+    "prior_year_amount": 500000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "මඩකලපුව|එරාවුර් නගරය|death": {
+    "prior_year_amount": 500000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "මඩකලපුව|එරාවුර්පත්තු (චෙන්කලඩි)|death": {
+    "prior_year_amount": 2500000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "මඩකලපුව|එරාවුර්පත්තු (චෙන්කලඩි)|injury": {
+    "prior_year_amount": 39750.0,
+    "prior_year_incident_count": 1.0,
+    "prior_year_had_payout": true
+  },
+  "මඩකලපුව|එරාවුර්පත්තු (චෙන්කලඩි)|property": {
+    "prior_year_amount": 1193750.0,
+    "prior_year_incident_count": 8.0,
+    "prior_year_had_payout": true
+  },
+  "මඩකලපුව|කොරලෙයිපත්තු දකුණ (කිරාන්)|death": {
+    "prior_year_amount": 450000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "මඩකලපුව|කොරලෙයිපත්තු දකුණ (කිරාන්)|injury": {
+    "prior_year_amount": 15000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "මඩකලපුව|කොරලෙයිපත්තු දකුණ (කිරාන්)|property": {
+    "prior_year_amount": 105000.0,
+    "prior_year_incident_count": 3.0,
+    "prior_year_had_payout": true
+  },
+  "මඩකලපුව|කෝරලෙයි පත්තු (වාලච්චනෙයි)|death": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "මඩකලපුව|කෝරලෙයි පත්තු (වාලච්චනෙයි)|injury": {
+    "prior_year_amount": 109500.0,
+    "prior_year_incident_count": 3.0,
+    "prior_year_had_payout": true
+  },
+  "මඩකලපුව|කෝරලෙයි පත්තු (වාලච්චනෙයි)|property": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": 0.0,
+    "prior_year_had_payout": false
+  },
+  "මඩකලපුව|කෝරලෙයි පත්තු උතුර(වාකරේ)|death": {
+    "prior_year_amount": 500000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "මඩකලපුව|කෝරලෙයි පත්තු උතුර(වාකරේ)|injury": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": 1.0,
+    "prior_year_had_payout": false
+  },
+  "මඩකලපුව|කෝරලෙයි පත්තු උතුර(වාකරේ)|property": {
+    "prior_year_amount": 100000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "මඩකලපුව|කෝරලේ පත්තු බටහිර|injury": {
+    "prior_year_amount": 58000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "මඩකලපුව|කෝරලේපත්තු බටහිර|property": {
+    "prior_year_amount": 58000.0,
+    "prior_year_incident_count": 0.0,
+    "prior_year_had_payout": true
+  },
+  "මඩකලපුව|පොරතිව්පත්තු (වෙල්ලාවලි)|death": {
+    "prior_year_amount": 500000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "මඩකලපුව|පොරතිව්පත්තු (වෙල්ලාවලි)|injury": {
+    "prior_year_amount": 79900.0,
+    "prior_year_incident_count": 1.0,
+    "prior_year_had_payout": true
+  },
+  "මඩකලපුව|පොරතිව්පත්තු (වෙල්ලාවලි)|property": {
+    "prior_year_amount": 1196835.0,
+    "prior_year_incident_count": 2.0,
+    "prior_year_had_payout": true
+  },
+  "මඩකලපුව|මඩකලපුව|death": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "මඩකලපුව|මඩකලපුව|injury": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "මඩකලපුව|මඩකලපුව|property": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": 0.0,
+    "prior_year_had_payout": false
+  },
+  "මඩකලපුව|මන්මුනෙයි නිරිත (පඩිප්පලෙයි)|death": {
+    "prior_year_amount": 450000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "මඩකලපුව|මන්මුනෙයි නිරිත (පඩිප්පලෙයි)|injury": {
+    "prior_year_amount": 32250.0,
+    "prior_year_incident_count": 1.0,
+    "prior_year_had_payout": true
+  },
+  "මඩකලපුව|මන්මුනෙයි නිරිත (පඩිප්පලෙයි)|property": {
+    "prior_year_amount": 108700.0,
+    "prior_year_incident_count": 2.0,
+    "prior_year_had_payout": true
+  },
+  "මඩකලපුව|මන්මුනෙයි බටහිර (වව්නතිවු)|death": {
+    "prior_year_amount": 500000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "මඩකලපුව|මන්මුනෙයි බටහිර (වව්නතිවු)|injury": {
+    "prior_year_amount": 49500.0,
+    "prior_year_incident_count": 1.0,
+    "prior_year_had_payout": true
+  },
+  "මඩකලපුව|මන්මුනෙයි බටහිර (වව්නතිවු)|property": {
+    "prior_year_amount": 226500.0,
+    "prior_year_incident_count": 1.0,
+    "prior_year_had_payout": true
+  },
+  "මඩකලපුව|මන්මුනේ  දකුණ හා එරුවිල්|property": {
+    "prior_year_amount": 40000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "මඩකලපුව|මන්මුනේ උතුර|death": {
+    "prior_year_amount": 500000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "මඩකලපුව|මන්මුනේ උතුර|injury": {
+    "prior_year_amount": 11700.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "මඩකලපුව|මන්මුනේ උතුර|property": {
+    "prior_year_amount": 75000.0,
+    "prior_year_incident_count": 0.0,
+    "prior_year_had_payout": true
+  },
+  "මන්නාරම්|නානත්තාන්|death": {
+    "prior_year_amount": 500000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "මන්නාරම්|නානත්තාන්|injury": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "මන්නාරම්|නානත්තාන්|property": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": 0.0,
+    "prior_year_had_payout": false
+  },
+  "මන්නාරම්|මඩු|death": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "මන්නාරම්|මඩු|injury": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "මන්නාරම්|මඩු|property": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": 0.0,
+    "prior_year_had_payout": false
+  },
+  "මන්නාරම්|මුසලි|death": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "මහනුවර|උඩුදුම්බර|death": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "මහනුවර|උඩුදුම්බර|injury": {
+    "prior_year_amount": 35850.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "මහනුවර|උඩුදුම්බර|property": {
+    "prior_year_amount": 20000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "මහනුවර|මැද මහනුවර|death": {
+    "prior_year_amount": 500000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "මහනුවර|මැද මහනුවර|injury": {
+    "prior_year_amount": 7850.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "මහනුවර|මැදදුම්බර|property": {
+    "prior_year_amount": 25000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "මහනුවර|මිනිපෙ|death": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "මහනුවර|මිනිපෙ|injury": {
+    "prior_year_amount": 13100.0,
+    "prior_year_incident_count": 1.0,
+    "prior_year_had_payout": true
+  },
+  "මහනුවර|මිනිපෙ|property": {
+    "prior_year_amount": 1783490.0,
+    "prior_year_incident_count": 8.0,
+    "prior_year_had_payout": true
+  },
+  "මාතලේ|අඹන්ගග කොරලේ|injury": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "මාතලේ|අඹන්ගග කොරලේ|property": {
+    "prior_year_amount": 5000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "මාතලේ|අඹන්ගඟ කොරලේ|death": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "මාතලේ|ගලේවෙල|death": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "මාතලේ|ගලේවෙල|injury": {
+    "prior_year_amount": 44750.0,
+    "prior_year_incident_count": 1.0,
+    "prior_year_had_payout": true
+  },
+  "මාතලේ|ගලේවෙල|property": {
+    "prior_year_amount": 101700.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "මාතලේ|දඹුල්ල|death": {
+    "prior_year_amount": 500000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "මාතලේ|දඹුල්ල|injury": {
+    "prior_year_amount": 24000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "මාතලේ|දඹුල්ල|property": {
+    "prior_year_amount": 87675.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "මාතලේ|නාඋල|death": {
+    "prior_year_amount": 500000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "මාතලේ|නාඋල|injury": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "මාතලේ|නාඋල|property": {
+    "prior_year_amount": 13580.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "මාතලේ|පල්ලේපොල|property": {
+    "prior_year_amount": 16500.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "මාතලේ|මාතලේ|death": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "මාතලේ|මාතලේ|injury": {
+    "prior_year_amount": 7800.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "මාතලේ|මාතලේ|property": {
+    "prior_year_amount": 21800.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "මාතලේ|යටවත්ත|property": {
+    "prior_year_amount": 10000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "මාතලේ|ලග්ගල පල්ලෙගම|death": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "මාතලේ|ලග්ගල පල්ලෙගම|injury": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "මාතලේ|ලග්ගල පල්ලෙගම|property": {
+    "prior_year_amount": 100000.0,
+    "prior_year_incident_count": 2.0,
+    "prior_year_had_payout": true
+  },
+  "මාතලේ|විල්ගමුව|death": {
+    "prior_year_amount": 500000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "මාතලේ|විල්ගමුව|injury": {
+    "prior_year_amount": 34580.0,
+    "prior_year_incident_count": 1.0,
+    "prior_year_had_payout": true
+  },
+  "මාතලේ|විල්ගමුව|property": {
+    "prior_year_amount": 466013.0,
+    "prior_year_incident_count": 6.0,
+    "prior_year_had_payout": true
+  },
+  "මුලතිව්|මාන්තෙයි නැගෙනහිර|injury": {
+    "prior_year_amount": 14600.0,
+    "prior_year_incident_count": 1.0,
+    "prior_year_had_payout": true
+  },
+  "මුලතිව්|මුරුසුමුටෙයි|death": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "මුලතිව්|මුරුසුමුටෙයි|injury": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": 0.0,
+    "prior_year_had_payout": false
+  },
+  "මුලතිව්|මුරුසුමුටෙයි|property": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": 0.0,
+    "prior_year_had_payout": false
+  },
+  "මුලතිව්|වැලිඔය|death": {
+    "prior_year_amount": 500000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "මුලතිව්|වැලිඔය|injury": {
+    "prior_year_amount": 32000.0,
+    "prior_year_incident_count": 1.0,
+    "prior_year_had_payout": true
+  },
+  "මුලතිව්|වැලිඔය|property": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": 0.0,
+    "prior_year_had_payout": false
+  },
+  "මොණරාගල|ඌව පරණගම|death": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "මොණරාගල|ඌව පරණගම|injury": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "මොණරාගල|ඌව පරණගම|property": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": 0.0,
+    "prior_year_had_payout": false
+  },
+  "මොණරාගල|කතරගම|death": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "මොණරාගල|කතරගම|injury": {
+    "prior_year_amount": 9000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "මොණරාගල|කතරගම|property": {
+    "prior_year_amount": 28600.0,
+    "prior_year_incident_count": 6.0,
+    "prior_year_had_payout": true
+  },
+  "මොණරාගල|තණමල්විල|death": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "මොණරාගල|තණමල්විල|injury": {
+    "prior_year_amount": 69500.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "මොණරාගල|තණමල්විල|property": {
+    "prior_year_amount": 117600.0,
+    "prior_year_incident_count": 23.0,
+    "prior_year_had_payout": true
+  },
+  "මොණරාගල|බිබිල|death": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "මොණරාගල|බිබිල|injury": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "මොණරාගල|බිබිල|property": {
+    "prior_year_amount": 8000.0,
+    "prior_year_incident_count": 1.0,
+    "prior_year_had_payout": true
+  },
+  "මොණරාගල|බුත්තල|death": {
+    "prior_year_amount": 2000000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "මොණරාගල|බුත්තල|injury": {
+    "prior_year_amount": 10100.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "මොණරාගල|බුත්තල|property": {
+    "prior_year_amount": 20500.0,
+    "prior_year_incident_count": 8.0,
+    "prior_year_had_payout": true
+  },
+  "මොණරාගල|මඩුල්ල|death": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "මොණරාගල|මඩුල්ල|injury": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "මොණරාගල|මඩුල්ල|property": {
+    "prior_year_amount": 5000.0,
+    "prior_year_incident_count": 1.0,
+    "prior_year_had_payout": true
+  },
+  "මොණරාගල|මැදගම|death": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "මොණරාගල|මැදගම|injury": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "මොණරාගල|මැදගම|property": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": 0.0,
+    "prior_year_had_payout": false
+  },
+  "මොණරාගල|මොණරාගල|death": {
+    "prior_year_amount": 1000000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "මොණරාගල|මොණරාගල|property": {
+    "prior_year_amount": 88000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "මොණරාගල|මොනරාගල|injury": {
+    "prior_year_amount": 110400.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "මොණරාගල|වැල්ලවාය|death": {
+    "prior_year_amount": 500000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "මොණරාගල|වැල්ලවාය|injury": {
+    "prior_year_amount": 605950.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "මොණරාගල|වැල්ලවාය|property": {
+    "prior_year_amount": 574435.0,
+    "prior_year_incident_count": 31.0,
+    "prior_year_had_payout": true
+  },
+  "මොණරාගල|සියඹලාණ්ඩුව|death": {
+    "prior_year_amount": 1000000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "මොණරාගල|සියඹලාණ්ඩුව|injury": {
+    "prior_year_amount": 31800.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "මොණරාගල|සියඹලාණ්ඩුව|property": {
+    "prior_year_amount": 548625.0,
+    "prior_year_incident_count": 22.0,
+    "prior_year_had_payout": true
+  },
+  "මොණරාගල|සෙවනගල|death": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "මොණරාගල|සෙවනගල|injury": {
+    "prior_year_amount": 66780.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "මොණරාගල|සෙවනගල|property": {
+    "prior_year_amount": 8498.0,
+    "prior_year_incident_count": 5.0,
+    "prior_year_had_payout": true
+  },
+  "යාපනය|චාවාකච්චේරිය|death": {
+    "prior_year_amount": 500000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "යාපනය|මරුතන්කේණි|injury": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": 0.0,
+    "prior_year_had_payout": false
+  },
+  "යාපනය|මරුතන්කේනි|death": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "රත්නපුර|ඇඹිලිපිටිය|death": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "රත්නපුර|ඇඹිලිපිටිය|injury": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": 1.0,
+    "prior_year_had_payout": false
+  },
+  "රත්නපුර|ඇඹිලිපිටිය|property": {
+    "prior_year_amount": 32480.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "රත්නපුර|ඉඹුල්පේ|death": {
+    "prior_year_amount": 500000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "රත්නපුර|ඉඹුල්පේ|injury": {
+    "prior_year_amount": 12200.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "රත්නපුර|ඉඹුල්පේ|property": {
+    "prior_year_amount": 12200.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "රත්නපුර|කලවාන|death": {
+    "prior_year_amount": 500000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "රත්නපුර|කලවාන|injury": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "රත්නපුර|කලවාන|property": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": 0.0,
+    "prior_year_had_payout": false
+  },
+  "රත්නපුර|බලංගොඩ|death": {
+    "prior_year_amount": 500000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "රත්නපුර|බලංගොඩ|injury": {
+    "prior_year_amount": 45950.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "රත්නපුර|බලංගොඩ|property": {
+    "prior_year_amount": 76025.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "රත්නපුර|වැලිගෙපොල|death": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "රත්නපුර|වැලිගෙපොල|injury": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "රත්නපුර|වැලිගෙපොල|property": {
+    "prior_year_amount": 55000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "වව්නියාව|උතුරු වව්නියාව|death": {
+    "prior_year_amount": 50000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "වව්නියාව|උතුරු වව්නියාව|injury": {
+    "prior_year_amount": 225600.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "වව්නියාව|උතුරු වව්නියාව|property": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": 0.0,
+    "prior_year_had_payout": false
+  },
+  "වව්නියාව|දකුණුවව්නියාව|death": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "වව්නියාව|දකුණුවව්නියාව|injury": {
+    "prior_year_amount": 28000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "වව්නියාව|දකුණුවව්නියාව|property": {
+    "prior_year_amount": 156000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "වව්නියාව|වව්නියාව|injury": {
+    "prior_year_amount": 83045.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "වව්නියාව|වව්නියාව|property": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": 0.0,
+    "prior_year_had_payout": false
+  },
+  "වව්නියාව|වෙන්ගලසෙට්ටිකුලම|injury": {
+    "prior_year_amount": 22100.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "වව්නියාව|වෙන්ගලසෙට්ටිකුලම|property": {
+    "prior_year_amount": 94164.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "වව්නියාව|වෙන්ගලසෙට්ටිකුලම්|death": {
+    "prior_year_amount": 500000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "හම්බන්තොට|අගුණකොලපැලැස්ස|death": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "හම්බන්තොට|අගුණකොලපැලැස්ස|injury": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "හම්බන්තොට|අගුණකොලපැලැස්ස|property": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": 0.0,
+    "prior_year_had_payout": false
+  },
+  "හම්බන්තොට|අම්බලන්තොට|death": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": false
+  },
+  "හම්බන්තොට|අම්බලන්තොට|injury": {
+    "prior_year_amount": 123800.0,
+    "prior_year_incident_count": 2.0,
+    "prior_year_had_payout": true
+  },
+  "හම්බන්තොට|අම්බලන්තොට|property": {
+    "prior_year_amount": 0.0,
+    "prior_year_incident_count": 0.0,
+    "prior_year_had_payout": false
+  },
+  "හම්බන්තොට|තිස්සමහාරාම|death": {
+    "prior_year_amount": 1500000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "හම්බන්තොට|තිස්සමහාරාම|injury": {
+    "prior_year_amount": 62000.0,
+    "prior_year_incident_count": 3.0,
+    "prior_year_had_payout": true
+  },
+  "හම්බන්තොට|තිස්සමහාරාම|property": {
+    "prior_year_amount": 225535.0,
+    "prior_year_incident_count": 11.0,
+    "prior_year_had_payout": true
+  },
+  "හම්බන්තොට|ලුණගම්වෙහෙර|death": {
+    "prior_year_amount": 500000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "හම්බන්තොට|ලුණුගම්වෙහෙර|injury": {
+    "prior_year_amount": 37500.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "හම්බන්තොට|ලුණුගම්වෙහෙර|property": {
+    "prior_year_amount": 301135.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "හම්බන්තොට|සුරියවැව|death": {
+    "prior_year_amount": 1000000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "හම්බන්තොට|සුරියවැව|injury": {
+    "prior_year_amount": 580835.0,
+    "prior_year_incident_count": 2.0,
+    "prior_year_had_payout": true
+  },
+  "හම්බන්තොට|සුරියවැව|property": {
+    "prior_year_amount": 1382451.0,
+    "prior_year_incident_count": 23.0,
+    "prior_year_had_payout": true
+  },
+  "හම්බන්තොට|හම්බන්තොට|death": {
+    "prior_year_amount": 50000.0,
+    "prior_year_incident_count": -1.0,
+    "prior_year_had_payout": true
+  },
+  "හම්බන්තොට|හම්බන්තොට|injury": {
+    "prior_year_amount": 565500.0,
+    "prior_year_incident_count": 3.0,
+    "prior_year_had_payout": true
+  },
+  "හම්බන්තොට|හම්බන්තොට|property": {
+    "prior_year_amount": 947553.0,
+    "prior_year_incident_count": 34.0,
+    "prior_year_had_payout": true
+  }
+}

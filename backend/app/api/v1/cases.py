@@ -12,6 +12,7 @@ import psycopg2
 from flask import Blueprint, current_app, jsonify, request
 
 from app.infrastructure.audit import write_audit_log
+from app.infrastructure.ml import compensation
 
 cases_bp = Blueprint("cases", __name__)
 
@@ -88,6 +89,19 @@ def submit_case():
     if not year.isdigit():
         year = str(datetime.now(timezone.utc).year)
 
+    # District/DS-division picker (Story 5.2 Task 7) and AI severity (Task 8) -- both
+    # optional, additive fields; absent on every submission that predates the picker or
+    # never had an AI classification step (e.g. every citizen self-service case).
+    district = body.get("district")
+    if not isinstance(district, str):
+        district = None
+    ds_division = body.get("ds_division")
+    if not isinstance(ds_division, str):
+        ds_division = None
+    ai_severity = body.get("ai_severity")
+    if not isinstance(ai_severity, str):
+        ai_severity = None
+
     conn = _get_connection()
     try:
         with conn:
@@ -111,8 +125,9 @@ def submit_case():
                     """INSERT INTO cases
                          (offline_id, canonical_id, damage_category,
                           gps_lat, gps_lng, submitter_identity_hash,
-                          officer_id, submitted_by_officer, citizen_id)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                          officer_id, submitted_by_officer, citizen_id,
+                          district, ds_division_id)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                        ON CONFLICT (offline_id) DO NOTHING
                        RETURNING id""",
                     (
@@ -125,6 +140,8 @@ def submit_case():
                         officer_id,
                         submitted_by_officer,
                         citizen_id,
+                        district,
+                        ds_division,
                     ),
                 )
                 row = cur.fetchone()
@@ -138,6 +155,10 @@ def submit_case():
 
                 case_id = row[0]
                 write_audit_log(cur, case_id, "submitted", claims.get("sub"))
+                compensation.estimate_and_store(
+                    cur, case_id, damage_category, ds_division, datetime.now(timezone.utc),
+                    district=district, ai_severity=ai_severity,
+                )
         return jsonify({"canonical_id": canonical_id, "offline_id": offline_id}), 201
     finally:
         conn.close()
