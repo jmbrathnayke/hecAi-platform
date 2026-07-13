@@ -318,6 +318,21 @@ export async function saveClassification(
 }
 
 // ---------------------------------------------------------------------------
+// District / DS-division picker (Story 5.2, Task 7) — additive, optional fields on the
+// case draft. Set directly via `putCase`/`updateDraft` at the two call sites that own
+// location capture (`app/[locale]/report/location/page.tsx`'s `saveAndNext`,
+// `app/officer/submit/page.tsx`'s `saveLocation`) rather than through a dedicated save
+// helper, since both already write `location_lat`/`location_lng` in the same call.
+// `district`/`ds_division` are the picker's direct output (Sinhala strings matching the
+// RF compensation model's own training vocabulary) — see `DistrictPicker`/`compensation.py`.
+// ---------------------------------------------------------------------------
+
+export interface CaseLocation {
+  district?: string;
+  ds_division?: string;
+}
+
+// ---------------------------------------------------------------------------
 // AI classification override (Story 3.4, FR-2.4) — additive audit fields on the case draft.
 // The override is *additive*: `ai_category`/`ai_confidence`/`ai_severity` are never mutated;
 // `original_ai_category` snapshots the AI's class at override time so the original prediction

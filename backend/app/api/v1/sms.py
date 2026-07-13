@@ -27,6 +27,7 @@ from flask import Blueprint, current_app, request
 from twilio.request_validator import RequestValidator
 
 from app.infrastructure.audit import write_audit_log
+from app.infrastructure.ml import compensation
 from app.infrastructure.sms.twilio_client import send_sms
 
 sms_bp = Blueprint("sms", __name__)
@@ -185,6 +186,13 @@ def inbound_sms():
                         "sms_submission",
                         officer_id,
                         {"submitted_via": "sms", "twilio_message_sid": message_sid},
+                    )
+                    # No district picker or AI classification exists over SMS (Story 5.2
+                    # Tasks 7/8 explicitly don't touch this file) -- district/ai_severity
+                    # stay at their default None, degrading to the "unknown"/neutral-
+                    # multiplier behavior compensation.py already handles.
+                    compensation.estimate_and_store(
+                        cur, case_id, damage_category, None, datetime.now(timezone.utc),
                     )
         finally:
             conn.close()

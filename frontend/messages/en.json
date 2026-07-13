@@ -33,7 +33,11 @@
       "gpsFailed": "We couldn’t detect your location. Place a pin on the map instead.",
       "confirmPin": "Confirm location",
       "next": "Next",
-      "saveError": "Couldn’t save the location. Please try again."
+      "saveError": "Couldn’t save the location. Please try again.",
+      "districtLabel": "District (optional)",
+      "districtPlaceholder": "Select district",
+      "dsDivisionLabel": "DS Division (optional)",
+      "dsDivisionPlaceholder": "Select division"
     },
     "step3": {
       "title": "What type of damage occurred?",

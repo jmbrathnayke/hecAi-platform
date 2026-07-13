@@ -208,6 +208,49 @@ describe("OfficerSubmitPage", () => {
     expect(saveClassification as jest.Mock).toHaveBeenCalledTimes(1);
   });
 
+  it("persists a picked district/DS-division onto the draft (Story 5.2 Task 7)", async () => {
+    render(<OfficerSubmitPage />);
+    await act(async () => {});
+
+    fireEvent.change(screen.getByLabelText(/Citizen's NIC/i), { target: { value: "200012345678" } });
+    fireEvent.change(screen.getByLabelText(/Citizen's mobile/i), { target: { value: "0712345678" } });
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    await screen.findByText(/GPS location detected/i);
+
+    const districtSelect = screen.getByLabelText("District (optional)") as HTMLSelectElement;
+    const district = districtSelect.options[1].value;
+    fireEvent.change(districtSelect, { target: { value: district } });
+    const divisionSelect = screen.getByLabelText("DS Division (optional)") as HTMLSelectElement;
+    const division = divisionSelect.options[1].value;
+    fireEvent.change(divisionSelect, { target: { value: division } });
+
+    mockUpdateDraft.mockClear();
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+    await waitFor(() => expect(mockUpdateDraft).toHaveBeenCalled());
+    const [, fields] = mockUpdateDraft.mock.calls[0];
+    expect(fields.district).toBe(district);
+    expect(fields.ds_division).toBe(division);
+  });
+
+  it("leaves district/ds_division undefined on the draft when the picker is left untouched", async () => {
+    render(<OfficerSubmitPage />);
+    await act(async () => {});
+
+    fireEvent.change(screen.getByLabelText(/Citizen's NIC/i), { target: { value: "200012345678" } });
+    fireEvent.change(screen.getByLabelText(/Citizen's mobile/i), { target: { value: "0712345678" } });
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    await screen.findByText(/GPS location detected/i);
+
+    mockUpdateDraft.mockClear();
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+    await waitFor(() => expect(mockUpdateDraft).toHaveBeenCalled());
+    const [, fields] = mockUpdateDraft.mock.calls[0];
+    expect(fields.district).toBeUndefined();
+    expect(fields.ds_division).toBeUndefined();
+  });
+
   it("stamps submitted_by_officer + officer_id, builds the PoC, and navigates on submit (AC4)", async () => {
     await walkToReview();
     fireEvent.click(screen.getByRole("button", { name: /Submit report/i }));

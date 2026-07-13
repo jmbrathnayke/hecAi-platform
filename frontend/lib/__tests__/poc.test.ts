@@ -1,4 +1,4 @@
-import { computeIdentityHash, toPoCRecord, submitCaseOnline, PoCRecord } from "@/lib/poc";
+import { computeIdentityHash, toPoCRecord, buildCasePayload, submitCaseOnline, PoCRecord } from "@/lib/poc";
 
 describe("computeIdentityHash", () => {
   it("is deterministic for the same inputs", async () => {
@@ -43,6 +43,87 @@ describe("toPoCRecord", () => {
     const rec = toPoCRecord({ sync_status: "synced" }, "off-3", "ts", "h");
     expect(rec.sync_status).toBe("synced");
     expect(rec.damage_category).toBeNull();
+  });
+
+  // Story 5.2 Task 7/8: district/ds_division/ai_severity are new, optional PoCRecord
+  // fields. These are separate test cases (not edits to the ones above) so the existing
+  // exact-toEqual assertions stay untouched.
+  it("carries district/ds_division/ai_severity through when present on the draft", () => {
+    const rec = toPoCRecord(
+      {
+        location_lat: 7.29,
+        location_lng: 80.63,
+        damage_category: "crop",
+        district: "අනුරාධපුරය",
+        ds_division: "ඉපලෝගම",
+        ai_severity: "Severe",
+      },
+      "off-4",
+      "ts",
+      "h",
+    );
+    expect(rec.district).toBe("අනුරාධපුරය");
+    expect(rec.ds_division).toBe("ඉපලෝගම");
+    expect(rec.ai_severity).toBe("Severe");
+  });
+
+  it("leaves district/ds_division/ai_severity undefined (not null) when absent from the draft", () => {
+    const rec = toPoCRecord({ damage_category: "crop" }, "off-5", "ts", "h");
+    expect(rec.district).toBeUndefined();
+    expect(rec.ds_division).toBeUndefined();
+    expect(rec.ai_severity).toBeUndefined();
+    // Confirms the exact-shape test above (line ~26) still holds: an object with these
+    // three keys set to `undefined` is toEqual-indistinguishable from one without them.
+    expect(rec).toEqual({
+      offline_id: "off-5",
+      timestamp_local: "ts",
+      gps: null,
+      damage_category: "crop",
+      submitter_identity_hash: "h",
+      sync_status: "pending",
+    });
+  });
+
+  it("ignores wrong-typed district/ds_division/ai_severity on the draft", () => {
+    const rec = toPoCRecord(
+      { damage_category: "crop", district: 123, ds_division: ["x"], ai_severity: {} },
+      "off-6",
+      "ts",
+      "h",
+    );
+    expect(rec.district).toBeUndefined();
+    expect(rec.ds_division).toBeUndefined();
+    expect(rec.ai_severity).toBeUndefined();
+  });
+});
+
+describe("buildCasePayload (Story 5.2)", () => {
+  const base: PoCRecord = {
+    offline_id: "off-1",
+    timestamp_local: "ts",
+    gps: null,
+    damage_category: "crop",
+    submitter_identity_hash: "h",
+    sync_status: "pending",
+  };
+
+  it("omits district/ds_division/ai_severity entirely when absent (byte-identical citizen body)", () => {
+    const body = buildCasePayload(base);
+    expect("district" in body).toBe(false);
+    expect("ds_division" in body).toBe(false);
+    expect("ai_severity" in body).toBe(false);
+  });
+
+  it("includes district/ds_division/ai_severity when present on the record", () => {
+    const body = buildCasePayload({
+      ...base,
+      district: "අනුරාධපුරය",
+      ds_division: "ඉපලෝගම",
+      ai_severity: "Moderate",
+    });
+    expect(body.district).toBe("අනුරාධපුරය");
+    expect(body.ds_division).toBe("ඉපලෝගම");
+    expect(body.ai_severity).toBe("Moderate");
   });
 });
 
