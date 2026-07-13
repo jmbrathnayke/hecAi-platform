@@ -119,6 +119,16 @@ test("Approve with no estimate requires both an amount and a reason", () => {
   expect(screen.getByRole("button", { name: /^confirm$/i })).not.toBeDisabled();
 });
 
+test("Approve confirm is enabled at a zero RF estimate (code review fix)", () => {
+  // A genuine 0 LKR RF estimate (no assessed damage) must remain approvable at that amount --
+  // previously amountValid required > 0, permanently disabling Confirm in this case.
+  renderPanel({ hasEstimate: true, estimateAmountLkr: 0 });
+  fireEvent.click(screen.getByRole("button", { name: /^approve$/i }));
+  const amountInput = screen.getByLabelText(/approved amount/i) as HTMLInputElement;
+  expect(amountInput.value).toBe("0");
+  expect(screen.getByRole("button", { name: /^confirm$/i })).not.toBeDisabled();
+});
+
 test("Reject confirm is disabled until a reason of at least 10 characters is given", () => {
   renderPanel();
   fireEvent.click(screen.getByRole("button", { name: /^reject$/i }));
@@ -180,6 +190,16 @@ test("a 401/403 from performCaseAction redirects to /admin/login", async () => {
   fireEvent.click(screen.getByRole("button", { name: /^escalate$/i }));
   fireEvent.click(screen.getByRole("button", { name: /^confirm$/i }));
   await waitFor(() => expect(mockReplace).toHaveBeenCalledWith("/admin/login"));
+});
+
+test("a missing token redirects to login and re-enables Confirm rather than sticking on Submitting (code review fix)", async () => {
+  mockGetAccessToken.mockResolvedValue(null);
+  renderPanel();
+  fireEvent.click(screen.getByRole("button", { name: /^escalate$/i }));
+  fireEvent.click(screen.getByRole("button", { name: /^confirm$/i }));
+  await waitFor(() => expect(mockReplace).toHaveBeenCalledWith("/admin/login"));
+  expect(screen.getByRole("button", { name: /^confirm$/i })).not.toBeDisabled();
+  expect(mockPerformCaseAction).not.toHaveBeenCalled();
 });
 
 test("calls performCaseAction with the resolved amount and reason on approve", async () => {

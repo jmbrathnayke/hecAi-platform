@@ -14,6 +14,7 @@ import {
   type AdminCaseAction,
   type AdminCaseDetailResponse,
 } from "@/lib/adminCaseDetail";
+import { CLOSED_STATUSES } from "@/components/admin/statusVocabulary";
 
 // Mirrors backend/app/api/v1/admin.py's MIN_REASON_LENGTH -- client-side check is a UX
 // nicety (avoid a round trip just to learn a reason is too short); the server enforces this
@@ -37,7 +38,7 @@ interface CaseActionPanelProps {
 }
 
 function isClosed(status: string): boolean {
-  return status === "Rejected" || status === "Payment Processed";
+  return CLOSED_STATUSES.has(status);
 }
 
 export function CaseActionPanel({
@@ -74,7 +75,10 @@ export function CaseActionPanel({
     activeAction === "reject" || activeAction === "request_info" || activeAction === "escalate" ||
     (activeAction === "approve" && reasonRequired);
   const reasonValid = reason.trim().length >= MIN_REASON_LENGTH;
-  const amountValid = activeAction !== "approve" || (amount !== "" && Number(amount) > 0);
+  // >= 0, not > 0 (code review fix): a genuine RF estimate of exactly 0 LKR (no assessed
+  // damage) is a real value the backend accepts -- rejecting it here made a legitimate
+  // zero-compensation case impossible to ever approve through this dialog.
+  const amountValid = activeAction !== "approve" || (amount !== "" && Number(amount) >= 0);
   const canSubmit = amountValid && (!reasonRequired || reasonValid);
 
   async function handleConfirm() {
@@ -84,6 +88,10 @@ export function CaseActionPanel({
 
     const token = await getAccessToken();
     if (!token) {
+      // setSubmitting(false) (code review fix): without this, a redirect that doesn't
+      // synchronously unmount the component (a soft navigation, a slow route transition)
+      // left the Confirm button permanently stuck disabled on "Submitting…".
+      setSubmitting(false);
       router.replace("/admin/login");
       return;
     }

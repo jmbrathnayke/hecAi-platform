@@ -167,7 +167,7 @@ class FakeCursor:
             total = sum(
                 c["approved_amount"] or 0
                 for c in self._district_cases(district)
-                if c["status"] == "Approved"
+                if c["status"] in ("Approved", "Payment Processed")
             )
             self._result = (total,)
         elif "AVG(EXTRACT(EPOCH FROM (COALESCE(updated_at" in sql:
@@ -266,12 +266,15 @@ class FakeCursor:
             ]
         elif "UPDATE cases SET status = 'Approved'" in sql:
             # Story 5.5 approve action: status + approved_amount + updated_at together.
+            # RETURNING updated_at: the endpoint fetches this back to build its response
+            # without a second SELECT, so the fake must hand it back the same way.
             amount, case_id = params
             for c in self.store["cases"]:
                 if c["id"] == case_id:
                     c["status"] = "Approved"
                     c["approved_amount"] = amount
                     c["updated_at"] = datetime(2026, 7, 13, 12, 0, 0)  # fixed "now" for tests
+                    self._result = (c["updated_at"],)
                     break
         elif "UPDATE cases SET status = %s, updated_at = now()" in sql:
             # Story 5.5 reject/request_info/escalate/mark_paid: status + updated_at.
@@ -280,6 +283,7 @@ class FakeCursor:
                 if c["id"] == case_id:
                     c["status"] = new_status
                     c["updated_at"] = datetime(2026, 7, 13, 12, 0, 0)
+                    self._result = (c["updated_at"],)
                     break
         elif "INSERT INTO payment_authorizations" in sql:
             case_id, amount, authorized_by = params
@@ -511,6 +515,16 @@ def test_kpis_scoped_to_district_independent_of_list_filters(client):
 
 def test_total_approved_sums_approved_amount_not_ai_estimate(client):
     # CRITICAL #5 regression guard.
+    res = client.get("/api/v1/admin/cases", headers=_auth())
+    assert res.get_json()["kpis"]["total_approved_lkr"] == 50000.0
+
+
+def test_total_approved_lkr_still_counts_a_case_once_it_is_paid(client, store):
+    # Code review fix regression guard: Story 5.5's mark_paid moves a case from 'Approved' to
+    # 'Payment Processed' -- the KPI must not drop the case's approved_amount just because it
+    # was subsequently paid out.
+    case_3 = next(c for c in store["cases"] if c["id"] == 3)
+    case_3["status"] = "Payment Processed"
     res = client.get("/api/v1/admin/cases", headers=_auth())
     assert res.get_json()["kpis"]["total_approved_lkr"] == 50000.0
 
@@ -887,11 +901,20 @@ def test_action_approve_no_estimate_with_amount_and_reason_succeeds(client):
     assert res.get_json()["case"]["approved_amount"] == 30000.0
 
 
-def test_action_approve_amount_must_be_positive(client, store):
+def test_action_approve_amount_must_not_be_negative(client, store):
     store["compensation_estimates"].append(_compensation_row(_CASE_1_ID, amount_lkr=45000.0))
     res = _action(client, _CASE_1_OFFLINE_ID, "approve", amount_lkr=-100)
     assert res.status_code == 400
     assert res.get_json()["error"] == "invalid_amount"
+
+
+def test_action_approve_at_a_zero_rf_estimate_succeeds(client, store):
+    # Code review fix regression guard: a genuine 0 LKR RF estimate (no assessed damage) must
+    # still be approvable at that amount -- amount_lkr=0 is valid, only negative amounts aren't.
+    store["compensation_estimates"].append(_compensation_row(_CASE_1_ID, amount_lkr=0.0))
+    res = _action(client, _CASE_1_OFFLINE_ID, "approve", amount_lkr=0)
+    assert res.status_code == 200
+    assert res.get_json()["case"]["approved_amount"] == 0.0
 
 
 def test_action_reject_no_reason_400(client):
@@ -933,6 +956,16 @@ def test_action_mark_paid_from_approved_succeeds(client, store):
     res = _action(client, _CASE_3_OFFLINE_ID, "mark_paid")
     assert res.status_code == 200
     assert res.get_json()["case"]["status"] == "Payment Processed"
+
+
+def test_action_mark_paid_records_a_supplied_reason(client, store):
+    # Code review fix regression guard: mark_paid previously force-dropped any supplied
+    # reason to {}, silently discarding it. It's optional, but if given, it must be recorded.
+    res = _action(client, _CASE_3_OFFLINE_ID, "mark_paid", reason="Disbursed via bank transfer.")
+    assert res.status_code == 200
+    events = [a for a in store["audit"] if a["event"] == "case_paid"]
+    assert len(events) == 1
+    assert events[0]["metadata"]["reason"] == "Disbursed via bank transfer."
 
 
 def test_action_mark_paid_from_submitted_returns_invalid_transition(client):

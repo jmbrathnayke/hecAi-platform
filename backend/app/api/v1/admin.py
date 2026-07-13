@@ -36,6 +36,7 @@ import psycopg2
 from flask import Blueprint, current_app, g, jsonify, request
 
 from app.api.v1.middleware.auth import require_admin
+from app.domain.validation import MIN_REASON_LENGTH
 from app.infrastructure.audit import verify_chain, write_audit_log
 
 admin_bp = Blueprint("admin", __name__)
@@ -196,10 +197,13 @@ def list_cases():
 
                     # approved_amount (Story 2.5), NOT compensation_estimates.amount_lkr --
                     # the latter is the AI's unapproved recommendation, not a decision
-                    # (CRITICAL #5).
+                    # (CRITICAL #5). Includes 'Payment Processed' as well as 'Approved' --
+                    # code review fix: Story 5.5's mark_paid action moves a case out of
+                    # 'Approved', and this KPI must not drop a case's approved amount from the
+                    # "Total Approved" figure just because it was subsequently paid.
                     cur.execute(
                         "SELECT COALESCE(SUM(approved_amount), 0) FROM cases "
-                        "WHERE district = %s AND status = 'Approved'",
+                        "WHERE district = %s AND status IN ('Approved', 'Payment Processed')",
                         [district],
                     )
                     total_approved = cur.fetchone()[0]
@@ -274,7 +278,12 @@ def list_cases():
 MAX_AUDIT_TRAIL_ROWS = 200
 
 
-def _load_case_detail(cur, offline_id, district):
+# Sentinel distinguishing "no compensation row exists" (a real, valid None) from "caller
+# didn't supply one, go query it" -- see _load_case_detail's known_comp_row param.
+_NOT_FETCHED = object()
+
+
+def _load_case_detail(cur, offline_id, district, known_row=None, known_comp_row=_NOT_FETCHED):
     """Looks up a case by offline_id+district and returns (case_id, payload), where payload
     is the full {case, ai_result, compensation, audit_trail} shape -- or (None, None) if no
     matching row. Shared by get_case_detail (Story 5.4) and post_case_action (Story 5.5) so
@@ -283,22 +292,32 @@ def _load_case_detail(cur, offline_id, district):
     itself -- callers decide what to audit and when (get_case_detail logs the view AFTER
     calling this, so its own view event doesn't appear in the trail it just rendered;
     post_case_action logs its action BEFORE calling this, so the action DOES appear in the
-    returned trail)."""
-    # No row found -> None, None whether the case doesn't exist or belongs to a different
-    # district (CRITICAL #5 lineage) -- never distinguish, so a wrong-district admin can't
-    # probe for another district's case IDs. No submitter_identity_hash (code review fix,
-    # Story 5.4): unused by the frontend, not required by any AC, and an unnecessary exposure
-    # surface for a value whose construction differs by intake channel (see deferred-work.md).
-    cur.execute(
-        """SELECT canonical_id, offline_id, damage_category, status,
-                  gps_lat, gps_lng, submitted_at, updated_at, submitted_via,
-                  approved_amount, id
-             FROM cases WHERE offline_id = %s AND district = %s""",
-        (offline_id, district),
-    )
-    row = cur.fetchone()
-    if row is None:
-        return None, None
+    returned trail).
+
+    known_row/known_comp_row (code review fix): post_case_action already has the cases row
+    (freshly re-derived after its own write) and, on the approve path, the compensation_
+    estimates row, in hand by the time it calls this -- passing them here skips re-querying
+    tables this same request already read a moment ago, instead of re-fetching by
+    offline_id/district a second time."""
+    if known_row is not None:
+        row = known_row
+    else:
+        # No row found -> None, None whether the case doesn't exist or belongs to a different
+        # district (CRITICAL #5 lineage) -- never distinguish, so a wrong-district admin can't
+        # probe for another district's case IDs. No submitter_identity_hash (code review fix,
+        # Story 5.4): unused by the frontend, not required by any AC, and an unnecessary
+        # exposure surface for a value whose construction differs by intake channel (see
+        # deferred-work.md).
+        cur.execute(
+            """SELECT canonical_id, offline_id, damage_category, status,
+                      gps_lat, gps_lng, submitted_at, updated_at, submitted_via,
+                      approved_amount, id
+                 FROM cases WHERE offline_id = %s AND district = %s""",
+            (offline_id, district),
+        )
+        row = cur.fetchone()
+        if row is None:
+            return None, None
 
     case_id = row[10]
 
@@ -315,13 +334,16 @@ def _load_case_detail(cur, offline_id, district):
     ai_row = cur.fetchone()
 
     # compensation: 0 or 1 row (UNIQUE case_id, migration 013).
-    cur.execute(
-        """SELECT amount_lkr, raw_estimate_lkr, capped, feature_values_json,
-                  model_version, dataset_version, created_at
-             FROM compensation_estimates WHERE case_id = %s""",
-        (case_id,),
-    )
-    comp_row = cur.fetchone()
+    if known_comp_row is not _NOT_FETCHED:
+        comp_row = known_comp_row
+    else:
+        cur.execute(
+            """SELECT amount_lkr, raw_estimate_lkr, capped, feature_values_json,
+                      model_version, dataset_version, created_at
+                 FROM compensation_estimates WHERE case_id = %s""",
+            (case_id,),
+        )
+        comp_row = cur.fetchone()
 
     # `ORDER BY id DESC LIMIT %s` (newest N, in descending order), reversed to ascending in
     # Python below -- NOT `ASC LIMIT %s` (code review fix, Story 5.4: that kept the oldest N
@@ -440,7 +462,6 @@ def get_case_detail(offline_id):
 # metadata, not the status column, the same way inference_log.was_overridden carries meaning
 # the status column doesn't.
 VALID_ACTIONS = {"approve", "reject", "request_info", "escalate", "mark_paid"}
-MIN_REASON_LENGTH = 10  # matches inference.py's existing override-reason convention
 
 _ACTION_ALLOWED_FROM = {
     "approve": {"Submitted", "Under Review"},
@@ -449,11 +470,23 @@ _ACTION_ALLOWED_FROM = {
     "escalate": {"Submitted", "Under Review"},
     "mark_paid": {"Approved"},
 }
+# Target status + audit event name for the 4 actions that are a plain status transition.
+# "approve" is deliberately not in these tables -- it also resolves an amount (from the body
+# or the RF estimate) and writes payment_authorizations, a genuinely different shape, not just
+# a different target status (code review fix: this pair used to be split across a module-level
+# dict and a dict-literal rebuilt on every request -- hoisted the event names here too so
+# both halves of a plain transition's config live in one place next to each other).
 _ACTION_TARGET_STATUS = {
     "reject": "Rejected",
     "request_info": "Under Review",
     "escalate": "Under Review",
     "mark_paid": "Payment Processed",
+}
+_ACTION_EVENT = {
+    "reject": "case_rejected",
+    "request_info": "case_info_requested",
+    "escalate": "case_escalated",
+    "mark_paid": "case_paid",
 }
 
 
@@ -486,7 +519,10 @@ def post_case_action(offline_id):
     if amount_lkr is not None:
         if isinstance(amount_lkr, bool) or not isinstance(amount_lkr, (int, float)):
             return jsonify({"error": "invalid_amount"}), 400
-        if amount_lkr <= 0:
+        # >= 0, not > 0 (code review fix): a genuine RF estimate of exactly 0 LKR (no assessed
+        # damage) is a real, tested value (see test_compensation.py) -- rejecting it here made
+        # a legitimate zero-compensation case impossible to ever approve.
+        if amount_lkr < 0:
             return jsonify({"error": "invalid_amount"}), 400
 
     # reject's reason is unconditionally required -- unlike approve's conditional requirement
@@ -503,12 +539,21 @@ def post_case_action(offline_id):
                     # Same query shape as _load_case_detail's cases SELECT (deliberately, not
                     # a narrower id+status-only query) -- one query shape for the FakeCursor
                     # test double to match; id and status are always columns 10 and 3 of that
-                    # row regardless.
+                    # row regardless. FOR UPDATE (code review fix): without a row lock here,
+                    # two concurrent requests against the same case (a double-click, a retried
+                    # request racing the original, two admin sessions) could both read the same
+                    # pre-action status, both pass the transition check below, and both commit
+                    # -- e.g. two payment_authorizations rows for one approval. This lock is
+                    # held for the rest of the transaction (released at the `with conn:` commit
+                    # below), so a second concurrent request blocks here until the first
+                    # commits, then re-reads the now-updated status and correctly gets
+                    # invalid_transition/case_closed instead of racing the write.
                     cur.execute(
                         """SELECT canonical_id, offline_id, damage_category, status,
                                   gps_lat, gps_lng, submitted_at, updated_at, submitted_via,
                                   approved_amount, id
-                             FROM cases WHERE offline_id = %s AND district = %s""",
+                             FROM cases WHERE offline_id = %s AND district = %s
+                             FOR UPDATE""",
                         (offline_id, district),
                     )
                     row = cur.fetchone()
@@ -523,6 +568,11 @@ def post_case_action(offline_id):
                         if current_status in ("Rejected", "Payment Processed"):
                             return jsonify({"error": "case_closed"}), 400
                         return jsonify({"error": "invalid_transition"}), 400
+
+                    # known_comp_row (code review fix): populated on the approve path below so
+                    # the post-write _load_case_detail call can reuse the compensation row
+                    # already fetched here instead of re-querying it a second time.
+                    known_comp_row = _NOT_FETCHED
 
                     if action == "approve":
                         # Same query shape as _load_case_detail's compensation SELECT
@@ -546,11 +596,17 @@ def post_case_action(offline_id):
                         if amount_differs and (not reason or len(reason) < MIN_REASON_LENGTH):
                             return jsonify({"error": "reason_required"}), 400
 
+                        # RETURNING updated_at (code review fix): captures the exact
+                        # server-computed timestamp the write just produced, so the response
+                        # payload below can be built from it directly instead of re-selecting
+                        # the whole cases row a second time.
                         cur.execute(
                             """UPDATE cases SET status = 'Approved', approved_amount = %s,
-                                                 updated_at = now() WHERE id = %s""",
+                                                 updated_at = now() WHERE id = %s
+                               RETURNING updated_at""",
                             (resolved_amount, case_id),
                         )
+                        new_updated_at = cur.fetchone()[0]
                         # FR-5.6: payment authorization record, created on approval only. No
                         # citizen-identity column (see the story's CRITICAL #3) -- case_id ->
                         # canonical_id is the practical reference this schema can produce.
@@ -563,28 +619,46 @@ def post_case_action(offline_id):
                             cur, case_id, "case_approved", g.admin_id,
                             {"amount_lkr": resolved_amount, "reason": reason},
                         )
+                        new_status = "Approved"
+                        new_approved_amount = resolved_amount
+                        known_comp_row = est_row
                     else:
                         target_status = _ACTION_TARGET_STATUS[action]
                         # Code review-lineage fix (Story 5.3/5.4 precedent): bump updated_at on
                         # every status-changing action -- the existing avg_processing_days KPI
                         # (list_cases) depends on it (CRITICAL #2).
                         cur.execute(
-                            "UPDATE cases SET status = %s, updated_at = now() WHERE id = %s",
+                            """UPDATE cases SET status = %s, updated_at = now() WHERE id = %s
+                               RETURNING updated_at""",
                             (target_status, case_id),
                         )
-                        event = {
-                            "reject": "case_rejected",
-                            "request_info": "case_info_requested",
-                            "escalate": "case_escalated",
-                            "mark_paid": "case_paid",
-                        }[action]
-                        metadata = {"reason": reason} if action != "mark_paid" else {}
-                        write_audit_log(cur, case_id, event, g.admin_id, metadata)
+                        new_updated_at = cur.fetchone()[0]
+                        # Include any client-supplied reason regardless of action (code review
+                        # fix): mark_paid previously force-dropped a supplied reason to {},
+                        # silently discarding it with no error -- now it's recorded like every
+                        # other action's optional reason.
+                        metadata = {"reason": reason} if reason else {}
+                        write_audit_log(cur, case_id, _ACTION_EVENT[action], g.admin_id, metadata)
+                        new_status = target_status
+                        new_approved_amount = row[9]
 
+                    # Response built from the row already in hand + the values just written,
+                    # not a second `cases` SELECT (code review fix: the original re-fetched the
+                    # entire row a second time solely to hand it to _load_case_detail, even
+                    # though every field other than status/approved_amount/updated_at is
+                    # unchanged and those three are already known here).
+                    updated_row = (
+                        row[0], row[1], row[2], new_status,
+                        row[4], row[5], row[6], new_updated_at,
+                        row[8], new_approved_amount, row[10],
+                    )
                     # Same response shape as GET .../cases/<offline_id> (Dev Notes Sec Response
                     # Shape Reuse) -- includes the action just written, since this call happens
                     # after the write, unlike get_case_detail's own view-audit ordering.
-                    _, payload = _load_case_detail(cur, offline_id, district)
+                    _, payload = _load_case_detail(
+                        cur, offline_id, district,
+                        known_row=updated_row, known_comp_row=known_comp_row,
+                    )
         finally:
             conn.close()
     except psycopg2.Error:
