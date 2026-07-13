@@ -1,10 +1,24 @@
-"""Admin case-list API (Story 5.3, FR-5.1/FR-7.1).
+"""Admin case-list + case-detail API (Stories 5.3/5.4, FR-5.1/FR-5.2/FR-7.1).
 
 GET /api/v1/admin/cases -- admin-authenticated (Supabase JWT via require_admin()).
 District-scoped: WHERE district = g.district_id, from the verified JWT only, never a
 request param. Mirrors officer.py's list_cases() shape at district instead of
 officer/division scope. Payload never includes NIC in any form (no submitter_identity_hash,
 no citizen_nic_plain) -- case detail (Story 5.4) is a separate, more privileged view.
+
+GET /api/v1/admin/cases/<offline_id> -- Story 5.4 case detail. Same district-scoping rule.
+Never returns citizen_nic_plain (migration 009: write-only, must never be returned by any
+read endpoint); submitter_identity_hash IS returned here (unlike the list endpoint) since
+this is the more-privileged single-case view the module docstring above already promises --
+it is a one-way SHA-256 tag, not a reversible identity, so surfacing it here is not a NIC
+disclosure.
+
+GET /api/v1/admin/audit/verify-chain -- Story 5.4 AC4. Wraps the existing, unmodified
+infrastructure/audit.py::verify_chain() over the WHOLE audit_log table. The hash chain is
+global (prev_hash links across every case/district in insertion order, not scoped to one
+case) -- see infrastructure/audit.py's own docstring -- so this deliberately is NOT filtered
+by case_id or district; a per-case "verification" would compare against the wrong prev_hash
+and be cryptographically meaningless.
 
 District-scoping convention (Story 5.3 PO-Ratified Resolution 1): admin user_metadata.
 district_id holds the REAL Sinhala district name (matching district_reference.json's
@@ -15,13 +29,14 @@ three intake channels support it) is excluded from every admin's view; there is 
 inclusive fallback the way officer's ds_division_id/officer_id OR-condition works, because
 admin has no equivalent "cases I personally touched" concept.
 """
+import uuid
 from datetime import date
 
 import psycopg2
 from flask import Blueprint, current_app, g, jsonify, request
 
 from app.api.v1.middleware.auth import require_admin
-from app.infrastructure.audit import write_audit_log
+from app.infrastructure.audit import verify_chain, write_audit_log
 
 admin_bp = Blueprint("admin", __name__)
 
@@ -251,3 +266,170 @@ def list_cases():
         ),
         200,
     )
+
+
+# Defensive cap on the per-case audit trail (Story 5.4 CRITICAL #4 lineage) -- today's real
+# volume is 1 row/case (no review actions exist until Story 5.5), but the query must not be
+# unbounded regardless.
+MAX_AUDIT_TRAIL_ROWS = 200
+
+
+@admin_bp.route("/admin/cases/<offline_id>", methods=["GET"])
+@require_admin()
+def get_case_detail(offline_id):
+    district = g.district_id  # verified JWT claim -- never from the request
+    if not district:
+        return jsonify({"error": "no_district_assigned"}), 403
+
+    try:
+        uuid.UUID(offline_id)
+    except ValueError:
+        return jsonify({"error": "invalid_offline_id"}), 400
+
+    try:
+        conn = _get_connection()
+        try:
+            with conn:
+                with conn.cursor() as cur:
+                    # No row found -> 404 whether the case doesn't exist or belongs to a
+                    # different district (CRITICAL #5 lineage) -- never distinguish, so a
+                    # wrong-district admin can't probe for another district's case IDs.
+                    cur.execute(
+                        """SELECT canonical_id, offline_id, damage_category, status,
+                                  gps_lat, gps_lng, submitted_at, updated_at, submitted_via,
+                                  submitter_identity_hash, approved_amount, id
+                             FROM cases WHERE offline_id = %s AND district = %s""",
+                        (offline_id, district),
+                    )
+                    row = cur.fetchone()
+                    if row is None:
+                        return jsonify({"error": "not_found"}), 404
+
+                    case_id = row[11]
+
+                    # ai_result: latest inference_log row only (CRITICAL: one row carries
+                    # both the original prediction AND any override fields -- see
+                    # inference.py -- never a join or a second row).
+                    cur.execute(
+                        """SELECT model_type, model_version, prediction, confidence,
+                                  was_overridden, override_reason, override_category,
+                                  input_features, created_at
+                             FROM inference_log WHERE case_id = %s
+                            ORDER BY created_at DESC LIMIT 1""",
+                        (case_id,),
+                    )
+                    ai_row = cur.fetchone()
+
+                    # compensation: 0 or 1 row (UNIQUE case_id, migration 013).
+                    cur.execute(
+                        """SELECT amount_lkr, raw_estimate_lkr, capped, feature_values_json,
+                                  model_version, dataset_version, created_at
+                             FROM compensation_estimates WHERE case_id = %s""",
+                        (case_id,),
+                    )
+                    comp_row = cur.fetchone()
+
+                    cur.execute(
+                        """SELECT id, event, actor_id, metadata, created_at, hash, prev_hash
+                             FROM audit_log WHERE case_id = %s
+                            ORDER BY id ASC LIMIT %s""",
+                        (case_id, MAX_AUDIT_TRAIL_ROWS),
+                    )
+                    audit_rows = cur.fetchall()
+
+                    # View-audit AFTER reading the trail above, so this view event doesn't
+                    # appear in the trail it just rendered (cosmetic; it will show up next
+                    # time -- same "not fighting it" note as list_cases's own view-audit).
+                    write_audit_log(
+                        cur, case_id, "admin_viewed_case_detail", g.admin_id,
+                        {"ip_address": _client_ip()},
+                    )
+        finally:
+            conn.close()
+    except psycopg2.Error:
+        current_app.logger.exception("admin case detail failed")
+        return jsonify({"error": "server_error"}), 500
+
+    case = {
+        "canonical_id": row[0],
+        "offline_id": str(row[1]) if row[1] is not None else None,
+        "damage_category": row[2],
+        "status": row[3],
+        "gps_lat": float(row[4]) if row[4] is not None else None,
+        "gps_lng": float(row[5]) if row[5] is not None else None,
+        "submitted_at": row[6].isoformat() if row[6] else None,
+        "updated_at": row[7].isoformat() if row[7] else None,
+        "submitted_via": row[8],
+        "submitter_identity_hash": row[9],
+        "approved_amount": float(row[10]) if row[10] is not None else None,
+    }
+
+    ai_result = None
+    if ai_row is not None:
+        input_features = ai_row[7] or {}
+        ai_result = {
+            "model_type": ai_row[0],
+            "model_version": ai_row[1],
+            "prediction": ai_row[2],
+            "confidence": float(ai_row[3]) if ai_row[3] is not None else None,
+            "was_overridden": ai_row[4],
+            "override_reason": ai_row[5],
+            "override_category": ai_row[6],
+            "ai_severity": input_features.get("ai_severity"),
+            "created_at": ai_row[8].isoformat() if ai_row[8] else None,
+        }
+
+    compensation = None
+    if comp_row is not None:
+        compensation = {
+            "amount_lkr": float(comp_row[0]),
+            "raw_estimate_lkr": float(comp_row[1]),
+            "capped": comp_row[2],
+            "feature_values": comp_row[3],
+            "model_version": comp_row[4],
+            "dataset_version": comp_row[5],
+            "created_at": comp_row[6].isoformat() if comp_row[6] else None,
+        }
+
+    audit_trail = [
+        {
+            "id": r[0],
+            "event": r[1],
+            "actor_id": r[2],
+            "metadata": r[3],
+            "created_at": r[4].isoformat() if r[4] else None,
+            "hash": r[5],
+            "prev_hash": r[6],
+        }
+        for r in audit_rows
+    ]
+
+    return (
+        jsonify(
+            {
+                "case": case,
+                "ai_result": ai_result,
+                "compensation": compensation,
+                "audit_trail": audit_trail,
+            }
+        ),
+        200,
+    )
+
+
+@admin_bp.route("/admin/audit/verify-chain", methods=["GET"])
+@require_admin()
+def get_verify_chain():
+    try:
+        conn = _get_connection()
+        try:
+            with conn:
+                with conn.cursor() as cur:
+                    valid, broken_id = verify_chain(cur)
+        finally:
+            conn.close()
+    except psycopg2.Error:
+        current_app.logger.exception("audit chain verification failed")
+        return jsonify({"error": "server_error"}), 500
+
+    return jsonify({"valid": valid, "broken_id": broken_id}), 200

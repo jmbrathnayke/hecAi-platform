@@ -17,6 +17,7 @@ import {
 import { CaseListTable, type SortColumn, type SortDirection } from "@/components/admin/CaseListTable";
 import { FilterBar, type AdminCaseFilters } from "@/components/admin/FilterBar";
 import { AdminKpiCards } from "@/components/admin/AdminKpiCards";
+import { CaseDetailPanel } from "@/components/admin/CaseDetailPanel";
 
 type LoadState = "loading" | "error" | "ready";
 const PAGE_SIZE = 20;
@@ -209,14 +210,12 @@ function AdminCasesPageContent() {
 
   const totalPages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1;
 
-  // Extracted (code review fix) so the desktop and mobile panes below can't drift out of
-  // sync when Story 5.4 replaces one copy and forgets the other -- previously hand-
-  // duplicated, byte-identical JSX.
-  const selectedDetailContent = (
-    <div className="rounded-md border border-border-default bg-surface-raised p-design-4 text-body text-ink-secondary">
-      Case detail coming in Story 5.4 (selected: {selectedOfflineId}).
-    </div>
-  );
+  // Extracted (Story 5.3 code review fix) so the desktop and mobile panes below can't drift
+  // out of sync -- previously hand-duplicated, byte-identical JSX. Story 5.4 fills this seam
+  // with the real case detail panel instead of the old placeholder text.
+  const selectedDetailContent = selectedOfflineId ? (
+    <CaseDetailPanel offlineId={selectedOfflineId} />
+  ) : null;
 
   return (
     <main className="min-h-screen bg-surface-base px-design-4 py-design-6">
@@ -290,7 +289,7 @@ function AdminCasesPageContent() {
               )}
             </div>
 
-            {/* Right pane is a layout seam for Story 5.4's case detail view — not built here. */}
+            {/* Right pane: case detail (Story 5.4). */}
             <div className="hidden lg:block lg:w-[60%]">
               {selectedOfflineId ? (
                 selectedDetailContent

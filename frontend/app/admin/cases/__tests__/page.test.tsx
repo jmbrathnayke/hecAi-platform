@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import AdminCasesPage from "../page";
 import { fetchAdminCases, UNAUTHORIZED } from "@/lib/adminCases";
+import { fetchAdminCaseDetail } from "@/lib/adminCaseDetail";
 import { getAccessToken } from "@/lib/auth";
 
 const mockReplace = jest.fn();
@@ -28,9 +29,40 @@ jest.mock("@/lib/supabase", () => ({
 
 jest.mock("@/lib/auth", () => ({ getAccessToken: jest.fn() }));
 jest.mock("@/lib/adminCases", () => ({ fetchAdminCases: jest.fn(), UNAUTHORIZED: "unauthorized" }));
+// Story 5.4: the seam now mounts a real CaseDetailPanel, which fetches its own data via
+// lib/adminCaseDetail — mocked here the same way lib/adminCases already is, so selecting a
+// case in these page-level tests doesn't attempt a real, unmocked fetch().
+jest.mock("@/lib/adminCaseDetail", () => ({
+  fetchAdminCaseDetail: jest.fn(),
+  verifyAuditChain: jest.fn(),
+  UNAUTHORIZED: "unauthorized",
+}));
 
 const mockGetAccessToken = getAccessToken as jest.Mock;
 const mockFetchAdminCases = fetchAdminCases as jest.Mock;
+const mockFetchAdminCaseDetail = fetchAdminCaseDetail as jest.Mock;
+
+function makeDetailResponse(overrides: Record<string, unknown> = {}) {
+  return {
+    case: {
+      canonical_id: "HEC-2026-0001",
+      offline_id: "off-1",
+      damage_category: "crop",
+      status: "Submitted",
+      gps_lat: null,
+      gps_lng: null,
+      submitted_at: "2026-07-08T10:00:00.000Z",
+      updated_at: "2026-07-08T10:00:00.000Z",
+      submitted_via: "app",
+      submitter_identity_hash: "deadbeef",
+      approved_amount: null,
+    },
+    ai_result: null,
+    compensation: null,
+    audit_trail: [],
+    ...overrides,
+  };
+}
 
 function makeItem(overrides: Record<string, unknown> = {}) {
   return {
@@ -69,6 +101,7 @@ beforeEach(() => {
   mockSignOut.mockReset().mockResolvedValue({ error: null });
   mockGetAccessToken.mockReset().mockResolvedValue("tok-123");
   mockFetchAdminCases.mockReset().mockResolvedValue(makeResponse());
+  mockFetchAdminCaseDetail.mockReset().mockResolvedValue(makeDetailResponse());
 });
 
 // --- role gate (Story 5.1, must survive the Story 5.3 rewrite unchanged) ----------------
@@ -240,16 +273,18 @@ test("pagination controls do not render for a single page of results", async () 
   expect(screen.queryByLabelText(/case list pagination/i)).not.toBeInTheDocument();
 });
 
-test("selecting a case shows the Story 5.4 detail seam, not a crash", async () => {
+test("selecting a case shows the real Story 5.4 CaseDetailPanel, not a crash", async () => {
   mockAdmin();
   render(<AdminCasesPage />);
   await screen.findByText("HEC-2026-0001");
   screen.getByText("HEC-2026-0001").closest("tr")!.click();
   // Rendered once per responsive breakpoint (desktop pane + mobile pane); jsdom applies no
   // real CSS media queries, so both exist in the DOM simultaneously in this test — assert
-  // at least one, not exactly one.
-  const matches = await screen.findAllByText(/coming in story 5\.4/i);
+  // at least one, not exactly one. "Not yet AI-classified" is AIResultPanel's empty state,
+  // a marker only the real CaseDetailPanel (not the old placeholder) renders.
+  const matches = await screen.findAllByText(/not yet ai-classified/i);
   expect(matches.length).toBeGreaterThanOrEqual(1);
+  expect(mockFetchAdminCaseDetail).toHaveBeenCalledWith("tok-123", "off-1");
 });
 
 test("no results for the current filters shows an empty-state message, not an error", async () => {
@@ -294,11 +329,11 @@ test("selecting a case then changing filters clears the stale Story 5.4 selectio
   const { rerender } = render(<AdminCasesPage />);
   await screen.findByText("HEC-2026-0001");
   screen.getByText("HEC-2026-0001").closest("tr")!.click();
-  expect((await screen.findAllByText(/coming in story 5\.4/i)).length).toBeGreaterThanOrEqual(1);
+  expect((await screen.findAllByText(/not yet ai-classified/i)).length).toBeGreaterThanOrEqual(1);
 
   currentSearch = "status=Approved"; // simulate a filter having been applied
   rerender(<AdminCasesPage />);
-  await waitFor(() => expect(screen.queryByText(/coming in story 5\.4/i)).not.toBeInTheDocument());
+  await waitFor(() => expect(screen.queryByText(/not yet ai-classified/i)).not.toBeInTheDocument());
   expect(screen.getAllByText(/select a case to view details/i).length).toBeGreaterThanOrEqual(1);
 });
 
@@ -307,7 +342,7 @@ test("a case row is keyboard-selectable via Enter, not mouse-only (code review f
   render(<AdminCasesPage />);
   const row = (await screen.findByText("HEC-2026-0001")).closest("tr")!;
   fireEvent.keyDown(row, { key: "Enter" });
-  expect((await screen.findAllByText(/coming in story 5\.4/i)).length).toBeGreaterThanOrEqual(1);
+  expect((await screen.findAllByText(/not yet ai-classified/i)).length).toBeGreaterThanOrEqual(1);
 });
 
 test("Days Pending shows — for a case that has left Submitted, not a stale day count (code review fix)", async () => {
