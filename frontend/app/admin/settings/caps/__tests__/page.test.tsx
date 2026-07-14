@@ -3,6 +3,19 @@ import CompensationCapsPage from "../page";
 import { fetchCompensationCaps, updateCompensationCap } from "@/lib/adminSettings";
 import { getAccessToken } from "@/lib/auth";
 
+// next-intl passthrough (Story 6.3): the caps page is now localized, so the translator returns the
+// key, appending interpolation values — the aria-label becomes "caps.capAria {district}" with the
+// district NAME kept canonical (data, never translated).
+jest.mock("next-intl", () => ({
+  useTranslations: () => {
+    const t = (key: string, vars?: Record<string, unknown>) =>
+      vars && Object.keys(vars).length ? `${key} ${Object.values(vars).join(" ")}` : key;
+    t.rich = (key: string) => key;
+    return t;
+  },
+  useLocale: () => "en",
+}));
+
 const ANURADHAPURA = "අනුරාධපුරය"; // real top-level key in public/data/district_reference.json
 
 const mockReplace = jest.fn();
@@ -55,19 +68,19 @@ test("non-admin is signed out and redirected to /admin/login", async () => {
 
 test("renders a known district with its existing cap prefilled", async () => {
   render(<CompensationCapsPage />);
-  const input = await screen.findByLabelText(`Property damage cap for ${ANURADHAPURA}`) as HTMLInputElement;
+  const input = await screen.findByLabelText(`caps.capAria ${ANURADHAPURA}`) as HTMLInputElement;
   expect(input.value).toBe("50000");
 });
 
 test("shows 'no cap enforced' placeholder for a district with no cap row", async () => {
   render(<CompensationCapsPage />);
-  const input = await screen.findByLabelText(`Property damage cap for ${ANURADHAPURA}`);
+  const input = await screen.findByLabelText(`caps.capAria ${ANURADHAPURA}`);
   // Any other real district (not Anuradhapura) should have no existing row and show the
   // placeholder instead of a prefilled value.
   const allInputs = screen.getAllByRole("spinbutton") as HTMLInputElement[];
   const uncapped = allInputs.find((el) => el !== input);
   expect(uncapped?.value).toBe("");
-  expect(uncapped?.placeholder).toBe("no cap enforced");
+  expect(uncapped?.placeholder).toBe("caps.noCapPlaceholder");
 });
 
 test("editing and saving a cap calls updateCompensationCap and reflects the saved value", async () => {
@@ -76,7 +89,7 @@ test("editing and saving a cap calls updateCompensationCap and reflects the save
     updated_by: "admin-1", updated_at: "2026-07-14T10:00:00.000Z",
   });
   render(<CompensationCapsPage />);
-  const input = await screen.findByLabelText(`Property damage cap for ${ANURADHAPURA}`);
+  const input = await screen.findByLabelText(`caps.capAria ${ANURADHAPURA}`);
   fireEvent.change(input, { target: { value: "75000" } });
 
   const row = input.closest("tr")!;
@@ -98,7 +111,7 @@ test("editing the input again while its own save is still in flight is not clobb
   );
   render(<CompensationCapsPage />);
   const input = (await screen.findByLabelText(
-    `Property damage cap for ${ANURADHAPURA}`,
+    `caps.capAria ${ANURADHAPURA}`,
   )) as HTMLInputElement;
   fireEvent.change(input, { target: { value: "75000" } });
   const row = input.closest("tr")!;
@@ -126,7 +139,7 @@ test("starting a second district's save does not re-enable the first district's 
 
   render(<CompensationCapsPage />);
   const firstInput = (await screen.findByLabelText(
-    `Property damage cap for ${ANURADHAPURA}`,
+    `caps.capAria ${ANURADHAPURA}`,
   )) as HTMLInputElement;
   const allInputs = screen.getAllByRole("spinbutton") as HTMLInputElement[];
   const secondInput = allInputs.find((el) => el !== firstInput)!;
@@ -160,7 +173,7 @@ test("a 401/403 from fetchCompensationCaps redirects to /admin/login", async () 
 test("a 401/403 from updateCompensationCap redirects to /admin/login", async () => {
   mockUpdateCap.mockResolvedValue("unauthorized");
   render(<CompensationCapsPage />);
-  const input = await screen.findByLabelText(`Property damage cap for ${ANURADHAPURA}`);
+  const input = await screen.findByLabelText(`caps.capAria ${ANURADHAPURA}`);
   fireEvent.change(input, { target: { value: "60000" } });
   const row = input.closest("tr")!;
   fireEvent.click(within(row).getByRole("button", { name: /save/i }));

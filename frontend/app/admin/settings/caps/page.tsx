@@ -10,6 +10,7 @@
 // saved under any other value would never be read by a real estimate.
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { createClient } from "@/lib/supabase";
 import { getAccessToken } from "@/lib/auth";
 import {
@@ -28,6 +29,7 @@ type LoadState = "loading" | "error" | "ready";
 
 export default function CompensationCapsPage() {
   const router = useRouter();
+  const t = useTranslations("admin");
 
   // --- Role gate (mirrors admin/cases/page.tsx) ----------------------------------------
   const [checked, setChecked] = useState(false);
@@ -132,7 +134,7 @@ export default function CompensationCapsPage() {
       return;
     }
     if (!result) {
-      setError("Couldn't save this cap. Please try again.");
+      setError(t("caps.saveError"));
       return;
     }
     setCaps((prev) => [...(prev ?? []).filter((c) => c.district !== district), result]);
@@ -152,21 +154,18 @@ export default function CompensationCapsPage() {
   return (
     <main className="min-h-screen bg-surface-base px-design-4 py-design-6">
       <div className="mx-auto max-w-3xl space-y-design-4">
-        <h1 className="text-title text-ink-primary">Settings — Compensation Caps</h1>
-        <p className="text-body text-ink-secondary">
-          Property damage cap per district. Crop and combined damage claims are bounded by the
-          same value today — the compensation model has no separate crop/combined coverage yet.
-        </p>
+        <h1 className="text-title text-ink-primary">{t("caps.title")}</h1>
+        <p className="text-body text-ink-secondary">{t("caps.intro")}</p>
 
         {state === "loading" && (
           <p className="text-body text-ink-secondary" role="status">
-            Loading caps…
+            {t("caps.loading")}
           </p>
         )}
 
         {state === "error" && (
           <p role="alert" className="text-body text-status-error">
-            Couldn&apos;t load compensation caps.
+            {t("caps.loadError")}
           </p>
         )}
 
@@ -180,8 +179,8 @@ export default function CompensationCapsPage() {
           <table className="w-full border-collapse text-body">
             <thead>
               <tr className="border-b border-border-default text-left">
-                <th className="py-design-2">District</th>
-                <th className="py-design-2">Property damage cap (LKR)</th>
+                <th className="py-design-2">{t("caps.colDistrict")}</th>
+                <th className="py-design-2">{t("caps.colCap")}</th>
                 <th className="py-design-2" />
               </tr>
             </thead>
@@ -197,12 +196,12 @@ export default function CompensationCapsPage() {
                       <input
                         type="number"
                         min={0}
-                        aria-label={`Property damage cap for ${district}`}
+                        aria-label={t("caps.capAria", { district })}
                         value={value}
                         onChange={(e) =>
                           setAmounts((prev) => ({ ...prev, [district]: e.target.value }))
                         }
-                        placeholder={existing ? undefined : "no cap enforced"}
+                        placeholder={existing ? undefined : t("caps.noCapPlaceholder")}
                         className="w-full rounded-md border border-border-default px-design-3 py-design-2"
                       />
                     </td>
@@ -213,7 +212,7 @@ export default function CompensationCapsPage() {
                         onClick={() => handleSave(district)}
                         className="min-h-touch-target rounded-md bg-forest px-design-4 text-label font-semibold text-ink-on-dark disabled:opacity-50"
                       >
-                        {saving.has(district) ? "Saving…" : "Save"}
+                        {saving.has(district) ? t("caps.saving") : t("caps.save")}
                       </button>
                     </td>
                   </tr>

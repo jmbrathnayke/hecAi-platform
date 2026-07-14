@@ -92,7 +92,8 @@
       "Submitted": "ඉදිරිපත් කළා",
       "UnderReview": "සමාලෝචනය වෙමින්",
       "Approved": "අනුමතයි",
-      "Rejected": "ප්‍රතික්ෂේපයි"
+      "Rejected": "ප්‍රතික්ෂේපයි",
+      "PaymentProcessed": "ගෙවීම සකසන ලදී"
     }
   },
   "login": {
@@ -265,6 +266,130 @@
     }
   },
   "admin": {
-    "languageLabel": "භාෂාව"
+    "languageLabel": "භාෂාව",
+    "login": {
+      "title": "පරිපාලක ද්වාරය",
+      "google": "Google සමඟ පිවිසෙන්න",
+      "or": "හෝ",
+      "emailPlaceholder": "DWC විද්‍යුත් තැපැල් ලිපිනය",
+      "passwordPlaceholder": "මුරපදය",
+      "signIn": "පිවිසෙන්න",
+      "networkError": "පිවිසුම් සේවාවට සම්බන්ධ විය නොහැක. ඔබගේ සම්බන්ධතාවය පරීක්ෂා කර නැවත උත්සාහ කරන්න.",
+      "accessDenied": "ප්‍රවේශය ප්‍රතික්ෂේප විය. පරිපාලක ගිණුමක් අවශ්‍යයි."
+    },
+    "cases": {
+      "title": "පරිපාලක — නඩු ලැයිස්තුව",
+      "selectPrompt": "විස්තර බැලීමට නඩුවක් තෝරන්න.",
+      "loading": "නඩු පූරණය වෙමින්…",
+      "loadError": "නඩු පූරණය කළ නොහැක.",
+      "retry": "නැවත උත්සාහ කරන්න",
+      "empty": "ඔබගේ වත්මන් පෙරහන් සමඟ ගැළපෙන නඩු නැත.",
+      "previous": "පෙර",
+      "next": "ඊළඟ",
+      "pageOf": "පිටුව {page} / {total}",
+      "paginationAria": "නඩු ලැයිස්තු පිටු අංකනය"
+    },
+    "caps": {
+      "title": "සැකසුම් — වන්දි සීමා",
+      "intro": "දිස්ත්‍රික්කය අනුව දේපළ හානි සීමාව. වගා සහ ඒකාබද්ධ හානි හිමිකම් අද වන විට එම අගයෙන්ම සීමා වේ — වන්දි ආකෘතියට තවම වෙනම වගා/ඒකාබද්ධ ආවරණයක් නොමැත.",
+      "loading": "සීමා පූරණය වෙමින්…",
+      "loadError": "වන්දි සීමා පූරණය කළ නොහැක.",
+      "saveError": "මෙම සීමාව සුරැකිය නොහැක. නැවත උත්සාහ කරන්න.",
+      "colDistrict": "දිස්ත්‍රික්කය",
+      "colCap": "දේපළ හානි සීමාව (රු.)",
+      "capAria": "{district} සඳහා දේපළ හානි සීමාව",
+      "noCapPlaceholder": "සීමාවක් බලාත්මක නැත",
+      "saving": "සුරකිමින්…",
+      "save": "සුරකින්න"
+    },
+    "table": {
+      "colCanonicalId": "නිල හැඳුනුම",
+      "colDamageCategory": "හානි වර්ගය",
+      "colAiConfidence": "AI විශ්වාසය",
+      "colStatus": "තත්ත්වය",
+      "colSubmissionDate": "ඉදිරිපත් කළ දිනය",
+      "colDaysPending": "පොරොත්තු දින",
+      "sortAria": "{column} අනුව පෙළගස්වන්න"
+    },
+    "filter": {
+      "formAria": "නඩු පෙරහන් කරන්න",
+      "status": "තත්ත්වය",
+      "allStatuses": "සියලු තත්ත්ව",
+      "from": "සිට",
+      "to": "දක්වා",
+      "damageType": "හානි වර්ගය",
+      "allTypes": "සියලු වර්ග",
+      "dsDivision": "ප්‍ර.ලේ. කොට්ඨාසය",
+      "divisionPlaceholder": "නිශ්චිත කොට්ඨාස නාමය",
+      "apply": "පෙරහන් යොදන්න",
+      "clear": "පෙරහන් හිස් කරන්න"
+    },
+    "kpi": {
+      "thisMonth": "මෙම මාසයේ නඩු",
+      "byStatus": "තත්ත්වය අනුව",
+      "totalApproved": "මුළු අනුමත (රු.)",
+      "avgProcessing": "සාමාන්‍ය සැකසුම් (දින)"
+    },
+    "detail": {
+      "loading": "නඩුව පූරණය වෙමින්…",
+      "loadError": "නඩු විස්තර පූරණය කළ නොහැක.",
+      "retry": "නැවත උත්සාහ කරන්න",
+      "channel": "නාලිකාව",
+      "damageCategory": "හානි වර්ගය",
+      "submitted": "ඉදිරිපත් කළ",
+      "location": "ස්ථානය"
+    },
+    "action": {
+      "heading": "ක්‍රියා",
+      "closed": "මෙම නඩුව වසා ඇත.",
+      "approve": "අනුමත කරන්න",
+      "reject": "ප්‍රතික්ෂේප කරන්න",
+      "requestInfo": "වැඩිදුර තොරතුරු ඉල්ලන්න",
+      "escalate": "ඉහළට යොමු කරන්න",
+      "markPaid": "ගෙවූ ලෙස සලකුණු කරන්න",
+      "confirmTitle": "{action} තහවුරු කරන්න",
+      "labelApprove": "අනුමැතිය",
+      "labelReject": "ප්‍රතික්ෂේපය",
+      "labelRequestInfo": "තොරතුරු ඉල්ලීම",
+      "labelEscalate": "ඉහළට යොමු කිරීම",
+      "labelMarkPaid": "ගෙවූ ලෙස සලකුණු කිරීම",
+      "approvedAmount": "අනුමත මුදල (රු.)",
+      "reason": "හේතුව",
+      "reasonOptional": "හේතුව (විකල්ප)",
+      "submitting": "ඉදිරිපත් කරමින්…",
+      "confirm": "තහවුරු කරන්න",
+      "cancel": "අවලංගු කරන්න",
+      "actionError": "මෙම ක්‍රියාව සම්පූර්ණ කළ නොහැක. නැවත උත්සාහ කරන්න."
+    },
+    "compensation": {
+      "empty": "ඇස්තමේන්තුවක් නොමැත.",
+      "heading": "වන්දි ඇස්තමේන්තුව",
+      "aiRecommendation": "AI නිර්දේශය — පරිපාලක අනුමැතිය අවශ්‍යයි",
+      "recommendedAmount": "නිර්දේශිත මුදල",
+      "capYes": "සීමාව යෙදිණි: ඔව් — අමු ඇස්තමේන්තුව: {amount}",
+      "capNo": "සීමාව යෙදිණි: නැත",
+      "colFeature": "විශේෂාංගය",
+      "colValue": "අගය"
+    },
+    "audit": {
+      "heading": "විගණන මාර්ගය",
+      "verify": "දාම අඛණ්ඩතාව සත්‍යාපනය කරන්න",
+      "valid": "දාමය අඛණ්ඩයි — කිසිදු වෙනස් කිරීමක් අනාවරණය නොවීය.",
+      "invalidWithRow": "විගණන ලොගයේ වෙනස් කිරීමක් අනාවරණය විය (පේළිය #{row}).",
+      "invalidNoRow": "විගණන ලොගයේ වෙනස් කිරීමක් අනාවරණය විය.",
+      "unauthorized": "සැසිය කල් ඉකුත් විය — නැවත පිවිසෙන්න.",
+      "error": "දැන් දාම අඛණ්ඩතාව සත්‍යාපනය කළ නොහැක."
+    },
+    "ai": {
+      "empty": "තවම AI වර්ගීකරණය කර නැත.",
+      "heading": "AI වර්ගීකරණය",
+      "confidence": "විශ්වාසය {pct}%",
+      "originalClass": "මුල් AI පංතිය:",
+      "officerOverride": "නිලධාරී අභිබවීම:",
+      "reasonLabel": "හේතුව:"
+    },
+    "photo": {
+      "unavailable": "ඡායාරූප බැලීම තවම නොමැත."
+    }
   }
 }

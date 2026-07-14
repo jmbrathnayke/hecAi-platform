@@ -226,7 +226,7 @@ function AdminCasesPageContent() {
     <CaseDetailPanel offlineId={selectedOfflineId} />
   ) : (
     <div className="hidden rounded-md border border-dashed border-border-default p-design-4 text-body text-ink-disabled lg:block">
-      Select a case to view details.
+      {t("cases.selectPrompt")}
     </div>
   );
 
@@ -234,7 +234,7 @@ function AdminCasesPageContent() {
     <main className="min-h-screen bg-surface-base px-design-4 py-design-6">
       <div className="mx-auto max-w-6xl space-y-design-4">
         <header className="flex flex-wrap items-start justify-between gap-design-2">
-          <h1 className="text-title text-ink-primary">Admin — Case List</h1>
+          <h1 className="text-title text-ink-primary">{t("cases.title")}</h1>
           <div className="flex flex-col gap-design-1">
             <span className="text-caption text-ink-secondary">{t("languageLabel")}</span>
             <LanguageSelectorCookie />
@@ -247,25 +247,25 @@ function AdminCasesPageContent() {
 
         {state === "loading" && !data && (
           <p className="text-body text-ink-secondary" role="status">
-            Loading cases…
+            {t("cases.loading")}
           </p>
         )}
 
         {state === "error" && (
           <div role="alert" className="space-y-design-2">
-            <p className="text-body text-status-error">Couldn&apos;t load cases.</p>
+            <p className="text-body text-status-error">{t("cases.loadError")}</p>
             <button
               type="button"
               onClick={() => setReloadNonce((n) => n + 1)}
               className="min-h-touch-target rounded-md border border-forest px-design-4 text-label font-semibold text-forest"
             >
-              Retry
+              {t("cases.retry")}
             </button>
           </div>
         )}
 
         {state === "ready" && data && data.items.length === 0 && (
-          <p className="text-body text-ink-secondary">No cases match your current filters.</p>
+          <p className="text-body text-ink-secondary">{t("cases.empty")}</p>
         )}
 
         {data && data.items.length > 0 && (
@@ -283,7 +283,7 @@ function AdminCasesPageContent() {
               {totalPages > 1 && (
                 <nav
                   className="mt-design-3 flex items-center justify-between gap-design-2"
-                  aria-label="Case list pagination"
+                  aria-label={t("cases.paginationAria")}
                 >
                   <button
                     type="button"
@@ -291,10 +291,10 @@ function AdminCasesPageContent() {
                     onClick={() => updateUrl({ page: page - 1 })}
                     className="min-h-touch-target rounded-md border border-border-default px-design-3 text-label disabled:opacity-40"
                   >
-                    Previous
+                    {t("cases.previous")}
                   </button>
                   <span className="text-caption text-ink-secondary">
-                    Page {page} of {totalPages}
+                    {t("cases.pageOf", { page, total: totalPages })}
                   </span>
                   <button
                     type="button"
@@ -302,7 +302,7 @@ function AdminCasesPageContent() {
                     onClick={() => updateUrl({ page: page + 1 })}
                     className="min-h-touch-target rounded-md border border-border-default px-design-3 text-label disabled:opacity-40"
                   >
-                    Next
+                    {t("cases.next")}
                   </button>
                 </nav>
               )}

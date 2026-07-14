@@ -8,6 +8,7 @@
 // would compare against the wrong previous hash and be cryptographically meaningless (see
 // the story's CRITICAL #3/#6 and infrastructure/audit.py's own docstring).
 import { useState } from "react";
+import { useLocale, useTranslations } from "next-intl";
 import { getAccessToken } from "@/lib/auth";
 import { verifyAuditChain, UNAUTHORIZED, type AdminAuditEntry } from "@/lib/adminCaseDetail";
 
@@ -17,13 +18,15 @@ interface AuditTrailProps {
 
 type VerifyState = "idle" | "checking" | "valid" | "invalid" | "error" | "unauthorized";
 
-function formatTimestamp(iso: string | null): string {
+function formatTimestamp(iso: string | null, locale: string): string {
   if (!iso) return "—";
   const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleString();
+  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleString(locale);
 }
 
 export function AuditTrail({ trail }: AuditTrailProps) {
+  const t = useTranslations("admin");
+  const locale = useLocale();
   const [verifyState, setVerifyState] = useState<VerifyState>("idle");
   // Code review fix: the backend deliberately returns an opaque audit_log.id for the broken
   // row (safe -- no case/district join) specifically so something actionable could be shown;
@@ -53,36 +56,37 @@ export function AuditTrail({ trail }: AuditTrailProps) {
   return (
     <div className="space-y-design-3">
       <div className="flex items-center justify-between">
-        <h3 className="text-heading-3 text-ink-primary">Audit Trail</h3>
+        <h3 className="text-heading-3 text-ink-primary">{t("audit.heading")}</h3>
         <button
           type="button"
           onClick={handleVerify}
           disabled={verifyState === "checking"}
           className="text-label font-medium text-forest underline disabled:opacity-50"
         >
-          Verify chain integrity
+          {t("audit.verify")}
         </button>
       </div>
 
       {verifyState === "valid" && (
         <p className="text-label text-forest" role="status">
-          Chain intact — no tampering detected.
+          {t("audit.valid")}
         </p>
       )}
       {verifyState === "invalid" && (
         <p className="text-label text-status-error" role="alert">
-          Tampering detected in the audit log
-          {brokenId != null ? ` (row #${brokenId}).` : "."}
+          {brokenId != null
+            ? t("audit.invalidWithRow", { row: brokenId })
+            : t("audit.invalidNoRow")}
         </p>
       )}
       {verifyState === "unauthorized" && (
         <p className="text-label text-status-error" role="alert">
-          Session expired — please sign in again.
+          {t("audit.unauthorized")}
         </p>
       )}
       {verifyState === "error" && (
         <p className="text-label text-status-error" role="alert">
-          Couldn&apos;t verify chain integrity right now.
+          {t("audit.error")}
         </p>
       )}
 
@@ -96,7 +100,7 @@ export function AuditTrail({ trail }: AuditTrailProps) {
               <span className="text-label font-medium text-ink-primary">{entry.event}</span>
               <span className="text-label text-ink-disabled">{entry.actor_id ?? "—"}</span>
               <span className="ml-auto text-caption text-ink-disabled">
-                {formatTimestamp(entry.created_at)}
+                {formatTimestamp(entry.created_at, locale)}
               </span>
             </div>
             {entry.hash && (

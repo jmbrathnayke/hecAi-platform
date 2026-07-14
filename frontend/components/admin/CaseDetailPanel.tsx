@@ -5,6 +5,7 @@
 // standalone page/route (see the story's CRITICAL #4: no [id]/page.tsx).
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useLocale, useTranslations } from "next-intl";
 import { getAccessToken } from "@/lib/auth";
 import { fetchAdminCaseDetail, UNAUTHORIZED, type AdminCaseDetailResponse } from "@/lib/adminCaseDetail";
 import { PhotoGallery } from "@/components/admin/PhotoGallery";
@@ -20,14 +21,26 @@ interface CaseDetailPanelProps {
 
 type LoadState = "loading" | "error" | "ready";
 
-function formatDateTime(iso: string | null): string {
+// Case status reuses shared status.statusLabels (space-stripped key); damage category reuses
+// report.step3 with a raw fallback for any non-canonical value (Story 6.3).
+const DAMAGE_KEYS = new Set(["crop", "property", "combined", "none"]);
+
+function statusKey(status: string): string {
+  return status.replace(/\s/g, "");
+}
+
+function formatDateTime(iso: string | null, locale: string): string {
   if (!iso) return "—";
   const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleString();
+  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleString(locale);
 }
 
 export function CaseDetailPanel({ offlineId }: CaseDetailPanelProps) {
   const router = useRouter();
+  const t = useTranslations("admin");
+  const tStatus = useTranslations("status");
+  const tReport = useTranslations("report");
+  const locale = useLocale();
   const [data, setData] = useState<AdminCaseDetailResponse | null>(null);
   const [state, setState] = useState<LoadState>("loading");
   const [reloadNonce, setReloadNonce] = useState(0);
@@ -74,7 +87,7 @@ export function CaseDetailPanel({ offlineId }: CaseDetailPanelProps) {
     return (
       <div className="rounded-md border border-border-default bg-surface-raised p-design-4">
         <p className="text-body text-ink-secondary" role="status">
-          Loading case…
+          {t("detail.loading")}
         </p>
       </div>
     );
@@ -83,13 +96,13 @@ export function CaseDetailPanel({ offlineId }: CaseDetailPanelProps) {
   if (state === "error") {
     return (
       <div role="alert" className="space-y-design-2 rounded-md border border-border-default bg-surface-raised p-design-4">
-        <p className="text-body text-status-error">Couldn&apos;t load case detail.</p>
+        <p className="text-body text-status-error">{t("detail.loadError")}</p>
         <button
           type="button"
           onClick={() => setReloadNonce((n) => n + 1)}
           className="min-h-touch-target rounded-md border border-forest px-design-4 text-label font-semibold text-forest"
         >
-          Retry
+          {t("detail.retry")}
         </button>
       </div>
     );
@@ -113,24 +126,30 @@ export function CaseDetailPanel({ offlineId }: CaseDetailPanelProps) {
               STATUS_STYLES[c.status] ?? "bg-surface-tint text-ink-secondary"
             }`}
           >
-            {c.status}
+            {tStatus(`statusLabels.${statusKey(c.status)}`)}
           </span>
         </div>
         <dl className="grid grid-cols-2 gap-design-2 text-body">
           <div>
-            <dt className="text-label text-ink-disabled">Channel</dt>
+            <dt className="text-label text-ink-disabled">{t("detail.channel")}</dt>
             <dd className="text-ink-primary">{c.submitted_via ?? "—"}</dd>
           </div>
           <div>
-            <dt className="text-label text-ink-disabled">Damage Category</dt>
-            <dd className="text-ink-primary">{c.damage_category ?? "—"}</dd>
+            <dt className="text-label text-ink-disabled">{t("detail.damageCategory")}</dt>
+            <dd className="text-ink-primary">
+              {c.damage_category
+                ? DAMAGE_KEYS.has(c.damage_category)
+                  ? tReport(`step3.${c.damage_category}`)
+                  : c.damage_category
+                : "—"}
+            </dd>
           </div>
           <div>
-            <dt className="text-label text-ink-disabled">Submitted</dt>
-            <dd className="text-ink-primary">{formatDateTime(c.submitted_at)}</dd>
+            <dt className="text-label text-ink-disabled">{t("detail.submitted")}</dt>
+            <dd className="text-ink-primary">{formatDateTime(c.submitted_at, locale)}</dd>
           </div>
           <div>
-            <dt className="text-label text-ink-disabled">Location</dt>
+            <dt className="text-label text-ink-disabled">{t("detail.location")}</dt>
             <dd className="text-ink-primary">
               {hasGps ? (
                 <a

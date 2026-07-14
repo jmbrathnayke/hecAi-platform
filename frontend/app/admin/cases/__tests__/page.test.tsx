@@ -4,11 +4,17 @@ import { fetchAdminCases, UNAUTHORIZED } from "@/lib/adminCases";
 import { fetchAdminCaseDetail } from "@/lib/adminCaseDetail";
 import { getAccessToken } from "@/lib/auth";
 
-// next-intl: passthrough translator (key -> key) + fixed locale. The cases header now renders the
-// non-routed LanguageSelectorCookie (useLocale) + a translated language label (useTranslations)
-// under the admin i18n provider (Story 6.1); in isolation the test provides this stub.
+// next-intl passthrough (Story 6.3): the translator returns the key, appending interpolation
+// values so assertions on interpolated strings (e.g. "cases.pageOf 1 3", "table.sortAria
+// table.colCanonicalId") stay legible. Covers the page and the REAL children it renders
+// (CaseListTable / FilterBar / AdminKpiCards / CaseDetailPanel), all now localized.
 jest.mock("next-intl", () => ({
-  useTranslations: () => (k: string) => k,
+  useTranslations: () => {
+    const t = (key: string, vars?: Record<string, unknown>) =>
+      vars && Object.keys(vars).length ? `${key} ${Object.values(vars).join(" ")}` : key;
+    t.rich = (key: string) => key;
+    return t;
+  },
   useLocale: () => "en",
 }));
 
@@ -202,7 +208,7 @@ test("shows a KPI skeleton while loading, then real KPI values once fetched", as
   render(<AdminCasesPage />);
   await screen.findByTestId("kpi-skeleton");
   await waitFor(() => expect(screen.queryByTestId("kpi-skeleton")).not.toBeInTheDocument());
-  expect(screen.getByText("Cases This Month").nextSibling).toHaveTextContent("5");
+  expect(screen.getByText("kpi.thisMonth").nextSibling).toHaveTextContent("5");
   expect(screen.getByText(/Rs\. 150,000/)).toBeInTheDocument();
 });
 
@@ -210,7 +216,7 @@ test("shows an error state with Retry when the fetch fails, not a blank page", a
   mockAdmin();
   mockFetchAdminCases.mockResolvedValue(null);
   render(<AdminCasesPage />);
-  expect(await screen.findByRole("alert")).toHaveTextContent(/couldn.?t load cases/i);
+  expect(await screen.findByRole("alert")).toHaveTextContent("cases.loadError");
   expect(screen.getByRole("button", { name: /retry/i })).toBeInTheDocument();
 });
 
@@ -228,7 +234,7 @@ test("clicking a column header sorts ascending on first click", async () => {
   mockAdmin();
   render(<AdminCasesPage />);
   await screen.findByText("HEC-2026-0001");
-  screen.getByRole("button", { name: /sort by canonical id/i }).click();
+  screen.getByRole("button", { name: /table\.sortAria table\.colCanonicalId/i }).click();
   expect(mockPush).toHaveBeenCalledWith("/admin/cases?sort=canonical_id&dir=asc");
 });
 
@@ -237,7 +243,7 @@ test("clicking the same column a third time resets to the default sort (AC3)", a
   currentSearch = "sort=canonical_id&dir=desc"; // simulate: already past click 1 (asc) and 2 (desc)
   render(<AdminCasesPage />);
   await screen.findByText("HEC-2026-0001");
-  screen.getByRole("button", { name: /sort by canonical id/i }).click();
+  screen.getByRole("button", { name: /table\.sortAria table\.colCanonicalId/i }).click();
   expect(mockPush).toHaveBeenCalledWith("/admin/cases");
 });
 
@@ -246,10 +252,10 @@ test("applying a filter pushes it into the URL query string and resets to page 1
   currentSearch = "page=3";
   render(<AdminCasesPage />);
   await screen.findByText("HEC-2026-0001");
-  const statusSelect = screen.getByLabelText("Status") as HTMLSelectElement;
+  const statusSelect = screen.getByLabelText("filter.status") as HTMLSelectElement;
   statusSelect.value = "Approved";
   statusSelect.dispatchEvent(new Event("change", { bubbles: true }));
-  screen.getByRole("button", { name: /apply filters/i }).click();
+  screen.getByRole("button", { name: /filter\.apply/i }).click();
   expect(mockPush).toHaveBeenCalledWith(expect.stringContaining("status=Approved"));
   expect(mockPush).toHaveBeenCalledWith(expect.not.stringContaining("page="));
 });
@@ -259,7 +265,7 @@ test("Clear Filters navigates back to the bare /admin/cases URL", async () => {
   currentSearch = "status=Approved&page=2";
   render(<AdminCasesPage />);
   await screen.findByText("HEC-2026-0001");
-  screen.getByRole("button", { name: /clear filters/i }).click();
+  screen.getByRole("button", { name: /filter\.clear/i }).click();
   expect(mockPush).toHaveBeenCalledWith("/admin/cases");
 });
 
@@ -268,9 +274,9 @@ test("pagination controls render when there are more results than one page", asy
   mockFetchAdminCases.mockResolvedValue(makeResponse({ total: 45, page: 1, limit: 20 }));
   render(<AdminCasesPage />);
   await screen.findByText("HEC-2026-0001");
-  expect(screen.getByText("Page 1 of 3")).toBeInTheDocument();
+  expect(screen.getByText("cases.pageOf 1 3")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: /previous/i })).toBeDisabled();
-  expect(screen.getByRole("button", { name: /^next$/i })).not.toBeDisabled();
+  expect(screen.getByRole("button", { name: /cases\.next/i })).not.toBeDisabled();
 });
 
 test("pagination controls do not render for a single page of results", async () => {
@@ -278,7 +284,7 @@ test("pagination controls do not render for a single page of results", async () 
   mockFetchAdminCases.mockResolvedValue(makeResponse({ total: 1 }));
   render(<AdminCasesPage />);
   await screen.findByText("HEC-2026-0001");
-  expect(screen.queryByLabelText(/case list pagination/i)).not.toBeInTheDocument();
+  expect(screen.queryByLabelText(/cases\.paginationAria/i)).not.toBeInTheDocument();
 });
 
 test("selecting a case shows the real Story 5.4 CaseDetailPanel, not a crash", async () => {
@@ -288,7 +294,7 @@ test("selecting a case shows the real Story 5.4 CaseDetailPanel, not a crash", a
   screen.getByText("HEC-2026-0001").closest("tr")!.click();
   // "Not yet AI-classified" is AIResultPanel's empty state, a marker only the real
   // CaseDetailPanel (not the old placeholder) renders.
-  expect(await screen.findByText(/not yet ai-classified/i)).toBeInTheDocument();
+  expect(await screen.findByText(/ai\.empty/i)).toBeInTheDocument();
   expect(mockFetchAdminCaseDetail).toHaveBeenCalledWith("tok-123", "off-1");
 });
 
@@ -301,8 +307,8 @@ test("selecting a case mounts CaseDetailPanel exactly once, not once per respons
   render(<AdminCasesPage />);
   await screen.findByText("HEC-2026-0001");
   screen.getByText("HEC-2026-0001").closest("tr")!.click();
-  await screen.findByText(/not yet ai-classified/i);
-  expect(screen.getAllByText(/not yet ai-classified/i)).toHaveLength(1);
+  await screen.findByText(/ai\.empty/i);
+  expect(screen.getAllByText(/ai\.empty/i)).toHaveLength(1);
   expect(mockFetchAdminCaseDetail).toHaveBeenCalledTimes(1);
 });
 
@@ -310,7 +316,7 @@ test("no results for the current filters shows an empty-state message, not an er
   mockAdmin();
   mockFetchAdminCases.mockResolvedValue(makeResponse({ items: [], total: 0 }));
   render(<AdminCasesPage />);
-  expect(await screen.findByText(/no cases match your current filters/i)).toBeInTheDocument();
+  expect(await screen.findByText("cases.empty")).toBeInTheDocument();
 });
 
 // --- code review fixes -------------------------------------------------------------------
@@ -322,7 +328,7 @@ test("clicking Submission Date on a fresh page load sorts ascending, not a no-op
   mockAdmin();
   render(<AdminCasesPage />);
   await screen.findByText("HEC-2026-0001");
-  screen.getByRole("button", { name: /sort by submission date/i }).click();
+  screen.getByRole("button", { name: /table\.sortAria table\.colSubmissionDate/i }).click();
   expect(mockPush).toHaveBeenCalledWith("/admin/cases?sort=submitted_at&dir=asc");
 });
 
@@ -348,12 +354,12 @@ test("selecting a case then changing filters clears the stale Story 5.4 selectio
   const { rerender } = render(<AdminCasesPage />);
   await screen.findByText("HEC-2026-0001");
   screen.getByText("HEC-2026-0001").closest("tr")!.click();
-  expect((await screen.findAllByText(/not yet ai-classified/i)).length).toBeGreaterThanOrEqual(1);
+  expect((await screen.findAllByText(/ai\.empty/i)).length).toBeGreaterThanOrEqual(1);
 
   currentSearch = "status=Approved"; // simulate a filter having been applied
   rerender(<AdminCasesPage />);
-  await waitFor(() => expect(screen.queryByText(/not yet ai-classified/i)).not.toBeInTheDocument());
-  expect(screen.getAllByText(/select a case to view details/i).length).toBeGreaterThanOrEqual(1);
+  await waitFor(() => expect(screen.queryByText(/ai\.empty/i)).not.toBeInTheDocument());
+  expect(screen.getAllByText(/cases\.selectPrompt/i).length).toBeGreaterThanOrEqual(1);
 });
 
 test("a case row is keyboard-selectable via Enter, not mouse-only (code review fix)", async () => {
@@ -361,7 +367,7 @@ test("a case row is keyboard-selectable via Enter, not mouse-only (code review f
   render(<AdminCasesPage />);
   const row = (await screen.findByText("HEC-2026-0001")).closest("tr")!;
   fireEvent.keyDown(row, { key: "Enter" });
-  expect((await screen.findAllByText(/not yet ai-classified/i)).length).toBeGreaterThanOrEqual(1);
+  expect((await screen.findAllByText(/ai\.empty/i)).length).toBeGreaterThanOrEqual(1);
 });
 
 test("Days Pending shows — for a case that has left Submitted, not a stale day count (code review fix)", async () => {
@@ -389,10 +395,10 @@ test("FilterBar visibly resets after Clear Filters, not just the URL (code revie
   currentSearch = "status=Approved";
   const { rerender } = render(<AdminCasesPage />);
   await screen.findByText("HEC-2026-0001");
-  expect((screen.getByLabelText("Status") as HTMLSelectElement).value).toBe("Approved");
+  expect((screen.getByLabelText("filter.status") as HTMLSelectElement).value).toBe("Approved");
 
   currentSearch = ""; // simulate router.push("/admin/cases") having navigated
   rerender(<AdminCasesPage />);
   await screen.findByText("HEC-2026-0001");
-  expect((screen.getByLabelText("Status") as HTMLSelectElement).value).toBe("");
+  expect((screen.getByLabelText("filter.status") as HTMLSelectElement).value).toBe("");
 });

@@ -7,6 +7,7 @@
 // AdminCaseAction doc comment).
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { getAccessToken } from "@/lib/auth";
 import {
   performCaseAction,
@@ -21,12 +22,14 @@ import { CLOSED_STATUSES } from "@/components/admin/statusVocabulary";
 // regardless.
 const MIN_REASON_LENGTH = 10;
 
-const ACTION_LABELS: Record<AdminCaseAction, string> = {
-  approve: "Approval",
-  reject: "Rejection",
-  request_info: "Request for Info",
-  escalate: "Escalation",
-  mark_paid: "Mark as Paid",
+// Maps each action to its `admin.action.*` label key (Story 6.3). The action ENUM values
+// (approve/reject/…) are the API contract and are unchanged; only the display label is translated.
+const ACTION_LABEL_KEYS: Record<AdminCaseAction, string> = {
+  approve: "labelApprove",
+  reject: "labelReject",
+  request_info: "labelRequestInfo",
+  escalate: "labelEscalate",
+  mark_paid: "labelMarkPaid",
 };
 
 interface CaseActionPanelProps {
@@ -49,6 +52,7 @@ export function CaseActionPanel({
   onActionComplete,
 }: CaseActionPanelProps) {
   const router = useRouter();
+  const t = useTranslations("admin");
   const [activeAction, setActiveAction] = useState<AdminCaseAction | null>(null);
   const [amount, setAmount] = useState("");
   const [reason, setReason] = useState("");
@@ -107,7 +111,7 @@ export function CaseActionPanel({
       return;
     }
     if (!result) {
-      setError("Couldn't complete this action. Please try again.");
+      setError(t("action.actionError"));
       return;
     }
     onActionComplete(result);
@@ -117,14 +121,14 @@ export function CaseActionPanel({
   if (isClosed(status)) {
     return (
       <div className="rounded-md border border-dashed border-border-default p-design-4 text-body text-ink-disabled">
-        This case is closed.
+        {t("action.closed")}
       </div>
     );
   }
 
   return (
     <div className="space-y-design-3">
-      <h3 className="text-heading-3 text-ink-primary">Actions</h3>
+      <h3 className="text-heading-3 text-ink-primary">{t("action.heading")}</h3>
 
       {status === "Approved" ? (
         <button
@@ -132,7 +136,7 @@ export function CaseActionPanel({
           onClick={() => openDialog("mark_paid")}
           className="min-h-touch-target rounded-md bg-forest px-design-4 text-label font-semibold text-ink-on-dark"
         >
-          Mark as Paid
+          {t("action.markPaid")}
         </button>
       ) : (
         <div className="grid grid-cols-2 gap-design-2">
@@ -141,28 +145,28 @@ export function CaseActionPanel({
             onClick={() => openDialog("approve")}
             className="min-h-touch-target rounded-md bg-forest px-design-4 text-label font-semibold text-ink-on-dark"
           >
-            Approve
+            {t("action.approve")}
           </button>
           <button
             type="button"
             onClick={() => openDialog("reject")}
             className="min-h-touch-target rounded-md bg-status-error px-design-4 text-label font-semibold text-white"
           >
-            Reject
+            {t("action.reject")}
           </button>
           <button
             type="button"
             onClick={() => openDialog("request_info")}
             className="min-h-touch-target rounded-md border border-amber px-design-4 text-label font-semibold text-amber"
           >
-            Request More Info
+            {t("action.requestInfo")}
           </button>
           <button
             type="button"
             onClick={() => openDialog("escalate")}
             className="min-h-touch-target rounded-md border border-amber px-design-4 text-label font-semibold text-amber"
           >
-            Escalate
+            {t("action.escalate")}
           </button>
         </div>
       )}
@@ -170,13 +174,13 @@ export function CaseActionPanel({
       {activeAction && (
         <div className="rounded-md border border-border-default bg-surface-raised p-design-4 space-y-design-3">
           <h4 className="text-label font-semibold text-ink-primary">
-            Confirm {ACTION_LABELS[activeAction]}
+            {t("action.confirmTitle", { action: t(`action.${ACTION_LABEL_KEYS[activeAction]}`) })}
           </h4>
 
           {activeAction === "approve" && (
             <div className="space-y-design-1">
               <label htmlFor="approve-amount" className="text-label text-ink-secondary">
-                Approved Amount (LKR)
+                {t("action.approvedAmount")}
               </label>
               <input
                 id="approve-amount"
@@ -191,7 +195,7 @@ export function CaseActionPanel({
           {showReasonField && (
             <div className="space-y-design-1">
               <label htmlFor="action-reason" className="text-label text-ink-secondary">
-                Reason{reasonRequired ? "" : " (optional)"}
+                {reasonRequired ? t("action.reason") : t("action.reasonOptional")}
               </label>
               <textarea
                 id="action-reason"
@@ -216,7 +220,7 @@ export function CaseActionPanel({
               disabled={!canSubmit || submitting}
               className="min-h-touch-target flex-1 rounded-md bg-forest px-design-4 text-label font-semibold text-ink-on-dark disabled:opacity-50"
             >
-              {submitting ? "Submitting…" : "Confirm"}
+              {submitting ? t("action.submitting") : t("action.confirm")}
             </button>
             <button
               type="button"
@@ -224,7 +228,7 @@ export function CaseActionPanel({
               disabled={submitting}
               className="min-h-touch-target flex-1 rounded-md border border-border-default px-design-4 text-label text-ink-secondary disabled:opacity-50"
             >
-              Cancel
+              {t("action.cancel")}
             </button>
           </div>
         </div>
