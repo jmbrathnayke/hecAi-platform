@@ -5,7 +5,9 @@
 // convention; case detail (Story 5.4) is where an admin with a specific case open sees more.
 import { useLocale, useTranslations } from "next-intl";
 import type { AdminCaseListItem } from "@/lib/adminCases";
-import { STATUS_STYLES } from "@/components/admin/statusVocabulary";
+import { statusKey } from "@/lib/status";
+import { STATUS_STYLES, STATUS_VALUES } from "@/components/admin/statusVocabulary";
+import { DAMAGE_CATEGORY_KEYS } from "@/components/admin/damageVocabulary";
 
 export type SortColumn = "submitted_at" | "canonical_id" | "damage_category" | "status";
 export type SortDirection = "asc" | "desc";
@@ -29,17 +31,6 @@ const COLUMNS: { sortKey: SortColumn | null; labelKey: string }[] = [
   { sortKey: "submitted_at", labelKey: "colSubmissionDate" },
   { sortKey: null, labelKey: "colDaysPending" },
 ];
-
-// The 4 canonical damage-category values that have a shared report.step3 label; any other backend
-// value (or null) falls back to the raw string (Story 6.3 AC4).
-const DAMAGE_KEYS = new Set(["crop", "property", "combined", "none"]);
-
-// Case status values are constrained to the 5 canonical STATUS_VALUES; the badge display reuses the
-// shared status.statusLabels namespace keyed by the space-stripped value ("Under Review" ->
-// "UnderReview"), the Story 6.2 officer-dashboard pattern.
-function statusKey(status: string): string {
-  return status.replace(/\s/g, "");
-}
 
 function formatDate(iso: string | null, locale: string): string {
   if (!iso) return "—";
@@ -73,7 +64,16 @@ export function CaseListTable({
   const locale = useLocale();
 
   const damageLabel = (cat: string | null): string =>
-    cat ? (DAMAGE_KEYS.has(cat) ? tReport(`step3.${cat}`) : cat) : "—";
+    cat ? (DAMAGE_CATEGORY_KEYS.has(cat) ? tReport(`step3.${cat}`) : cat) : "—";
+
+  // Case status values are constrained to the 5 canonical STATUS_VALUES in normal operation, but
+  // the `status` column has no DB-level CHECK constraint -- fall back to the raw value for
+  // anything outside that set instead of rendering next-intl's missing-message placeholder
+  // (Story 6.3 code review fix, mirrors StatusCard.tsx's isKnown guard).
+  const statusLabel = (status: string): string =>
+    (STATUS_VALUES as readonly string[]).includes(status)
+      ? tStatus(`statusLabels.${statusKey(status)}`)
+      : status;
 
   return (
     <table className="w-full border-collapse text-body">
@@ -145,7 +145,7 @@ export function CaseListTable({
                     STATUS_STYLES[c.status] ?? "bg-surface-tint text-ink-secondary"
                   }`}
                 >
-                  {tStatus(`statusLabels.${statusKey(c.status)}`)}
+                  {statusLabel(c.status)}
                 </span>
               </td>
               <td className="px-design-3 py-design-2 text-ink-secondary">

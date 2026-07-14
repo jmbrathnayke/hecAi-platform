@@ -212,6 +212,30 @@ test("shows a KPI skeleton while loading, then real KPI values once fetched", as
   expect(screen.getByText(/Rs\. 150,000/)).toBeInTheDocument();
 });
 
+// Code review fix (Story 6.3): `cases.status` has no DB-level CHECK constraint, so a status
+// outside the 5 canonical STATUS_VALUES must still render as itself, not next-intl's
+// missing-message placeholder ("statusLabels.<key>").
+test("a case-list status badge falls back to the raw status string for a non-canonical value", async () => {
+  mockAdmin();
+  mockFetchAdminCases.mockResolvedValue(
+    makeResponse({ items: [makeItem({ status: "Archived" })] }),
+  );
+  render(<AdminCasesPage />);
+  expect(await screen.findByText("Archived")).toBeInTheDocument();
+  expect(screen.queryByText(/statusLabels\.Archived/)).not.toBeInTheDocument();
+});
+
+test("the KPI 'By Status' breakdown falls back to the raw status string for a non-canonical value", async () => {
+  mockAdmin();
+  mockFetchAdminCases.mockResolvedValue(
+    makeResponse({
+      kpis: { this_month: 1, by_status: { Archived: 1 }, total_approved_lkr: 0, avg_processing_days: null },
+    }),
+  );
+  render(<AdminCasesPage />);
+  expect(await screen.findByText("Archived: 1")).toBeInTheDocument();
+});
+
 test("shows an error state with Retry when the fetch fails, not a blank page", async () => {
   mockAdmin();
   mockFetchAdminCases.mockResolvedValue(null);

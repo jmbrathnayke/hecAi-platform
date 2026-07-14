@@ -251,6 +251,20 @@ test("shows the case status badge", async () => {
   expect(badges).toHaveLength(1);
 });
 
+// Code review fix (Story 6.3): `cases.status` has no DB-level CHECK constraint, so a status
+// outside the 5 canonical STATUS_VALUES must still render as itself, not next-intl's
+// missing-message placeholder ("statusLabels.<key>").
+test("the status badge falls back to the raw status string for a non-canonical value", async () => {
+  mockFetchAdminCaseDetail.mockResolvedValue(
+    makeResponse({ case: { ...makeResponse().case, status: "Archived" } }),
+  );
+  render(<CaseDetailPanel offlineId="off-1" />);
+  await screen.findByText("HEC-2026-0001");
+  expect(screen.queryByText(/statusLabels\.Archived/)).not.toBeInTheDocument();
+  const badges = screen.getAllByText("Archived").filter((el) => el.tagName === "SPAN");
+  expect(badges).toHaveLength(1);
+});
+
 test("completing an action updates the panel's status and audit trail from the single response, with no second fetch", async () => {
   mockPerformCaseAction.mockResolvedValue(
     makeResponse({

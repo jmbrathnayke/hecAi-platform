@@ -5,16 +5,12 @@
 // queries, not the old stub's single combined query).
 import { useTranslations } from "next-intl";
 import type { AdminCaseKpis } from "@/lib/adminCases";
+import { statusKey } from "@/lib/status";
+import { STATUS_VALUES } from "@/components/admin/statusVocabulary";
 
 interface AdminKpiCardsProps {
   kpis: AdminCaseKpis | null;
   loading: boolean;
-}
-
-// Reuses the shared status.statusLabels namespace (space-stripped key) for the "By Status"
-// breakdown — same convention as the case-list badges (Story 6.3).
-function statusKey(status: string): string {
-  return status.replace(/\s/g, "");
 }
 
 // Currency stays "Rs." + en-LK grouping (Sri Lankan number format is locale-invariant across the
@@ -56,9 +52,17 @@ export function AdminKpiCards({ kpis, loading }: AdminKpiCardsProps) {
     );
   }
 
+  // Falls back to the raw status string for any value outside the 5 canonical STATUS_VALUES
+  // (the `status` column has no DB-level CHECK constraint) instead of rendering next-intl's
+  // missing-message placeholder (Story 6.3 code review fix).
   const statusBreakdown =
     Object.entries(kpis.by_status)
-      .map(([status, count]) => `${tStatus(`statusLabels.${statusKey(status)}`)}: ${count}`)
+      .map(([status, count]) => {
+        const label = (STATUS_VALUES as readonly string[]).includes(status)
+          ? tStatus(`statusLabels.${statusKey(status)}`)
+          : status;
+        return `${label}: ${count}`;
+      })
       .join(", ") || "—";
 
   return (

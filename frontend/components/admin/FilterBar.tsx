@@ -5,14 +5,9 @@
 // user-selectable filter, correcting the older UX mockup's stale "All Districts" dropdown
 // that predates the RBAC design. Filter state lives in the URL (bookmarkable).
 import { useTranslations } from "next-intl";
+import { statusKey } from "@/lib/status";
 import { STATUS_VALUES } from "@/components/admin/statusVocabulary";
-
-// Status badge/option display reuses the shared status.statusLabels namespace keyed by the
-// space-stripped value ("Under Review" -> "UnderReview"). Option VALUES stay the canonical
-// STATUS_VALUES (the ?status= URL/API contract) — only the label is translated (Story 6.3).
-function statusKey(status: string): string {
-  return status.replace(/\s/g, "");
-}
+import { DAMAGE_CATEGORY_KEYS } from "@/components/admin/damageVocabulary";
 
 export interface AdminCaseFilters {
   status: string;
@@ -128,7 +123,7 @@ export function FilterBar({ value, onApply, onClear }: FilterBarProps) {
           <option value="">{t("filter.allTypes")}</option>
           {DAMAGE_TYPE_OPTIONS.map((opt) => (
             <option key={opt} value={opt}>
-              {tReport(`step3.${opt}`)}
+              {DAMAGE_CATEGORY_KEYS.has(opt) ? tReport(`step3.${opt}`) : opt}
             </option>
           ))}
         </select>

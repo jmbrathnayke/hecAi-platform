@@ -13,21 +13,15 @@ import { AIResultPanel } from "@/components/admin/AIResultPanel";
 import { CompensationPanel } from "@/components/admin/CompensationPanel";
 import { AuditTrail } from "@/components/admin/AuditTrail";
 import { CaseActionPanel } from "@/components/admin/CaseActionPanel";
-import { STATUS_STYLES } from "@/components/admin/statusVocabulary";
+import { statusKey } from "@/lib/status";
+import { STATUS_STYLES, STATUS_VALUES } from "@/components/admin/statusVocabulary";
+import { DAMAGE_CATEGORY_KEYS } from "@/components/admin/damageVocabulary";
 
 interface CaseDetailPanelProps {
   offlineId: string;
 }
 
 type LoadState = "loading" | "error" | "ready";
-
-// Case status reuses shared status.statusLabels (space-stripped key); damage category reuses
-// report.step3 with a raw fallback for any non-canonical value (Story 6.3).
-const DAMAGE_KEYS = new Set(["crop", "property", "combined", "none"]);
-
-function statusKey(status: string): string {
-  return status.replace(/\s/g, "");
-}
 
 function formatDateTime(iso: string | null, locale: string): string {
   if (!iso) return "—";
@@ -126,7 +120,9 @@ export function CaseDetailPanel({ offlineId }: CaseDetailPanelProps) {
               STATUS_STYLES[c.status] ?? "bg-surface-tint text-ink-secondary"
             }`}
           >
-            {tStatus(`statusLabels.${statusKey(c.status)}`)}
+            {(STATUS_VALUES as readonly string[]).includes(c.status)
+              ? tStatus(`statusLabels.${statusKey(c.status)}`)
+              : c.status}
           </span>
         </div>
         <dl className="grid grid-cols-2 gap-design-2 text-body">
@@ -138,7 +134,7 @@ export function CaseDetailPanel({ offlineId }: CaseDetailPanelProps) {
             <dt className="text-label text-ink-disabled">{t("detail.damageCategory")}</dt>
             <dd className="text-ink-primary">
               {c.damage_category
-                ? DAMAGE_KEYS.has(c.damage_category)
+                ? DAMAGE_CATEGORY_KEYS.has(c.damage_category)
                   ? tReport(`step3.${c.damage_category}`)
                   : c.damage_category
                 : "—"}
