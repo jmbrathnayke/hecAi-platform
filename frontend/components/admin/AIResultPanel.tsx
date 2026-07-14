@@ -1,7 +1,12 @@
+"use client";
+
 // AI classification result panel (Story 5.4 AC2). inference_log is effectively empty in
 // production today (POST /api/v1/inference/log exists but nothing calls it yet — see the
 // story's Dev Notes § Known Data Coverage), so the empty state below is the common case for
-// real cases, not a rare edge case — it must be a first-class, tested path.
+// real cases, not a rare edge case — it must be a first-class, tested path. Localized si/ta/en
+// (Story 6.3): only chrome is translated — the stored prediction / ai_severity / override values
+// and model_version are raw record data, shown verbatim to the reviewing admin.
+import { useTranslations } from "next-intl";
 import type { AdminAiResult } from "@/lib/adminCaseDetail";
 
 interface AIResultPanelProps {
@@ -9,10 +14,12 @@ interface AIResultPanelProps {
 }
 
 export function AIResultPanel({ aiResult }: AIResultPanelProps) {
+  const t = useTranslations("admin");
+
   if (!aiResult) {
     return (
       <div className="rounded-md border border-dashed border-border-default p-design-4 text-body text-ink-disabled">
-        Not yet AI-classified.
+        {t("ai.empty")}
       </div>
     );
   }
@@ -28,7 +35,7 @@ export function AIResultPanel({ aiResult }: AIResultPanelProps) {
 
   return (
     <div className="rounded-md border border-border-default bg-surface-raised p-design-4 space-y-design-2">
-      <h3 className="text-heading-3 text-ink-primary">AI Classification</h3>
+      <h3 className="text-heading-3 text-ink-primary">{t("ai.heading")}</h3>
 
       <div className="flex items-center gap-design-3">
         <span className="text-body font-medium text-ink-primary">{aiResult.prediction}</span>
@@ -51,7 +58,9 @@ export function AIResultPanel({ aiResult }: AIResultPanelProps) {
               aria-valuemax={100}
             />
           </div>
-          <p className="mt-design-1 text-caption text-ink-secondary">{confidencePct}% confidence</p>
+          <p className="mt-design-1 text-caption text-ink-secondary">
+            {t("ai.confidence", { pct: confidencePct })}
+          </p>
         </div>
       )}
 
@@ -60,13 +69,16 @@ export function AIResultPanel({ aiResult }: AIResultPanelProps) {
       {aiResult.was_overridden && (
         <div className="rounded-md border border-amber bg-amber-pale p-design-3 text-body text-ink-primary">
           <p>
-            Original AI class: <span className="font-medium">{aiResult.prediction}</span>
+            {t("ai.originalClass")} <span className="font-medium">{aiResult.prediction}</span>
           </p>
           <p>
-            Officer override: <span className="font-medium">{aiResult.override_category}</span>
+            {t("ai.officerOverride")}{" "}
+            <span className="font-medium">{aiResult.override_category}</span>
           </p>
           {aiResult.override_reason && (
-            <p className="mt-design-1 text-ink-secondary">Reason: {aiResult.override_reason}</p>
+            <p className="mt-design-1 text-ink-secondary">
+              {t("ai.reasonLabel")} {aiResult.override_reason}
+            </p>
           )}
         </div>
       )}

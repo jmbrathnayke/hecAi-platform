@@ -1,6 +1,18 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import AdminLoginPage from "../page";
 
+// next-intl passthrough (Story 6.3): the admin login page is now localized, so the translator
+// returns the key. Supabase-returned auth errors are still shown verbatim (asserted below).
+jest.mock("next-intl", () => ({
+  useTranslations: () => {
+    const t = (key: string, vars?: Record<string, unknown>) =>
+      vars && Object.keys(vars).length ? `${key} ${Object.values(vars).join(" ")}` : key;
+    t.rich = (key: string) => key;
+    return t;
+  },
+  useLocale: () => "en",
+}));
+
 const mockPush = jest.fn();
 jest.mock("next/navigation", () => ({
   useRouter: () => ({ push: (...a: unknown[]) => mockPush(...a) }),
@@ -35,14 +47,14 @@ beforeEach(() => {
 });
 
 function fillAndSubmit(email = "admin@dwc.gov.lk", password = "hunter2") {
-  fireEvent.change(screen.getByPlaceholderText(/dwc email address/i), { target: { value: email } });
-  fireEvent.change(screen.getByPlaceholderText(/password/i), { target: { value: password } });
-  fireEvent.click(screen.getByRole("button", { name: /^sign in$/i }));
+  fireEvent.change(screen.getByPlaceholderText(/login\.emailPlaceholder/i), { target: { value: email } });
+  fireEvent.change(screen.getByPlaceholderText(/login\.passwordPlaceholder/i), { target: { value: password } });
+  fireEvent.click(screen.getByRole("button", { name: /login\.signIn/i }));
 }
 
 test("Google sign-in triggers signInWithOAuth with a Google provider and /admin/cases redirect", async () => {
   render(<AdminLoginPage />);
-  fireEvent.click(screen.getByRole("button", { name: /sign in with google/i }));
+  fireEvent.click(screen.getByRole("button", { name: /login\.google/i }));
 
   await waitFor(() =>
     expect(mockSignInWithOAuth).toHaveBeenCalledWith(
@@ -57,7 +69,7 @@ test("Google sign-in triggers signInWithOAuth with a Google provider and /admin/
 test("Google sign-in error is shown to the user", async () => {
   mockSignInWithOAuth.mockResolvedValue({ error: { message: "OAuth popup blocked" } });
   render(<AdminLoginPage />);
-  fireEvent.click(screen.getByRole("button", { name: /sign in with google/i }));
+  fireEvent.click(screen.getByRole("button", { name: /login\.google/i }));
 
   expect(await screen.findByRole("alert")).toHaveTextContent("OAuth popup blocked");
 });
@@ -65,9 +77,9 @@ test("Google sign-in error is shown to the user", async () => {
 test("a thrown network failure during Google sign-in shows a generic error", async () => {
   mockSignInWithOAuth.mockRejectedValue(new Error("network down"));
   render(<AdminLoginPage />);
-  fireEvent.click(screen.getByRole("button", { name: /sign in with google/i }));
+  fireEvent.click(screen.getByRole("button", { name: /login\.google/i }));
 
-  expect(await screen.findByRole("alert")).toHaveTextContent(/could not reach the sign-in service/i);
+  expect(await screen.findByRole("alert")).toHaveTextContent("login.networkError");
 });
 
 test("email/password sign-in as an admin redirects to /admin/cases", async () => {
@@ -90,7 +102,7 @@ test("a valid but NON-admin (officer) credential is refused and signed back out 
   render(<AdminLoginPage />);
   fillAndSubmit();
 
-  expect(await screen.findByRole("alert")).toHaveTextContent(/access denied\. admin account required/i);
+  expect(await screen.findByRole("alert")).toHaveTextContent("login.accessDenied");
   await waitFor(() => expect(mockSignOut).toHaveBeenCalled());
   expect(mockPush).not.toHaveBeenCalled();
 });
@@ -100,7 +112,7 @@ test("a credential with no role metadata at all is refused and signed back out",
   render(<AdminLoginPage />);
   fillAndSubmit();
 
-  expect(await screen.findByRole("alert")).toHaveTextContent(/access denied/i);
+  expect(await screen.findByRole("alert")).toHaveTextContent("login.accessDenied");
   await waitFor(() => expect(mockSignOut).toHaveBeenCalled());
   expect(mockPush).not.toHaveBeenCalled();
 });

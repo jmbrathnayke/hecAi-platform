@@ -3,6 +3,20 @@ import { CaseDetailPanel } from "../CaseDetailPanel";
 import { fetchAdminCaseDetail, verifyAuditChain, performCaseAction } from "@/lib/adminCaseDetail";
 import { getAccessToken } from "@/lib/auth";
 
+// next-intl passthrough (Story 6.3): translator returns the key (+ interpolation values) and a
+// fixed locale. Covers the panel and every real child it renders (PhotoGallery / AIResultPanel /
+// CompensationPanel / AuditTrail / CaseActionPanel). Backend record VALUES (submitted_via,
+// prediction, override_category, audit event/actor, LKR figures) stay raw and are asserted as-is.
+jest.mock("next-intl", () => ({
+  useTranslations: () => {
+    const t = (key: string, vars?: Record<string, unknown>) =>
+      vars && Object.keys(vars).length ? `${key} ${Object.values(vars).join(" ")}` : key;
+    t.rich = (key: string) => key;
+    return t;
+  },
+  useLocale: () => "en",
+}));
+
 const mockReplace = jest.fn();
 jest.mock("next/navigation", () => ({
   useRouter: () => ({ replace: (...a: unknown[]) => mockReplace(...a) }),
@@ -53,14 +67,14 @@ beforeEach(() => {
 
 test("shows a loading state, then the fetched case", async () => {
   render(<CaseDetailPanel offlineId="off-1" />);
-  expect(screen.getByRole("status")).toHaveTextContent(/loading case/i);
+  expect(screen.getByRole("status")).toHaveTextContent(/detail\.loading/i);
   expect(await screen.findByText("HEC-2026-0001")).toBeInTheDocument();
 });
 
 test("shows an error state with Retry when the fetch fails", async () => {
   mockFetchAdminCaseDetail.mockResolvedValue(null);
   render(<CaseDetailPanel offlineId="off-1" />);
-  expect(await screen.findByRole("alert")).toHaveTextContent(/couldn.?t load case detail/i);
+  expect(await screen.findByRole("alert")).toHaveTextContent(/detail\.loadError/i);
   expect(screen.getByRole("button", { name: /retry/i })).toBeInTheDocument();
 });
 
@@ -110,7 +124,7 @@ test("core case info renders channel, damage category, and submitted timestamp",
   render(<CaseDetailPanel offlineId="off-1" />);
   await screen.findByText("HEC-2026-0001");
   expect(screen.getByText("app")).toBeInTheDocument();
-  expect(screen.getByText("crop")).toBeInTheDocument();
+  expect(screen.getByText("step3.crop")).toBeInTheDocument();
 });
 
 test("GPS map link renders only when both lat/lng are present", async () => {
@@ -131,13 +145,13 @@ test("no GPS map link when coordinates are null", async () => {
 
 test("photo placeholder is shown, not a real gallery, with no internal doc reference (code review fix)", async () => {
   render(<CaseDetailPanel offlineId="off-1" />);
-  expect(await screen.findByText(/photo viewing isn.?t available yet/i)).toBeInTheDocument();
+  expect(await screen.findByText(/photo\.unavailable/i)).toBeInTheDocument();
   expect(screen.queryByText(/deferred-work\.md/i)).not.toBeInTheDocument();
 });
 
 test("AI result panel shows the empty state when ai_result is null", async () => {
   render(<CaseDetailPanel offlineId="off-1" />);
-  expect(await screen.findByText(/not yet ai-classified/i)).toBeInTheDocument();
+  expect(await screen.findByText(/ai\.empty/i)).toBeInTheDocument();
 });
 
 test("AI result panel shows override info when was_overridden is true", async () => {
@@ -156,12 +170,12 @@ test("AI result panel shows override info when was_overridden is true", async ()
   expect((await screen.findAllByText("crop_damage")).length).toBeGreaterThanOrEqual(2);
   expect(screen.getByText("property_damage")).toBeInTheDocument();
   expect(screen.getByText(/actually property damage/i)).toBeInTheDocument();
-  expect(screen.getByText(/82%\s*confidence/i)).toBeInTheDocument();
+  expect(screen.getByText(/ai\.confidence 82/i)).toBeInTheDocument();
 });
 
 test("compensation panel shows the empty state when compensation is null", async () => {
   render(<CaseDetailPanel offlineId="off-1" />);
-  expect(await screen.findByText(/no estimate available/i)).toBeInTheDocument();
+  expect(await screen.findByText(/compensation\.empty/i)).toBeInTheDocument();
 });
 
 test("compensation panel shows amount, disclaimer, and cap note when capped", async () => {
@@ -176,9 +190,9 @@ test("compensation panel shows amount, disclaimer, and cap note when capped", as
     }),
   );
   render(<CaseDetailPanel offlineId="off-1" />);
-  expect(await screen.findByText(/ai recommendation — admin approval required/i)).toBeInTheDocument();
+  expect(await screen.findByText(/compensation\.aiRecommendation/i)).toBeInTheDocument();
   expect(screen.getByText("Rs. 100,000")).toBeInTheDocument();
-  expect(screen.getByText(/cap applied: yes/i)).toBeInTheDocument();
+  expect(screen.getByText(/compensation\.capYes/i)).toBeInTheDocument();
 });
 
 test("compensation panel explicitly shows Cap applied: No when not capped (code review fix, AC3/Task 7)", async () => {
@@ -193,7 +207,7 @@ test("compensation panel explicitly shows Cap applied: No when not capped (code 
     }),
   );
   render(<CaseDetailPanel offlineId="off-1" />);
-  expect(await screen.findByText(/cap applied: no/i)).toBeInTheDocument();
+  expect(await screen.findByText(/compensation\.capNo/i)).toBeInTheDocument();
 });
 
 test("audit trail renders entries chronologically as returned by the backend", async () => {
@@ -212,17 +226,18 @@ test("audit trail renders entries chronologically as returned by the backend", a
 test("Verify chain integrity button reports a valid chain", async () => {
   render(<CaseDetailPanel offlineId="off-1" />);
   await screen.findByText("HEC-2026-0001");
-  fireEvent.click(screen.getByRole("button", { name: /verify chain integrity/i }));
-  expect(await screen.findByText(/chain intact/i)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: /audit\.verify/i }));
+  expect(await screen.findByText(/audit\.valid/i)).toBeInTheDocument();
 });
 
 test("Verify chain integrity button reports tampering and shows the broken row id (code review fix)", async () => {
   mockVerifyAuditChain.mockResolvedValue({ valid: false, broken_id: 3 });
   render(<CaseDetailPanel offlineId="off-1" />);
   await screen.findByText("HEC-2026-0001");
-  fireEvent.click(screen.getByRole("button", { name: /verify chain integrity/i }));
-  expect(await screen.findByText(/tampering detected/i)).toBeInTheDocument();
-  expect(screen.getByText(/row #3/i)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: /audit\.verify/i }));
+  expect(await screen.findByText(/audit\.invalidWithRow/i)).toBeInTheDocument();
+  // The interpolated broken row id (3) is shown (robust mock renders "audit.invalidWithRow 3").
+  expect(screen.getByText(/audit\.invalidWithRow 3/i)).toBeInTheDocument();
 });
 
 // --- case review actions (Story 5.5 integration) --------------------------------------------
@@ -230,9 +245,23 @@ test("Verify chain integrity button reports tampering and shows the broken row i
 test("shows the case status badge", async () => {
   render(<CaseDetailPanel offlineId="off-1" />);
   await screen.findByText("HEC-2026-0001");
-  // "Submitted" also appears as the dt label for the submission-timestamp field, so scope to
-  // the status badge specifically rather than a bare text match.
-  const badges = screen.getAllByText("Submitted").filter((el) => el.tagName === "SPAN");
+  // The status badge reuses the shared status.statusLabels namespace ("Submitted" ->
+  // statusLabels.Submitted); scope to the badge SPAN specifically.
+  const badges = screen.getAllByText("statusLabels.Submitted").filter((el) => el.tagName === "SPAN");
+  expect(badges).toHaveLength(1);
+});
+
+// Code review fix (Story 6.3): `cases.status` has no DB-level CHECK constraint, so a status
+// outside the 5 canonical STATUS_VALUES must still render as itself, not next-intl's
+// missing-message placeholder ("statusLabels.<key>").
+test("the status badge falls back to the raw status string for a non-canonical value", async () => {
+  mockFetchAdminCaseDetail.mockResolvedValue(
+    makeResponse({ case: { ...makeResponse().case, status: "Archived" } }),
+  );
+  render(<CaseDetailPanel offlineId="off-1" />);
+  await screen.findByText("HEC-2026-0001");
+  expect(screen.queryByText(/statusLabels\.Archived/)).not.toBeInTheDocument();
+  const badges = screen.getAllByText("Archived").filter((el) => el.tagName === "SPAN");
   expect(badges).toHaveLength(1);
 });
 
@@ -251,10 +280,10 @@ test("completing an action updates the panel's status and audit trail from the s
   render(<CaseDetailPanel offlineId="off-1" />);
   await screen.findByText("HEC-2026-0001");
 
-  fireEvent.click(screen.getByRole("button", { name: /^escalate$/i }));
-  fireEvent.click(screen.getByRole("button", { name: /^confirm$/i }));
+  fireEvent.click(screen.getByRole("button", { name: /^action\.escalate$/i }));
+  fireEvent.click(screen.getByRole("button", { name: /^action\.confirm$/i }));
 
   expect(await screen.findByText("case_escalated")).toBeInTheDocument();
-  expect(screen.getByText("Under Review")).toBeInTheDocument();
+  expect(screen.getByText("statusLabels.UnderReview")).toBeInTheDocument();
   expect(mockFetchAdminCaseDetail).toHaveBeenCalledTimes(1);
 });

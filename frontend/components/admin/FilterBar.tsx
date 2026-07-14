@@ -4,7 +4,10 @@
 // admin's district is their fixed RBAC scope (g.district_id, server-enforced), not a
 // user-selectable filter, correcting the older UX mockup's stale "All Districts" dropdown
 // that predates the RBAC design. Filter state lives in the URL (bookmarkable).
+import { useTranslations } from "next-intl";
+import { statusKey } from "@/lib/status";
 import { STATUS_VALUES } from "@/components/admin/statusVocabulary";
+import { DAMAGE_CATEGORY_KEYS } from "@/components/admin/damageVocabulary";
 
 export interface AdminCaseFilters {
   status: string;
@@ -34,6 +37,9 @@ export function FilterBar({ value, onApply, onClear }: FilterBarProps) {
   // Uncontrolled-by-parent-until-Apply: local draft state so typing doesn't refetch on
   // every keystroke; "Apply Filters" commits the draft to the URL/parent.
   const formId = "admin-case-filter-form";
+  const t = useTranslations("admin");
+  const tStatus = useTranslations("status");
+  const tReport = useTranslations("report");
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -57,11 +63,11 @@ export function FilterBar({ value, onApply, onClear }: FilterBarProps) {
       id={formId}
       onSubmit={handleSubmit}
       className="flex flex-wrap items-end gap-design-3"
-      aria-label="Filter cases"
+      aria-label={t("filter.formAria")}
     >
       <div className="flex flex-col gap-design-1">
         <label htmlFor="filter-status" className="text-label font-medium text-ink-secondary">
-          Status
+          {t("filter.status")}
         </label>
         <select
           id="filter-status"
@@ -69,10 +75,10 @@ export function FilterBar({ value, onApply, onClear }: FilterBarProps) {
           defaultValue={value.status}
           className="min-h-touch-target rounded-md border border-border-default bg-surface-raised px-design-3 text-body text-ink-primary"
         >
-          <option value="">All Statuses</option>
+          <option value="">{t("filter.allStatuses")}</option>
           {STATUS_VALUES.map((s) => (
             <option key={s} value={s}>
-              {s}
+              {tStatus(`statusLabels.${statusKey(s)}`)}
             </option>
           ))}
         </select>
@@ -80,7 +86,7 @@ export function FilterBar({ value, onApply, onClear }: FilterBarProps) {
 
       <div className="flex flex-col gap-design-1">
         <label htmlFor="filter-from" className="text-label font-medium text-ink-secondary">
-          From
+          {t("filter.from")}
         </label>
         <input
           id="filter-from"
@@ -93,7 +99,7 @@ export function FilterBar({ value, onApply, onClear }: FilterBarProps) {
 
       <div className="flex flex-col gap-design-1">
         <label htmlFor="filter-to" className="text-label font-medium text-ink-secondary">
-          To
+          {t("filter.to")}
         </label>
         <input
           id="filter-to"
@@ -106,7 +112,7 @@ export function FilterBar({ value, onApply, onClear }: FilterBarProps) {
 
       <div className="flex flex-col gap-design-1">
         <label htmlFor="filter-type" className="text-label font-medium text-ink-secondary">
-          Damage Type
+          {t("filter.damageType")}
         </label>
         <select
           id="filter-type"
@@ -114,10 +120,10 @@ export function FilterBar({ value, onApply, onClear }: FilterBarProps) {
           defaultValue={value.type}
           className="min-h-touch-target rounded-md border border-border-default bg-surface-raised px-design-3 text-body text-ink-primary"
         >
-          <option value="">All Types</option>
-          {DAMAGE_TYPE_OPTIONS.map((t) => (
-            <option key={t} value={t}>
-              {t}
+          <option value="">{t("filter.allTypes")}</option>
+          {DAMAGE_TYPE_OPTIONS.map((opt) => (
+            <option key={opt} value={opt}>
+              {DAMAGE_CATEGORY_KEYS.has(opt) ? tReport(`step3.${opt}`) : opt}
             </option>
           ))}
         </select>
@@ -125,14 +131,14 @@ export function FilterBar({ value, onApply, onClear }: FilterBarProps) {
 
       <div className="flex flex-col gap-design-1">
         <label htmlFor="filter-division" className="text-label font-medium text-ink-secondary">
-          DS Division
+          {t("filter.dsDivision")}
         </label>
         <input
           id="filter-division"
           name="division"
           type="text"
           defaultValue={value.division}
-          placeholder="Exact division name"
+          placeholder={t("filter.divisionPlaceholder")}
           className="min-h-touch-target rounded-md border border-border-default bg-surface-raised px-design-3 text-body text-ink-primary"
         />
       </div>
@@ -142,14 +148,14 @@ export function FilterBar({ value, onApply, onClear }: FilterBarProps) {
           type="submit"
           className="min-h-touch-target rounded-md bg-forest px-design-4 text-label font-semibold text-ink-on-dark"
         >
-          Apply Filters
+          {t("filter.apply")}
         </button>
         <button
           type="button"
           onClick={onClear}
           className="min-h-touch-target rounded-md px-design-3 text-label font-medium text-ink-secondary underline"
         >
-          Clear Filters
+          {t("filter.clear")}
         </button>
       </div>
     </form>

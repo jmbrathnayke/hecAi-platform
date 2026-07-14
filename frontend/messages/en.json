@@ -92,7 +92,8 @@
       "Submitted": "Submitted",
       "UnderReview": "Under Review",
       "Approved": "Approved",
-      "Rejected": "Rejected"
+      "Rejected": "Rejected",
+      "PaymentProcessed": "Payment Processed"
     }
   },
   "login": {
@@ -265,6 +266,130 @@
     }
   },
   "admin": {
-    "languageLabel": "Language"
+    "languageLabel": "Language",
+    "login": {
+      "title": "Admin Portal",
+      "google": "Sign in with Google",
+      "or": "or",
+      "emailPlaceholder": "DWC email address",
+      "passwordPlaceholder": "Password",
+      "signIn": "Sign In",
+      "networkError": "Could not reach the sign-in service. Check your connection and try again.",
+      "accessDenied": "Access denied. Admin account required."
+    },
+    "cases": {
+      "title": "Admin — Case List",
+      "selectPrompt": "Select a case to view details.",
+      "loading": "Loading cases…",
+      "loadError": "Couldn't load cases.",
+      "retry": "Retry",
+      "empty": "No cases match your current filters.",
+      "previous": "Previous",
+      "next": "Next",
+      "pageOf": "Page {page} of {total}",
+      "paginationAria": "Case list pagination"
+    },
+    "caps": {
+      "title": "Settings — Compensation Caps",
+      "intro": "Property damage cap per district. Crop and combined damage claims are bounded by the same value today — the compensation model has no separate crop/combined coverage yet.",
+      "loading": "Loading caps…",
+      "loadError": "Couldn't load compensation caps.",
+      "saveError": "Couldn't save this cap. Please try again.",
+      "colDistrict": "District",
+      "colCap": "Property damage cap (LKR)",
+      "capAria": "Property damage cap for {district}",
+      "noCapPlaceholder": "no cap enforced",
+      "saving": "Saving…",
+      "save": "Save"
+    },
+    "table": {
+      "colCanonicalId": "Canonical ID",
+      "colDamageCategory": "Damage Category",
+      "colAiConfidence": "AI Confidence",
+      "colStatus": "Status",
+      "colSubmissionDate": "Submission Date",
+      "colDaysPending": "Days Pending",
+      "sortAria": "Sort by {column}"
+    },
+    "filter": {
+      "formAria": "Filter cases",
+      "status": "Status",
+      "allStatuses": "All Statuses",
+      "from": "From",
+      "to": "To",
+      "damageType": "Damage Type",
+      "allTypes": "All Types",
+      "dsDivision": "DS Division",
+      "divisionPlaceholder": "Exact division name",
+      "apply": "Apply Filters",
+      "clear": "Clear Filters"
+    },
+    "kpi": {
+      "thisMonth": "Cases This Month",
+      "byStatus": "By Status",
+      "totalApproved": "Total Approved (LKR)",
+      "avgProcessing": "Avg Processing (Days)"
+    },
+    "detail": {
+      "loading": "Loading case…",
+      "loadError": "Couldn't load case detail.",
+      "retry": "Retry",
+      "channel": "Channel",
+      "damageCategory": "Damage Category",
+      "submitted": "Submitted",
+      "location": "Location"
+    },
+    "action": {
+      "heading": "Actions",
+      "closed": "This case is closed.",
+      "approve": "Approve",
+      "reject": "Reject",
+      "requestInfo": "Request More Info",
+      "escalate": "Escalate",
+      "markPaid": "Mark as Paid",
+      "confirmTitle": "Confirm {action}",
+      "labelApprove": "Approval",
+      "labelReject": "Rejection",
+      "labelRequestInfo": "Request for Info",
+      "labelEscalate": "Escalation",
+      "labelMarkPaid": "Mark as Paid",
+      "approvedAmount": "Approved Amount (LKR)",
+      "reason": "Reason",
+      "reasonOptional": "Reason (optional)",
+      "submitting": "Submitting…",
+      "confirm": "Confirm",
+      "cancel": "Cancel",
+      "actionError": "Couldn't complete this action. Please try again."
+    },
+    "compensation": {
+      "empty": "No estimate available.",
+      "heading": "Compensation Estimate",
+      "aiRecommendation": "AI Recommendation — Admin approval required",
+      "recommendedAmount": "Recommended Amount",
+      "capYes": "Cap applied: Yes — raw estimate: {amount}",
+      "capNo": "Cap applied: No",
+      "colFeature": "Feature",
+      "colValue": "Value"
+    },
+    "audit": {
+      "heading": "Audit Trail",
+      "verify": "Verify chain integrity",
+      "valid": "Chain intact — no tampering detected.",
+      "invalidWithRow": "Tampering detected in the audit log (row #{row}).",
+      "invalidNoRow": "Tampering detected in the audit log.",
+      "unauthorized": "Session expired — please sign in again.",
+      "error": "Couldn't verify chain integrity right now."
+    },
+    "ai": {
+      "empty": "Not yet AI-classified.",
+      "heading": "AI Classification",
+      "confidence": "{pct}% confidence",
+      "originalClass": "Original AI class:",
+      "officerOverride": "Officer override:",
+      "reasonLabel": "Reason:"
+    },
+    "photo": {
+      "unavailable": "Photo viewing isn't available yet."
+    }
   }
 }
