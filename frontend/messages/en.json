@@ -390,6 +390,31 @@
     },
     "photo": {
       "unavailable": "Photo viewing isn't available yet."
+    },
+    "analytics": {
+      "title": "Analytics Dashboard",
+      "backToCases": "← Back to Cases",
+      "filterAria": "Filter analytics by date range",
+      "from": "From",
+      "to": "To",
+      "loading": "Loading analytics…",
+      "loadError": "Couldn't load analytics.",
+      "retry": "Retry",
+      "volumeTrend": "Case Volume (Last 12 Months)",
+      "statusDistribution": "Status Distribution",
+      "compensationTotal": "Total Approved Compensation by Month",
+      "aiMetrics": "AI Performance Metrics",
+      "noData": "No data available for this period.",
+      "caseCount": "Cases",
+      "confidenceHistogram": "AI Confidence Distribution",
+      "overrideRateTrend": "Override Rate",
+      "avgProcessingTime": "Avg. AI Processing Time",
+      "processingTimeValue": "{ms} ms",
+      "trend": {
+        "up": "vs {last}% last month",
+        "down": "vs {last}% last month",
+        "flat": "vs {last}% last month (no change)"
+      }
     }
   }
 }

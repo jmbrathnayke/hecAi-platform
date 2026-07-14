@@ -32,7 +32,7 @@ admin has no equivalent "cases I personally touched" concept.
 import json
 import math
 import uuid
-from datetime import date
+from datetime import date, timedelta
 
 import psycopg2
 from flask import Blueprint, current_app, g, jsonify, request
@@ -854,6 +854,271 @@ def put_compensation_caps():
                 "cap_amount_lkr": float(row[2]),
                 "updated_by": row[3],
                 "updated_at": row[4].isoformat() if row[4] else None,
+            }
+        ),
+        200,
+    )
+
+
+# --- Story 7.1: Admin Analytics Dashboard (FR-7.1) ---------------------------------------
+#
+# GET /api/v1/admin/analytics -- district-scoped like every other route in this file
+# (g.district_id, never a request param). Four independently-queried sections, matching
+# list_cases's separate-KPI-queries discipline (no single mega-join across cases/
+# inference_log/compensation_estimates):
+#
+#   1. volume_trend        -- FIXED trailing 12 calendar months, independent of the from/to
+#                              filter below (a rolling annual view, same "fixed calendar
+#                              window" class as list_cases's this_month KPI).
+#   2. status_distribution -- within the from/to filter (defaults to the last 30 days).
+#   3. compensation_by_month -- within the from/to filter. Uses c.updated_at as an
+#                              approval-month proxy: cases has no dedicated approval
+#                              timestamp column (only approved_amount itself, migration 004).
+#   4. ai_metrics           -- confidence histogram + avg AI processing time from the
+#                              LATEST inference_log row per case within the from/to filter
+#                              (append-only table -- an override is a second inserted row,
+#                              not an update, so a plain join would double-count a
+#                              re-classified case). The override-RATE TREND (this month vs
+#                              last) is, like volume_trend, a fixed calendar comparison
+#                              independent of the from/to filter.
+#
+# "This month" / "last month" / "trailing 12 months" are all anchored to the resolved
+# `to_date` (defaults to today, but can be set explicitly via `?to=`), NOT to SQL `now()` or
+# Python `date.today()` inside the query logic -- keeps the whole endpoint a pure function of
+# its inputs (deterministic for tests) and gives a coherent reading when an admin filters to
+# a past period: "this/last month" then means relative to the end of that period, not to the
+# literal moment the request happens to run.
+#
+# "Average processing time" is implemented as AI inference latency (input_features->>
+# 'ai_processing_time_ms'), not submission-to-human-decision elapsed time -- the latter has
+# no clean backing timestamp in this schema (see story Dev Notes CRITICAL #6/OQ-A).
+
+CONFIDENCE_BUCKETS = 10  # 10%-wide buckets: [0,10), [10,20), ..., [90,100]
+
+
+def _month_start(d):
+    return date(d.year, d.month, 1)
+
+
+def _next_month_start(d):
+    return date(d.year + 1, 1, 1) if d.month == 12 else date(d.year, d.month + 1, 1)
+
+
+def _prev_month_start(month_start):
+    return date(month_start.year - 1, 12, 1) if month_start.month == 1 else date(
+        month_start.year, month_start.month - 1, 1
+    )
+
+
+def _trailing_12_months_start(end_date):
+    """First day of the month 11 months before end_date's month (so the window spans
+    exactly 12 calendar months ending with end_date's month) -- month arithmetic, not a
+    fixed 365-day subtraction, since months don't all have the same length."""
+    year, month = end_date.year, end_date.month - 11
+    while month <= 0:
+        month += 12
+        year -= 1
+    return date(year, month, 1)
+
+
+def _confidence_histogram(confidences):
+    """confidences: iterable of float in [0, 1]. Returns a 10-element list of counts, index
+    i covering [i*10, (i+1)*10)%, with a confidence of exactly 1.0 (100%) folded into the
+    last bucket rather than overflowing a would-be 11th bucket."""
+    buckets = [0] * CONFIDENCE_BUCKETS
+    for c in confidences:
+        idx = min(CONFIDENCE_BUCKETS - 1, int(c * CONFIDENCE_BUCKETS))
+        buckets[idx] += 1
+    return buckets
+
+
+def _override_rate_pct(overridden_flags):
+    """None (not 0) when there is no data to compute a rate from -- distinguishes "0% of a
+    real sample overrode" from "no cases classified yet", the same None-for-no-data
+    convention list_cases's avg_processing_days already follows."""
+    flags = list(overridden_flags)
+    if not flags:
+        return None
+    return round(100.0 * sum(1 for f in flags if f) / len(flags), 1)
+
+
+def _override_trend(this_month_flags, last_month_flags):
+    this_pct = _override_rate_pct(this_month_flags)
+    last_pct = _override_rate_pct(last_month_flags)
+    if this_pct is None or last_pct is None:
+        direction = "no_data"
+    elif this_pct - last_pct > 0.05:
+        direction = "up"
+    elif last_pct - this_pct > 0.05:
+        direction = "down"
+    else:
+        direction = "flat"
+    return {"this_month_pct": this_pct, "last_month_pct": last_pct, "direction": direction}
+
+
+@admin_bp.route("/admin/analytics", methods=["GET"])
+@require_admin()
+def get_analytics():
+    district = g.district_id  # verified JWT claim -- never from the request
+    if not district:
+        return jsonify({"error": "no_district_assigned"}), 403
+
+    args = request.args
+    from_date = _parse_date(args.get("from"))
+    if from_date is _INVALID:
+        return jsonify({"error": "invalid_date"}), 400
+    to_date = _parse_date(args.get("to"))
+    if to_date is _INVALID:
+        return jsonify({"error": "invalid_date"}), 400
+    # Default range: last 30 days (AC3), applied server-side so an admin's very first load
+    # (no query params yet) is already scoped, not an unfiltered all-time query.
+    if to_date is None:
+        to_date = date.today()
+    if from_date is None:
+        from_date = to_date - timedelta(days=30)
+
+    this_month_start = _month_start(to_date)
+    next_month_start = _next_month_start(this_month_start)
+    last_month_start = _prev_month_start(this_month_start)
+
+    try:
+        conn = _get_connection()
+        try:
+            with conn:
+                with conn.cursor() as cur:
+                    # 1. Volume trend -- fixed trailing 12 months, anchored to to_date.
+                    cur.execute(
+                        """SELECT date_trunc('month', submitted_at) AS month, COUNT(*)
+                             FROM cases
+                            WHERE district = %s AND submitted_at >= %s
+                            GROUP BY month
+                            ORDER BY month""",
+                        [district, _trailing_12_months_start(to_date)],
+                    )
+                    volume_rows = cur.fetchall()
+
+                    # 2. Status distribution -- within the from/to filter.
+                    cur.execute(
+                        """SELECT status, COUNT(*) FROM cases
+                            WHERE district = %s AND submitted_at >= %s AND submitted_at <= %s
+                            GROUP BY status""",
+                        [district, from_date, to_date],
+                    )
+                    status_rows = cur.fetchall()
+
+                    # 3. Compensation total by month -- within the from/to filter.
+                    # CRITICAL: approved_amount only (never compensation_estimates.amount_lkr,
+                    # the AI's unapproved recommendation -- same rule as list_cases's KPI).
+                    cur.execute(
+                        """SELECT date_trunc('month', updated_at) AS month,
+                                  COALESCE(SUM(approved_amount), 0)
+                             FROM cases
+                            WHERE district = %s AND status IN ('Approved', 'Payment Processed')
+                              AND updated_at >= %s AND updated_at <= %s
+                            GROUP BY month
+                            ORDER BY month""",
+                        [district, from_date, to_date],
+                    )
+                    compensation_rows = cur.fetchall()
+
+                    # 4a. AI confidence + processing time -- latest inference_log row per
+                    # case, within the from/to filter (LATERAL, mirrors list_cases's
+                    # confidence subquery -- CRITICAL #5 in the story: append-only table).
+                    cur.execute(
+                        """SELECT il.confidence, il.input_features
+                             FROM cases c
+                             JOIN LATERAL (
+                               SELECT confidence, input_features FROM inference_log
+                                WHERE case_id = c.id
+                                ORDER BY created_at DESC LIMIT 1
+                             ) il ON true
+                            WHERE c.district = %s
+                              AND c.submitted_at >= %s AND c.submitted_at <= %s""",
+                        [district, from_date, to_date],
+                    )
+                    ai_rows = cur.fetchall()
+
+                    # 4b. Override-rate trend -- calendar this-month-vs-last-month, both
+                    # anchored to to_date (not real wall-clock now()) and independent of the
+                    # from/to filter's own (possibly narrower) range.
+                    cur.execute(
+                        """SELECT il.was_overridden
+                             FROM cases c
+                             JOIN LATERAL (
+                               SELECT was_overridden FROM inference_log
+                                WHERE case_id = c.id ORDER BY created_at DESC LIMIT 1
+                             ) il ON true
+                            WHERE c.district = %s
+                              AND c.submitted_at >= %s AND c.submitted_at < %s""",
+                        [district, this_month_start, next_month_start],
+                    )
+                    this_month_rows = cur.fetchall()
+
+                    cur.execute(
+                        """SELECT il.was_overridden
+                             FROM cases c
+                             JOIN LATERAL (
+                               SELECT was_overridden FROM inference_log
+                                WHERE case_id = c.id ORDER BY created_at DESC LIMIT 1
+                             ) il ON true
+                            WHERE c.district = %s
+                              AND c.submitted_at >= %s AND c.submitted_at < %s""",
+                        [district, last_month_start, this_month_start],
+                    )
+                    last_month_rows = cur.fetchall()
+
+                    write_audit_log(
+                        cur, None, "admin_viewed_analytics", g.admin_id,
+                        {"ip_address": _client_ip()},
+                    )
+        finally:
+            conn.close()
+    except psycopg2.Error:
+        current_app.logger.exception("admin analytics failed")
+        return jsonify({"error": "server_error"}), 500
+
+    volume_trend = [
+        {"month": month.isoformat(), "count": count} for month, count in volume_rows
+    ]
+    status_distribution = dict(status_rows)
+    compensation_by_month = [
+        {"month": month.isoformat(), "total_lkr": float(total)}
+        for month, total in compensation_rows
+    ]
+
+    confidences = [float(c) for c, _features in ai_rows if c is not None]
+    latencies_ms = []
+    for _confidence, features in ai_rows:
+        features = features or {}
+        raw = features.get("ai_processing_time_ms")
+        if raw is not None:
+            try:
+                latencies_ms.append(float(raw))
+            except (TypeError, ValueError):
+                pass
+
+    ai_metrics = {
+        "confidence_histogram": _confidence_histogram(confidences),
+        "sample_count": len(ai_rows),
+        # AC2 asks for the override rate "with a trend (this month vs last month)" -- that
+        # trend already carries both months' rates (override_rate_trend below); there is no
+        # separate filter-range-scoped rate required by the AC, so none is computed here.
+        "override_rate_trend": _override_trend(
+            (r[0] for r in this_month_rows), (r[0] for r in last_month_rows)
+        ),
+        "avg_processing_time_ms": (
+            round(sum(latencies_ms) / len(latencies_ms), 1) if latencies_ms else None
+        ),
+    }
+
+    return (
+        jsonify(
+            {
+                "range": {"from": from_date.isoformat(), "to": to_date.isoformat()},
+                "volume_trend": volume_trend,
+                "status_distribution": status_distribution,
+                "compensation_by_month": compensation_by_month,
+                "ai_metrics": ai_metrics,
             }
         ),
         200,

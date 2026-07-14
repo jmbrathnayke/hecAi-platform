@@ -1,0 +1,414 @@
+"""Tests for GET /api/v1/admin/analytics (Story 7.1, FR-7.1).
+
+DB faked (no Postgres), same FakeConn/FakeCursor style as test_admin.py, but scoped only to
+this endpoint's own queries: volume trend (fixed trailing 12 months anchored to `to`),
+status distribution + compensation-by-month (both scoped to the from/to filter), and AI
+metrics (confidence histogram, avg processing-time-ms, override-rate this-month-vs-last-month
+trend, all from the LATEST inference_log row per case). "This/last month" and "trailing 12
+months" are anchored to the resolved `to_date` (default: today), never to real wall-clock
+now() -- see admin.py's module comment above get_analytics -- so every test below is
+deterministic regardless of when it actually runs, driven entirely by explicit `to=` params.
+"""
+import json
+from datetime import date, datetime
+
+import jwt
+import pytest
+
+from app import create_app
+
+SECRET = "test-jwt-secret-0123456789-abcdef-ghij"  # >=32 bytes for HS256
+
+DISTRICT_A = "අනුරාධපුරය"
+DISTRICT_B = "කොළඹ"
+
+
+def _token(sub="admin-1", role="admin", district_id=DISTRICT_A):
+    claims = {"sub": sub, "user_metadata": {"role": role, "district_id": district_id}}
+    return jwt.encode(claims, SECRET, algorithm="HS256")
+
+
+def _auth(**kw):
+    return {"Authorization": f"Bearer {_token(**kw)}"}
+
+
+def _case(id_, district, status="Submitted", submitted_at=None, updated_at=None, approved_amount=None):
+    return {
+        "id": id_,
+        "district": district,
+        "status": status,
+        "submitted_at": submitted_at,
+        "updated_at": updated_at or submitted_at,
+        "approved_amount": approved_amount,
+    }
+
+
+def _inference(case_id, confidence=0.9, was_overridden=False, processing_ms=None, created_at=None):
+    return {
+        "case_id": case_id,
+        "confidence": confidence,
+        "was_overridden": was_overridden,
+        "input_features": {"ai_processing_time_ms": processing_ms} if processing_ms is not None else {},
+        "created_at": created_at or datetime(2026, 7, 8, 10, 0, 0),
+    }
+
+
+class FakeCursor:
+    def __init__(self, store):
+        self.store = store
+        self._rows = []
+        self._result = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def _district_cases(self, district):
+        return [c for c in self.store["cases"] if c["district"] == district]
+
+    def _latest_inference(self, case_id):
+        rows = [r for r in self.store["inference_log"] if r["case_id"] == case_id]
+        if not rows:
+            return None
+        return sorted(rows, key=lambda r: r["created_at"], reverse=True)[0]
+
+    def execute(self, sql, params=()):
+        if "pg_advisory_xact_lock" in sql:
+            self._result = None
+        elif "date_trunc('month', submitted_at) AS month, COUNT(*)" in sql:
+            district, since = params
+            by_month = {}
+            for c in self._district_cases(district):
+                if c["submitted_at"] and c["submitted_at"].date() >= since:
+                    key = date(c["submitted_at"].year, c["submitted_at"].month, 1)
+                    by_month[key] = by_month.get(key, 0) + 1
+            self._rows = sorted(by_month.items())
+        elif "SELECT status, COUNT(*) FROM cases" in sql:
+            district, from_d, to_d = params
+            by_status = {}
+            for c in self._district_cases(district):
+                if c["submitted_at"] and from_d <= c["submitted_at"].date() <= to_d:
+                    by_status[c["status"]] = by_status.get(c["status"], 0) + 1
+            self._rows = list(by_status.items())
+        elif "date_trunc('month', updated_at)" in sql:
+            district, from_d, to_d = params
+            by_month = {}
+            for c in self._district_cases(district):
+                if c["status"] not in ("Approved", "Payment Processed"):
+                    continue
+                if c["updated_at"] and from_d <= c["updated_at"].date() <= to_d:
+                    key = date(c["updated_at"].year, c["updated_at"].month, 1)
+                    by_month[key] = by_month.get(key, 0) + (c["approved_amount"] or 0)
+            self._rows = sorted(by_month.items())
+        elif "SELECT il.confidence, il.input_features" in sql:
+            district, from_d, to_d = params
+            out = []
+            for c in self._district_cases(district):
+                if not (c["submitted_at"] and from_d <= c["submitted_at"].date() <= to_d):
+                    continue
+                il = self._latest_inference(c["id"])
+                if il:
+                    out.append((il["confidence"], il["input_features"]))
+            self._rows = out
+        elif "SELECT il.was_overridden" in sql:
+            district, start, end = params
+            out = []
+            for c in self._district_cases(district):
+                if not (c["submitted_at"] and start <= c["submitted_at"].date() < end):
+                    continue
+                il = self._latest_inference(c["id"])
+                if il:
+                    out.append((il["was_overridden"],))
+            self._rows = out
+        elif "INSERT INTO audit_log" in sql:
+            case_id, event, actor_id, metadata, created_at, hash_, prev_hash = params
+            self.store["audit"].append(
+                {
+                    "id": len(self.store["audit"]) + 1,
+                    "case_id": case_id,
+                    "event": event,
+                    "actor_id": actor_id,
+                    "metadata": json.loads(metadata) if metadata is not None else None,
+                    "created_at": created_at,
+                    "hash": hash_,
+                    "prev_hash": prev_hash,
+                }
+            )
+        elif "SELECT hash FROM audit_log" in sql:
+            self._result = (self.store["audit"][-1]["hash"],) if self.store["audit"] else None
+        else:  # pragma: no cover
+            raise AssertionError(f"unexpected SQL: {sql}")
+
+    def fetchall(self):
+        return self._rows
+
+    def fetchone(self):
+        return self._result
+
+
+class FakeConn:
+    def __init__(self, store):
+        self.store = store
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def cursor(self):
+        return FakeCursor(self.store)
+
+    def close(self):
+        pass
+
+
+@pytest.fixture
+def store():
+    return {
+        "cases": [
+            _case(1, DISTRICT_A, status="Submitted", submitted_at=datetime(2026, 7, 5, 9, 0)),
+            _case(
+                2, DISTRICT_A, status="Approved", approved_amount=45000.0,
+                submitted_at=datetime(2026, 7, 6, 9, 0), updated_at=datetime(2026, 7, 10, 9, 0),
+            ),
+            _case(
+                3, DISTRICT_A, status="Payment Processed", approved_amount=30000.0,
+                submitted_at=datetime(2026, 6, 20, 9, 0), updated_at=datetime(2026, 6, 25, 9, 0),
+            ),
+            _case(4, DISTRICT_B, submitted_at=datetime(2026, 7, 6, 9, 0)),  # other district
+        ],
+        "inference_log": [],
+        "audit": [],
+    }
+
+
+@pytest.fixture
+def client(monkeypatch, store):
+    app = create_app(
+        {"TESTING": True, "DATABASE_URL": "postgresql://fake", "SUPABASE_JWT_SECRET": SECRET}
+    )
+    monkeypatch.setattr("app.api.v1.admin._get_connection", lambda: FakeConn(store))
+    return app.test_client()
+
+
+# --- auth + district scoping --------------------------------------------------------------
+
+
+def test_missing_token_401(client):
+    res = client.get("/api/v1/admin/analytics")
+    assert res.status_code == 401
+
+
+def test_non_admin_403(client):
+    res = client.get("/api/v1/admin/analytics", headers=_auth(role="officer"))
+    assert res.status_code == 403
+
+
+def test_no_district_assigned_403(client, store):
+    res = client.get("/api/v1/admin/analytics", headers=_auth(district_id=""))
+    assert res.status_code == 403
+    assert res.get_json()["error"] == "no_district_assigned"
+    assert store["audit"] == []
+
+
+def test_other_district_data_never_appears(client):
+    res = client.get("/api/v1/admin/analytics?to=2026-07-15", headers=_auth(district_id=DISTRICT_A))
+    body = res.get_json()
+    total_status = sum(body["status_distribution"].values())
+    # District B's case (id 4) must not be counted anywhere in district A's response.
+    assert total_status <= 3
+
+
+# --- date range validation + defaulting ------------------------------------------------
+
+
+def test_invalid_from_date_400(client):
+    res = client.get("/api/v1/admin/analytics?from=not-a-date", headers=_auth())
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "invalid_date"
+
+
+def test_invalid_to_date_400(client):
+    res = client.get("/api/v1/admin/analytics?to=not-a-date", headers=_auth())
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "invalid_date"
+
+
+def test_default_range_is_last_30_days_ending_today(client):
+    res = client.get("/api/v1/admin/analytics", headers=_auth())
+    body = res.get_json()
+    assert body["range"]["to"] == date.today().isoformat()
+
+
+def test_explicit_range_echoed_back(client):
+    res = client.get("/api/v1/admin/analytics?from=2026-06-01&to=2026-07-15", headers=_auth())
+    body = res.get_json()
+    assert body["range"] == {"from": "2026-06-01", "to": "2026-07-15"}
+
+
+# --- status distribution (AC1, AC3) ------------------------------------------------------
+
+
+def test_status_distribution_scoped_to_filter_range(client):
+    res = client.get("/api/v1/admin/analytics?from=2026-07-01&to=2026-07-15", headers=_auth())
+    body = res.get_json()
+    # Case 3 (Payment Processed) was submitted 2026-06-20 -- outside this filter.
+    assert body["status_distribution"] == {"Submitted": 1, "Approved": 1}
+
+
+def test_status_distribution_widens_with_a_wider_filter(client):
+    res = client.get("/api/v1/admin/analytics?from=2026-06-01&to=2026-07-15", headers=_auth())
+    body = res.get_json()
+    assert body["status_distribution"] == {"Submitted": 1, "Approved": 1, "Payment Processed": 1}
+
+
+# --- compensation by month (AC1, CRITICAL: approved_amount not compensation_estimates) ----
+
+
+def test_compensation_by_month_uses_approved_amount_and_updated_at(client):
+    res = client.get("/api/v1/admin/analytics?from=2026-07-01&to=2026-07-15", headers=_auth())
+    body = res.get_json()
+    assert body["compensation_by_month"] == [{"month": "2026-07-01", "total_lkr": 45000.0}]
+
+
+def test_compensation_by_month_includes_payment_processed(client):
+    res = client.get("/api/v1/admin/analytics?from=2026-06-01&to=2026-07-15", headers=_auth())
+    body = res.get_json()
+    months = {m["month"]: m["total_lkr"] for m in body["compensation_by_month"]}
+    assert months["2026-06-01"] == 30000.0
+    assert months["2026-07-01"] == 45000.0
+
+
+def test_compensation_by_month_empty_when_nothing_approved_in_range(client, store):
+    store["cases"] = [c for c in store["cases"] if c["status"] == "Submitted"]
+    res = client.get("/api/v1/admin/analytics", headers=_auth())
+    assert res.get_json()["compensation_by_month"] == []
+
+
+# --- volume trend (AC1, fixed 12 months anchored to `to`) ---------------------------------
+
+
+def test_volume_trend_covers_trailing_12_months_from_to_date(client, store):
+    # A case submitted 13 months before `to` must be excluded from the trend.
+    store["cases"].append(_case(5, DISTRICT_A, submitted_at=datetime(2025, 6, 1, 9, 0)))
+    res = client.get("/api/v1/admin/analytics?to=2026-07-15", headers=_auth())
+    months = {m["month"] for m in res.get_json()["volume_trend"]}
+    assert "2025-06-01" not in months
+    assert "2026-07-01" in months
+
+
+def test_volume_trend_independent_of_the_narrower_from_filter(client):
+    # from=2026-07-01 (a 2-week window) must not shrink the trend's own 12-month window --
+    # case 3 (submitted 2026-06-20) still shows up in the trend even though it's excluded
+    # from status_distribution/compensation_by_month by the narrow filter.
+    res = client.get("/api/v1/admin/analytics?from=2026-07-01&to=2026-07-15", headers=_auth())
+    months = {m["month"]: m["count"] for m in res.get_json()["volume_trend"]}
+    assert months.get("2026-06-01") == 1
+
+
+# --- AI metrics: confidence histogram + processing time (AC2) -----------------------------
+
+
+def test_confidence_histogram_buckets_correctly(client, store):
+    store["inference_log"] = [
+        _inference(1, confidence=0.05),   # bucket 0
+        _inference(2, confidence=0.87),   # bucket 8
+        _inference(3, confidence=1.0),    # folds into last bucket (9), not an 11th
+    ]
+    res = client.get("/api/v1/admin/analytics?from=2026-06-01&to=2026-07-15", headers=_auth())
+    hist = res.get_json()["ai_metrics"]["confidence_histogram"]
+    assert len(hist) == 10
+    assert hist[0] == 1
+    assert hist[8] == 1
+    assert hist[9] == 1
+    assert sum(hist) == 3
+
+
+def test_confidence_histogram_empty_when_no_inference_log_rows(client):
+    # Known data-coverage reality (Story 7.1 Dev Notes): inference_log is often empty.
+    res = client.get("/api/v1/admin/analytics", headers=_auth())
+    ai = res.get_json()["ai_metrics"]
+    assert ai["confidence_histogram"] == [0] * 10
+    assert ai["sample_count"] == 0
+
+
+def test_ai_metrics_uses_latest_inference_row_only_not_both(client, store):
+    # Case 1 was re-classified: two inference_log rows -- only the latest counts.
+    store["inference_log"] = [
+        _inference(1, confidence=0.2, created_at=datetime(2026, 7, 1, 9, 0)),
+        _inference(1, confidence=0.9, created_at=datetime(2026, 7, 2, 9, 0)),
+    ]
+    res = client.get("/api/v1/admin/analytics?from=2026-06-01&to=2026-07-15", headers=_auth())
+    ai = res.get_json()["ai_metrics"]
+    assert ai["sample_count"] == 1
+    assert ai["confidence_histogram"][9] == 1  # only the 0.9 row counted
+
+
+def test_avg_processing_time_ms_averages_across_sampled_cases(client, store):
+    store["inference_log"] = [
+        _inference(1, processing_ms=200.0),
+        _inference(2, processing_ms=600.0),
+    ]
+    res = client.get("/api/v1/admin/analytics?from=2026-06-01&to=2026-07-15", headers=_auth())
+    assert res.get_json()["ai_metrics"]["avg_processing_time_ms"] == 400.0
+
+
+def test_avg_processing_time_ms_null_when_no_data(client):
+    res = client.get("/api/v1/admin/analytics", headers=_auth())
+    assert res.get_json()["ai_metrics"]["avg_processing_time_ms"] is None
+
+
+# --- AI metrics: override-rate trend (AC2, anchored to `to`, independent of from/to filter) --
+
+
+def test_override_rate_trend_this_vs_last_month(client, store):
+    store["inference_log"] = [
+        _inference(1, was_overridden=True),   # case 1 submitted 2026-07-05 -> "this month"
+        _inference(3, was_overridden=False),  # case 3 submitted 2026-06-20 -> "last month"
+    ]
+    res = client.get("/api/v1/admin/analytics?to=2026-07-15", headers=_auth())
+    trend = res.get_json()["ai_metrics"]["override_rate_trend"]
+    assert trend == {"this_month_pct": 100.0, "last_month_pct": 0.0, "direction": "up"}
+
+
+def test_override_rate_trend_no_data_when_neither_month_has_samples(client):
+    res = client.get("/api/v1/admin/analytics?to=2026-07-15", headers=_auth())
+    trend = res.get_json()["ai_metrics"]["override_rate_trend"]
+    assert trend == {"this_month_pct": None, "last_month_pct": None, "direction": "no_data"}
+
+
+def test_override_rate_trend_flat_when_rates_equal(client, store):
+    store["cases"].append(_case(6, DISTRICT_A, submitted_at=datetime(2026, 6, 22, 9, 0)))
+    store["inference_log"] = [
+        _inference(1, was_overridden=True),   # this month
+        _inference(3, was_overridden=True),   # last month
+        _inference(6, was_overridden=False),  # last month
+    ]
+    res = client.get("/api/v1/admin/analytics?to=2026-07-15", headers=_auth())
+    trend = res.get_json()["ai_metrics"]["override_rate_trend"]
+    # this month: 1/1 = 100%; last month: 1/2 = 50% -> "up", not flat (sanity check the
+    # asymmetric case before the true-flat case below).
+    assert trend["direction"] == "up"
+
+
+def test_override_rate_trend_independent_of_from_to_filter(client, store):
+    # A narrow from/to filter that excludes case 3 entirely must not affect the trend, which
+    # is anchored to `to` regardless of `from`.
+    store["inference_log"] = [_inference(3, was_overridden=True)]
+    res = client.get(
+        "/api/v1/admin/analytics?from=2026-07-10&to=2026-07-15", headers=_auth()
+    )
+    trend = res.get_json()["ai_metrics"]["override_rate_trend"]
+    assert trend["last_month_pct"] == 100.0
+
+
+# --- audit ---------------------------------------------------------------------------------
+
+
+def test_view_is_audited(client, store):
+    client.get("/api/v1/admin/analytics", headers=_auth())
+    events = [a["event"] for a in store["audit"]]
+    assert "admin_viewed_analytics" in events
