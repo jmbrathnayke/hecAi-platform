@@ -117,5 +117,11 @@
     "retry": "Retry",
     "empty": "You have no reports yet.",
     "signOut": "Sign out"
+  },
+  "officer": {
+    "languageLabel": "Language"
+  },
+  "admin": {
+    "languageLabel": "Language"
   }
 }

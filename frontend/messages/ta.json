@@ -117,5 +117,11 @@
     "retry": "மீண்டும் முயற்சி",
     "empty": "உங்களிடம் இன்னும் அறிக்கைகள் இல்லை.",
     "signOut": "வெளியேறு"
+  },
+  "officer": {
+    "languageLabel": "மொழி"
+  },
+  "admin": {
+    "languageLabel": "மொழி"
   }
 }

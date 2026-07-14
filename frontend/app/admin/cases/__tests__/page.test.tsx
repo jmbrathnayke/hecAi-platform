@@ -4,6 +4,14 @@ import { fetchAdminCases, UNAUTHORIZED } from "@/lib/adminCases";
 import { fetchAdminCaseDetail } from "@/lib/adminCaseDetail";
 import { getAccessToken } from "@/lib/auth";
 
+// next-intl: passthrough translator (key -> key) + fixed locale. The cases header now renders the
+// non-routed LanguageSelectorCookie (useLocale) + a translated language label (useTranslations)
+// under the admin i18n provider (Story 6.1); in isolation the test provides this stub.
+jest.mock("next-intl", () => ({
+  useTranslations: () => (k: string) => k,
+  useLocale: () => "en",
+}));
+
 const mockReplace = jest.fn();
 const mockPush = jest.fn();
 // A mutable, re-assignable search string so tests can simulate "the URL already changed"

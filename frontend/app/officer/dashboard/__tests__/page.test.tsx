@@ -1,6 +1,19 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import OfficerDashboardPage from "../page";
 
+// next-intl: passthrough translator (key -> key) + fixed locale. The dashboard now renders the
+// non-routed LanguageSelectorCookie (useLocale) + a translated language label (useTranslations)
+// under the officer i18n provider (Story 6.1); in isolation the test provides this stub.
+jest.mock("next-intl", () => ({
+  useTranslations: () => (k: string) => k,
+  useLocale: () => "en",
+}));
+
+// The non-routed LanguageSelectorCookie in the header uses next/navigation's useRouter().refresh().
+jest.mock("next/navigation", () => ({
+  useRouter: () => ({ refresh: jest.fn() }),
+}));
+
 // getAccessToken supplies the Bearer token for the authenticated fetch.
 const mockGetAccessToken = jest.fn();
 jest.mock("@/lib/auth", () => ({

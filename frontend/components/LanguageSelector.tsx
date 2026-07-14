@@ -2,15 +2,11 @@
 
 import { useLocale } from "next-intl";
 import { useRouter, usePathname } from "@/navigation";
+import { LocaleButtonGroup, type LocaleCode } from "@/components/LocaleButtonGroup";
 
-const LOCALES = [
-  { code: "si", label: "සිංහල" },
-  { code: "ta", label: "தமிழ்" },
-  { code: "en", label: "English" },
-] as const;
-
-type LocaleCode = (typeof LOCALES)[number]["code"];
-
+// Citizen-portal (routed) language selector. Lives under app/[locale], so switching is a
+// locale-aware route replace. The button markup/list is shared with the non-routed officer/admin
+// selector via LocaleButtonGroup (Story 6.1).
 export function LanguageSelector() {
   const router = useRouter();
   const pathname = usePathname();
@@ -34,28 +30,5 @@ export function LanguageSelector() {
     router.replace(`${pathname}${suffix}`, { locale });
   }
 
-  return (
-    <div
-      className="flex gap-design-2 justify-center"
-      role="group"
-      aria-label="Language selection"
-    >
-      {LOCALES.map(({ code, label }) => (
-        <button
-          key={code}
-          type="button"
-          onClick={() => switchLocale(code)}
-          aria-pressed={current === code}
-          lang={code}
-          className={`px-design-4 py-design-2 rounded-sm text-label font-medium min-h-touch-target transition-colors ${
-            current === code
-              ? "bg-forest-pale border-2 border-forest text-forest"
-              : "bg-surface-raised border border-border-default text-ink-secondary hover:border-forest-mid"
-          }`}
-        >
-          {label}
-        </button>
-      ))}
-    </div>
-  );
+  return <LocaleButtonGroup current={current} onSelect={switchLocale} />;
 }
