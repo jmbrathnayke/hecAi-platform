@@ -1,6 +1,18 @@
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import OfficerSubmitPage from "@/app/officer/submit/page";
 import { encryptField } from "@/lib/crypto";
+
+// next-intl passthrough (Story 6.2): translator returns the key (+ interpolation values, + rich).
+// Covers officer + report namespaces and the DistrictPicker/AIResultCard/OverrideForm children.
+jest.mock("next-intl", () => ({
+  useTranslations: () => {
+    const t = (key: string, vars?: Record<string, unknown>) =>
+      vars && Object.keys(vars).length ? `${key} ${Object.values(vars).join(" ")}` : key;
+    t.rich = (key: string) => key;
+    return t;
+  },
+  useLocale: () => "en",
+}));
 import { updateDraft, getCase, saveClassification } from "@/lib/indexeddb";
 import { buildPoC, submitCaseOnline } from "@/lib/poc";
 import { classifyImage } from "@/lib/mobilenet";
@@ -138,18 +150,18 @@ async function walkToReview() {
   await act(async () => {});
 
   // Identity
-  fireEvent.change(screen.getByLabelText(/Citizen's NIC/i), { target: { value: "200012345678" } });
-  fireEvent.change(screen.getByLabelText(/Citizen's mobile/i), { target: { value: "0712345678" } });
-  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+  fireEvent.change(screen.getByLabelText(/submit.citizenNic/i), { target: { value: "200012345678" } });
+  fireEvent.change(screen.getByLabelText(/submit.citizenMobile/i), { target: { value: "0712345678" } });
+  fireEvent.click(screen.getByRole("button", { name: "submit.continue" }));
 
   // Location (GPS resolves → Continue)
-  await screen.findByText(/GPS location detected/i);
-  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+  await screen.findByText(/submit.gpsDetected/i);
+  fireEvent.click(screen.getByRole("button", { name: "submit.continue" }));
 
   // Damage
-  await screen.findByRole("radiogroup", { name: /Damage category/i });
-  fireEvent.click(screen.getByRole("radio", { name: /Crop Damage/i }));
-  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+  await screen.findByRole("radiogroup", { name: /submit.damageCategoryGroup/i });
+  fireEvent.click(screen.getByRole("radio", { name: /step3.crop/i }));
+  fireEvent.click(screen.getByRole("button", { name: "submit.continue" }));
 
   // Classify
   const input = await screen.findByTestId("submit-file-input");
@@ -157,10 +169,10 @@ async function walkToReview() {
     target: { files: [new File(["x"], "damage.jpg", { type: "image/jpeg" })] },
   });
   await screen.findByTestId("ai-result-card");
-  fireEvent.click(screen.getByRole("button", { name: "Accept" }));
-  fireEvent.click(await screen.findByRole("button", { name: /Review & Submit/i }));
+  fireEvent.click(screen.getByRole("button", { name: "aiResult.accept" }));
+  fireEvent.click(await screen.findByRole("button", { name: /submit.reviewAndSubmit/i }));
 
-  await screen.findByRole("button", { name: /Submit report/i });
+  await screen.findByRole("button", { name: /submit.submit/i });
 }
 
 describe("OfficerSubmitPage", () => {
@@ -168,9 +180,9 @@ describe("OfficerSubmitPage", () => {
     render(<OfficerSubmitPage />);
     await act(async () => {});
 
-    fireEvent.change(screen.getByLabelText(/Citizen's NIC/i), { target: { value: "200012345678" } });
-    fireEvent.change(screen.getByLabelText(/Citizen's mobile/i), { target: { value: "0712345678" } });
-    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    fireEvent.change(screen.getByLabelText(/submit.citizenNic/i), { target: { value: "200012345678" } });
+    fireEvent.change(screen.getByLabelText(/submit.citizenMobile/i), { target: { value: "0712345678" } });
+    fireEvent.click(screen.getByRole("button", { name: "submit.continue" }));
 
     await waitFor(() => expect(mockUpdateDraft).toHaveBeenCalled());
     expect(mockEncrypt).toHaveBeenCalledWith("200012345678", "fake-key");
@@ -189,14 +201,14 @@ describe("OfficerSubmitPage", () => {
   it("runs on-device classification and renders the AIResultCard (AC3)", async () => {
     render(<OfficerSubmitPage />);
     await act(async () => {});
-    fireEvent.change(screen.getByLabelText(/Citizen's NIC/i), { target: { value: "200012345678" } });
-    fireEvent.change(screen.getByLabelText(/Citizen's mobile/i), { target: { value: "0712345678" } });
-    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
-    await screen.findByText(/GPS location detected/i);
-    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
-    await screen.findByRole("radiogroup", { name: /Damage category/i });
-    fireEvent.click(screen.getByRole("radio", { name: /Crop Damage/i }));
-    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    fireEvent.change(screen.getByLabelText(/submit.citizenNic/i), { target: { value: "200012345678" } });
+    fireEvent.change(screen.getByLabelText(/submit.citizenMobile/i), { target: { value: "0712345678" } });
+    fireEvent.click(screen.getByRole("button", { name: "submit.continue" }));
+    await screen.findByText(/submit.gpsDetected/i);
+    fireEvent.click(screen.getByRole("button", { name: "submit.continue" }));
+    await screen.findByRole("radiogroup", { name: /submit.damageCategoryGroup/i });
+    fireEvent.click(screen.getByRole("radio", { name: /step3.crop/i }));
+    fireEvent.click(screen.getByRole("button", { name: "submit.continue" }));
 
     const input = await screen.findByTestId("submit-file-input");
     fireEvent.change(input, {
@@ -212,20 +224,20 @@ describe("OfficerSubmitPage", () => {
     render(<OfficerSubmitPage />);
     await act(async () => {});
 
-    fireEvent.change(screen.getByLabelText(/Citizen's NIC/i), { target: { value: "200012345678" } });
-    fireEvent.change(screen.getByLabelText(/Citizen's mobile/i), { target: { value: "0712345678" } });
-    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
-    await screen.findByText(/GPS location detected/i);
+    fireEvent.change(screen.getByLabelText(/submit.citizenNic/i), { target: { value: "200012345678" } });
+    fireEvent.change(screen.getByLabelText(/submit.citizenMobile/i), { target: { value: "0712345678" } });
+    fireEvent.click(screen.getByRole("button", { name: "submit.continue" }));
+    await screen.findByText(/submit.gpsDetected/i);
 
-    const districtSelect = screen.getByLabelText("District (optional)") as HTMLSelectElement;
+    const districtSelect = screen.getByLabelText("submit.districtLabel") as HTMLSelectElement;
     const district = districtSelect.options[1].value;
     fireEvent.change(districtSelect, { target: { value: district } });
-    const divisionSelect = screen.getByLabelText("DS Division (optional)") as HTMLSelectElement;
+    const divisionSelect = screen.getByLabelText("submit.dsDivisionLabel") as HTMLSelectElement;
     const division = divisionSelect.options[1].value;
     fireEvent.change(divisionSelect, { target: { value: division } });
 
     mockUpdateDraft.mockClear();
-    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    fireEvent.click(screen.getByRole("button", { name: "submit.continue" }));
 
     await waitFor(() => expect(mockUpdateDraft).toHaveBeenCalled());
     const [, fields] = mockUpdateDraft.mock.calls[0];
@@ -237,13 +249,13 @@ describe("OfficerSubmitPage", () => {
     render(<OfficerSubmitPage />);
     await act(async () => {});
 
-    fireEvent.change(screen.getByLabelText(/Citizen's NIC/i), { target: { value: "200012345678" } });
-    fireEvent.change(screen.getByLabelText(/Citizen's mobile/i), { target: { value: "0712345678" } });
-    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
-    await screen.findByText(/GPS location detected/i);
+    fireEvent.change(screen.getByLabelText(/submit.citizenNic/i), { target: { value: "200012345678" } });
+    fireEvent.change(screen.getByLabelText(/submit.citizenMobile/i), { target: { value: "0712345678" } });
+    fireEvent.click(screen.getByRole("button", { name: "submit.continue" }));
+    await screen.findByText(/submit.gpsDetected/i);
 
     mockUpdateDraft.mockClear();
-    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    fireEvent.click(screen.getByRole("button", { name: "submit.continue" }));
 
     await waitFor(() => expect(mockUpdateDraft).toHaveBeenCalled());
     const [, fields] = mockUpdateDraft.mock.calls[0];
@@ -253,7 +265,7 @@ describe("OfficerSubmitPage", () => {
 
   it("stamps submitted_by_officer + officer_id, builds the PoC, and navigates on submit (AC4)", async () => {
     await walkToReview();
-    fireEvent.click(screen.getByRole("button", { name: /Submit report/i }));
+    fireEvent.click(screen.getByRole("button", { name: /submit.submit/i }));
 
     await waitFor(() => expect(mockBuildPoC).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(mockSubmit).toHaveBeenCalledTimes(1));
@@ -266,7 +278,7 @@ describe("OfficerSubmitPage", () => {
   it("renders the receipt offline-first: submit navigates even when submitCaseOnline fails (CRITICAL #3)", async () => {
     mockSubmit.mockResolvedValue(null); // offline / 5xx
     await walkToReview();
-    fireEvent.click(screen.getByRole("button", { name: /Submit report/i }));
+    fireEvent.click(screen.getByRole("button", { name: /submit.submit/i }));
 
     await waitFor(() => expect(mockBuildPoC).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(push).toHaveBeenCalledWith("/officer/submit/poc"));
@@ -290,14 +302,14 @@ describe("OfficerSubmitPage", () => {
 
     // Prove classIdsRef was NOT seeded from the stale "combined" draft: a single new photo's
     // rollup must be its own class, not unioned with the discarded draft's classes.
-    fireEvent.change(screen.getByLabelText(/Citizen's NIC/i), { target: { value: "200012345678" } });
-    fireEvent.change(screen.getByLabelText(/Citizen's mobile/i), { target: { value: "0712345678" } });
-    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
-    await screen.findByText(/GPS location detected/i);
-    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
-    await screen.findByRole("radiogroup", { name: /Damage category/i });
-    fireEvent.click(screen.getByRole("radio", { name: /Crop Damage/i }));
-    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    fireEvent.change(screen.getByLabelText(/submit.citizenNic/i), { target: { value: "200012345678" } });
+    fireEvent.change(screen.getByLabelText(/submit.citizenMobile/i), { target: { value: "0712345678" } });
+    fireEvent.click(screen.getByRole("button", { name: "submit.continue" }));
+    await screen.findByText(/submit.gpsDetected/i);
+    fireEvent.click(screen.getByRole("button", { name: "submit.continue" }));
+    await screen.findByRole("radiogroup", { name: /submit.damageCategoryGroup/i });
+    fireEvent.click(screen.getByRole("radio", { name: /step3.crop/i }));
+    fireEvent.click(screen.getByRole("button", { name: "submit.continue" }));
     const input = await screen.findByTestId("submit-file-input");
     fireEvent.change(input, {
       target: { files: [new File(["x"], "damage.jpg", { type: "image/jpeg" })] },
@@ -326,12 +338,12 @@ describe("OfficerSubmitPage", () => {
     render(<OfficerSubmitPage />);
     await act(async () => {});
 
-    expect(await screen.findByText(/officer session could not be verified/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Verifying|Continue/i })).toBeDisabled();
+    expect(await screen.findByText(/submit.sessionError/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /submit.verifyingSession|submit.continue/i })).toBeDisabled();
 
-    fireEvent.change(screen.getByLabelText(/Citizen's NIC/i), { target: { value: "200012345678" } });
-    fireEvent.change(screen.getByLabelText(/Citizen's mobile/i), { target: { value: "0712345678" } });
-    fireEvent.submit(screen.getByRole("button", { name: /Verifying|Continue/i }).closest("form")!);
+    fireEvent.change(screen.getByLabelText(/submit.citizenNic/i), { target: { value: "200012345678" } });
+    fireEvent.change(screen.getByLabelText(/submit.citizenMobile/i), { target: { value: "0712345678" } });
+    fireEvent.submit(screen.getByRole("button", { name: /submit.verifyingSession|submit.continue/i }).closest("form")!);
 
     // never persists submitted_by_officer=true with a null officer_id
     expect(mockUpdateDraft).not.toHaveBeenCalled();

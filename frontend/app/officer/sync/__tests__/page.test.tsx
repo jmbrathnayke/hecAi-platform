@@ -1,6 +1,18 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import SyncQueuePage from "../page";
 import { getAccessToken } from "@/lib/auth";
+
+// next-intl passthrough (Story 6.2): translator returns the key (+ interpolation values). Covers
+// the page and the REAL SyncQueueItemCard (requireActual'd below).
+jest.mock("next-intl", () => ({
+  useTranslations: () => {
+    const t = (key: string, vars?: Record<string, unknown>) =>
+      vars && Object.keys(vars).length ? `${key} ${Object.values(vars).join(" ")}` : key;
+    t.rich = (key: string) => key;
+    return t;
+  },
+  useLocale: () => "en",
+}));
 import { getLastSyncedAt, getQueuedItems, retryItem } from "@/lib/syncQueue";
 import { SyncQueueItemCard } from "@/components/SyncQueueItem";
 
@@ -59,16 +71,16 @@ afterEach(() => {
 test("shows the empty state with the last-sync timestamp when the queue is empty", async () => {
   mockGetLastSyncedAt.mockResolvedValue(new Date("2026-07-09T10:00:00.000Z").getTime());
   render(<SyncQueuePage />);
-  expect(await screen.findByText("All reports synced")).toBeInTheDocument();
-  expect(await screen.findByText(/Last sync:/)).toBeInTheDocument();
+  expect(await screen.findByText("syncPage.allSynced")).toBeInTheDocument();
+  expect(await screen.findByText(/syncPage.lastSync/)).toBeInTheDocument();
 });
 
 test("lists queued items with status, attempt count, and a Failed badge", async () => {
   mockGetQueuedItems.mockResolvedValue([item()]);
   render(<SyncQueuePage />);
-  expect(await screen.findByText("crop damage")).toBeInTheDocument();
-  expect(screen.getByText("Failed")).toBeInTheDocument();
-  expect(screen.getByText("6 attempts")).toBeInTheDocument();
+  expect(await screen.findByText("syncItem.damageLabel crop")).toBeInTheDocument();
+  expect(screen.getByText("syncItem.statusFailed")).toBeInTheDocument();
+  expect(screen.getByText("syncItem.attempts 6")).toBeInTheDocument();
 });
 
 test("tapping Retry on a failed item calls retryItem with the id and the access token, then shows a success toast", async () => {
@@ -79,7 +91,7 @@ test("tapping Retry on a failed item calls retryItem with the id and the access 
   fireEvent.click(retryButton);
 
   await waitFor(() => expect(mockRetryItem).toHaveBeenCalledWith(1, "tok-1"));
-  expect(await screen.findByText("Report synced successfully")).toBeInTheDocument();
+  expect(await screen.findByText("syncPage.syncedSuccess")).toBeInTheDocument();
 });
 
 test("does not call retryItem while offline — shows an offline message instead", async () => {
@@ -89,19 +101,19 @@ test("does not call retryItem while offline — shows an offline message instead
 
   fireEvent.click(await screen.findByRole("button", { name: /retry/i }));
 
-  expect(await screen.findByText("You are offline — retry when connected")).toBeInTheDocument();
+  expect(await screen.findByText("syncPage.offlineRetry")).toBeInTheDocument();
   expect(mockRetryItem).not.toHaveBeenCalled();
 });
 
 test("the 5s poll picks up an item synced elsewhere without a page reload", async () => {
   mockGetQueuedItems.mockResolvedValueOnce([item()]).mockResolvedValue([]);
   render(<SyncQueuePage />);
-  expect(await screen.findByText("crop damage")).toBeInTheDocument();
+  expect(await screen.findByText("syncItem.damageLabel crop")).toBeInTheDocument();
 
   await jest.advanceTimersByTimeAsync(5_000);
 
-  await waitFor(() => expect(screen.queryByText("crop damage")).not.toBeInTheDocument());
-  expect(screen.getByText("All reports synced")).toBeInTheDocument();
+  await waitFor(() => expect(screen.queryByText("syncItem.damageLabel crop")).not.toBeInTheDocument());
+  expect(screen.getByText("syncPage.allSynced")).toBeInTheDocument();
 });
 
 test("a poll tick with no actual change does not re-render SyncQueueItemCard", async () => {
@@ -129,7 +141,7 @@ describe("optimistic UI (AC2 / CRITICAL #2)", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: /retry/i }));
 
-    expect(await screen.findByText("Syncing...")).toBeInTheDocument();
+    expect(await screen.findByText("syncItem.statusInProgress")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /retry/i })).not.toBeInTheDocument();
 
     resolveRetry();
@@ -145,7 +157,7 @@ describe("differentiated error toasts (2026-07-09 code review)", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: /retry/i }));
 
-    expect(await screen.findByText("Retry failed. Check your connection.")).toBeInTheDocument();
+    expect(await screen.findByText("syncPage.retryFailed")).toBeInTheDocument();
   });
 
   test("an HTTP error shows a server-error message, not a connection message", async () => {
@@ -155,8 +167,8 @@ describe("differentiated error toasts (2026-07-09 code review)", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: /retry/i }));
 
-    expect(await screen.findByText("Server error. Try again in a moment.")).toBeInTheDocument();
-    expect(screen.queryByText("Retry failed. Check your connection.")).not.toBeInTheDocument();
+    expect(await screen.findByText("syncPage.errorServer")).toBeInTheDocument();
+    expect(screen.queryByText("syncPage.retryFailed")).not.toBeInTheDocument();
   });
 
   test("a server-side 'not confirmed' failure shows a distinct message, not a connection message", async () => {
@@ -166,7 +178,7 @@ describe("differentiated error toasts (2026-07-09 code review)", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: /retry/i }));
 
-    expect(await screen.findByText("Sync couldn't be confirmed. Try again or contact support.")).toBeInTheDocument();
+    expect(await screen.findByText("syncPage.errorNotConfirmed")).toBeInTheDocument();
   });
 
   test("an 'already in progress' guard failure shows a distinct message", async () => {
@@ -176,7 +188,7 @@ describe("differentiated error toasts (2026-07-09 code review)", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: /retry/i }));
 
-    expect(await screen.findByText("This report is already syncing.")).toBeInTheDocument();
+    expect(await screen.findByText("syncPage.errorInProgress")).toBeInTheDocument();
   });
 });
 
@@ -185,8 +197,8 @@ describe("load failure (CRITICAL: safety-net screen must not falsely claim succe
     mockGetQueuedItems.mockRejectedValue(new Error("IDB transaction aborted"));
     render(<SyncQueuePage />);
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(/couldn't load the sync queue/i);
-    expect(screen.queryByText("All reports synced")).not.toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toHaveTextContent(/syncPage.loadError/i);
+    expect(screen.queryByText("syncPage.allSynced")).not.toBeInTheDocument();
   });
 
   test("recovers to the normal empty state once a later poll succeeds", async () => {
@@ -196,6 +208,6 @@ describe("load failure (CRITICAL: safety-net screen must not falsely claim succe
 
     await jest.advanceTimersByTimeAsync(5_000);
 
-    expect(await screen.findByText("All reports synced")).toBeInTheDocument();
+    expect(await screen.findByText("syncPage.allSynced")).toBeInTheDocument();
   });
 });

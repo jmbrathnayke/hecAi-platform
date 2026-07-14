@@ -1,6 +1,18 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import { AIResultCard } from "@/components/AIResultCard";
 
+// next-intl passthrough (Story 6.2): the translator returns the key (relative to the namespace),
+// appending any interpolation values so tests that check a dynamic value still can.
+jest.mock("next-intl", () => ({
+  useTranslations: () => {
+    const t = (key: string, vars?: Record<string, unknown>) =>
+      vars && Object.keys(vars).length ? `${key} ${Object.values(vars).join(" ")}` : key;
+    t.rich = (key: string) => key;
+    return t;
+  },
+  useLocale: () => "en",
+}));
+
 const baseProps = {
   classId: "property_damage" as const,
   severity: "Severe" as const,
@@ -13,10 +25,10 @@ const baseProps = {
 describe("AIResultCard", () => {
   it("renders the localized class label, severity, confidence, and processing time", () => {
     render(<AIResultCard {...baseProps} />);
-    expect(screen.getByText("Property Damage")).toBeInTheDocument();
-    expect(screen.getByText("Severe")).toBeInTheDocument();
+    expect(screen.getByText("aiResult.property_damage")).toBeInTheDocument();
+    expect(screen.getByText("severity.Severe")).toBeInTheDocument();
     expect(screen.getByText("89%")).toBeInTheDocument();
-    expect(screen.getByText(/413 ms/)).toBeInTheDocument(); // rounded from 412.7
+    expect(screen.getByText(/413/)).toBeInTheDocument(); // rounded from 412.7, interpolated into the key
   });
 
   it("exposes confidence as an accessible progressbar (always-visible signal, NFR-6.2)", () => {
@@ -27,9 +39,9 @@ describe("AIResultCard", () => {
 
   it("maps each model class id to its English label", () => {
     const { rerender } = render(<AIResultCard {...baseProps} classId="crop_damage" />);
-    expect(screen.getByText("Crop Damage")).toBeInTheDocument();
+    expect(screen.getByText("aiResult.crop_damage")).toBeInTheDocument();
     rerender(<AIResultCard {...baseProps} classId="no_damage" />);
-    expect(screen.getByText("No Damage")).toBeInTheDocument();
+    expect(screen.getByText("aiResult.no_damage")).toBeInTheDocument();
   });
 
   it("clamps an out-of-range or non-finite confidence for the bar + aria (defensive)", () => {
@@ -54,11 +66,11 @@ describe("AIResultCard", () => {
     expect(onAccept).not.toHaveBeenCalled();
     expect(onOverride).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole("button", { name: "Accept" }));
+    fireEvent.click(screen.getByRole("button", { name: "aiResult.accept" }));
     expect(onAccept).toHaveBeenCalledTimes(1);
     expect(onOverride).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole("button", { name: "Override" }));
+    fireEvent.click(screen.getByRole("button", { name: "aiResult.override" }));
     expect(onOverride).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,6 +1,12 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import OfficerLoginPage from "../page";
 
+// next-intl passthrough (Story 6.2): translator returns the key.
+jest.mock("next-intl", () => ({
+  useTranslations: () => (k: string) => k,
+  useLocale: () => "en",
+}));
+
 const mockPush = jest.fn();
 jest.mock("next/navigation", () => ({
   useRouter: () => ({ push: (...a: unknown[]) => mockPush(...a) }),
@@ -25,7 +31,7 @@ beforeEach(() => {
 
 test("Google sign-in triggers signInWithOAuth with a Google provider and dashboard redirect", async () => {
   render(<OfficerLoginPage />);
-  fireEvent.click(screen.getByRole("button", { name: /sign in with google/i }));
+  fireEvent.click(screen.getByRole("button", { name: "login.google" }));
 
   await waitFor(() =>
     expect(mockSignInWithOAuth).toHaveBeenCalledWith(
@@ -40,7 +46,7 @@ test("Google sign-in triggers signInWithOAuth with a Google provider and dashboa
 test("Google sign-in error is shown to the user", async () => {
   mockSignInWithOAuth.mockResolvedValue({ error: { message: "OAuth popup blocked" } });
   render(<OfficerLoginPage />);
-  fireEvent.click(screen.getByRole("button", { name: /sign in with google/i }));
+  fireEvent.click(screen.getByRole("button", { name: "login.google" }));
 
   expect(await screen.findByRole("alert")).toHaveTextContent("OAuth popup blocked");
 });
@@ -48,18 +54,18 @@ test("Google sign-in error is shown to the user", async () => {
 test("a thrown network failure during Google sign-in shows a generic error, not an unhandled rejection", async () => {
   mockSignInWithOAuth.mockRejectedValue(new Error("network down"));
   render(<OfficerLoginPage />);
-  fireEvent.click(screen.getByRole("button", { name: /sign in with google/i }));
+  fireEvent.click(screen.getByRole("button", { name: "login.google" }));
 
-  expect(await screen.findByRole("alert")).toHaveTextContent(/could not reach the sign-in service/i);
+  expect(await screen.findByRole("alert")).toHaveTextContent("login.networkError");
 });
 
 test("email/password sign-in success redirects to the officer dashboard", async () => {
   render(<OfficerLoginPage />);
-  fireEvent.change(screen.getByPlaceholderText(/dwc email address/i), {
+  fireEvent.change(screen.getByPlaceholderText("login.emailPlaceholder"), {
     target: { value: "officer@dwc.gov.lk" },
   });
-  fireEvent.change(screen.getByPlaceholderText(/password/i), { target: { value: "hunter2" } });
-  fireEvent.click(screen.getByRole("button", { name: /^sign in$/i }));
+  fireEvent.change(screen.getByPlaceholderText("login.passwordPlaceholder"), { target: { value: "hunter2" } });
+  fireEvent.click(screen.getByRole("button", { name: "login.signIn" }));
 
   await waitFor(() =>
     expect(mockSignInWithPassword).toHaveBeenCalledWith({
@@ -73,11 +79,11 @@ test("email/password sign-in success redirects to the officer dashboard", async 
 test("email/password sign-in failure shows the error and does not redirect", async () => {
   mockSignInWithPassword.mockResolvedValue({ error: { message: "Invalid credentials" } });
   render(<OfficerLoginPage />);
-  fireEvent.change(screen.getByPlaceholderText(/dwc email address/i), {
+  fireEvent.change(screen.getByPlaceholderText("login.emailPlaceholder"), {
     target: { value: "officer@dwc.gov.lk" },
   });
-  fireEvent.change(screen.getByPlaceholderText(/password/i), { target: { value: "wrong" } });
-  fireEvent.click(screen.getByRole("button", { name: /^sign in$/i }));
+  fireEvent.change(screen.getByPlaceholderText("login.passwordPlaceholder"), { target: { value: "wrong" } });
+  fireEvent.click(screen.getByRole("button", { name: "login.signIn" }));
 
   expect(await screen.findByRole("alert")).toHaveTextContent("Invalid credentials");
   expect(mockPush).not.toHaveBeenCalled();
@@ -92,11 +98,11 @@ test("unmounting before signInWithPassword resolves does not throw or update sta
   );
 
   const { unmount } = render(<OfficerLoginPage />);
-  fireEvent.change(screen.getByPlaceholderText(/dwc email address/i), {
+  fireEvent.change(screen.getByPlaceholderText("login.emailPlaceholder"), {
     target: { value: "officer@dwc.gov.lk" },
   });
-  fireEvent.change(screen.getByPlaceholderText(/password/i), { target: { value: "hunter2" } });
-  fireEvent.click(screen.getByRole("button", { name: /^sign in$/i }));
+  fireEvent.change(screen.getByPlaceholderText("login.passwordPlaceholder"), { target: { value: "hunter2" } });
+  fireEvent.click(screen.getByRole("button", { name: "login.signIn" }));
 
   unmount();
   resolveSignIn({ error: null });

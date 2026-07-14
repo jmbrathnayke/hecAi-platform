@@ -2,6 +2,12 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import { ModelLoadStatus } from "@/components/ModelLoadStatus";
 import { loadModel } from "@/lib/mobilenet";
 
+// next-intl passthrough (Story 6.2): translator returns the key.
+jest.mock("next-intl", () => ({
+  useTranslations: () => (k: string) => k,
+  useLocale: () => "en",
+}));
+
 jest.mock("@/lib/mobilenet", () => ({
   loadModel: jest.fn(),
 }));
@@ -18,11 +24,11 @@ describe("ModelLoadStatus", () => {
     mockLoadModel.mockReturnValue(new Promise((resolve) => (resolveLoad = () => resolve({}))));
 
     render(<ModelLoadStatus />);
-    expect(screen.getByText("Preparing AI model...")).toBeInTheDocument();
+    expect(screen.getByText("modelStatus.preparing")).toBeInTheDocument();
 
     await act(async () => resolveLoad());
     await waitFor(() =>
-      expect(screen.getByText("AI model ready for offline classification")).toBeInTheDocument(),
+      expect(screen.getByText("modelStatus.ready")).toBeInTheDocument(),
     );
   });
 
@@ -30,7 +36,7 @@ describe("ModelLoadStatus", () => {
     mockLoadModel.mockResolvedValue({});
     render(<ModelLoadStatus />);
     await waitFor(() =>
-      expect(screen.getByText("AI model ready for offline classification")).toBeInTheDocument(),
+      expect(screen.getByText("modelStatus.ready")).toBeInTheDocument(),
     );
   });
 
@@ -39,7 +45,7 @@ describe("ModelLoadStatus", () => {
     render(<ModelLoadStatus />);
     await waitFor(() =>
       expect(
-        screen.getByText("AI model not available offline. Please reconnect to load the model."),
+        screen.getByText("modelStatus.error"),
       ).toBeInTheDocument(),
     );
   });
@@ -60,7 +66,7 @@ describe("ModelLoadStatus", () => {
     render(<ModelLoadStatus />);
     await waitFor(() =>
       expect(
-        screen.getByText("AI model not available offline. Please reconnect to load the model."),
+        screen.getByText("modelStatus.error"),
       ).toBeInTheDocument(),
     );
 
@@ -70,7 +76,7 @@ describe("ModelLoadStatus", () => {
     });
 
     await waitFor(() =>
-      expect(screen.getByText("AI model ready for offline classification")).toBeInTheDocument(),
+      expect(screen.getByText("modelStatus.ready")).toBeInTheDocument(),
     );
     expect(mockLoadModel).toHaveBeenCalledTimes(2);
   });
@@ -79,7 +85,7 @@ describe("ModelLoadStatus", () => {
     mockLoadModel.mockResolvedValue({});
     render(<ModelLoadStatus />);
     await waitFor(() =>
-      expect(screen.getByText("AI model ready for offline classification")).toBeInTheDocument(),
+      expect(screen.getByText("modelStatus.ready")).toBeInTheDocument(),
     );
 
     await act(async () => {

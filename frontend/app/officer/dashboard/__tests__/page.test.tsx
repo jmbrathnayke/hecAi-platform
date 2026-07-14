@@ -1,11 +1,16 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import OfficerDashboardPage from "../page";
 
-// next-intl: passthrough translator (key -> key) + fixed locale. The dashboard now renders the
-// non-routed LanguageSelectorCookie (useLocale) + a translated language label (useTranslations)
-// under the officer i18n provider (Story 6.1); in isolation the test provides this stub.
+// next-intl passthrough (Story 6.1/6.2): translator returns the key (+ interpolation values so
+// dynamic assertions like the "via {channel}" line still work). Covers both useTranslations
+// namespaces the dashboard uses (officer + status).
 jest.mock("next-intl", () => ({
-  useTranslations: () => (k: string) => k,
+  useTranslations: () => {
+    const t = (key: string, vars?: Record<string, unknown>) =>
+      vars && Object.keys(vars).length ? `${key} ${Object.values(vars).join(" ")}` : key;
+    t.rich = (key: string) => key;
+    return t;
+  },
   useLocale: () => "en",
 }));
 
@@ -64,7 +69,7 @@ test("renders the officer's cases and sends the Bearer token", async () => {
 
   expect(await screen.findByText("HEC-2026-0001")).toBeInTheDocument();
   expect(screen.getByText("crop")).toBeInTheDocument();
-  expect(screen.getByText(/via app/)).toBeInTheDocument();
+  expect(screen.getByText(/dashboard.via app/)).toBeInTheDocument();
 
   const [, init] = (global.fetch as jest.Mock).mock.calls[0];
   expect(init.headers.Authorization).toBe("Bearer tok-123");
@@ -73,13 +78,13 @@ test("renders the officer's cases and sends the Bearer token", async () => {
 test("shows the empty state when the officer has no cases", async () => {
   (global.fetch as jest.Mock).mockResolvedValue({ ok: true, json: async () => ({ cases: [] }) });
   render(<OfficerDashboardPage />);
-  expect(await screen.findByText(/no cases in your scope yet/i)).toBeInTheDocument();
+  expect(await screen.findByText(/dashboard.empty/i)).toBeInTheDocument();
 });
 
 test("shows an error state when the request fails", async () => {
   (global.fetch as jest.Mock).mockResolvedValue({ ok: false, status: 500, json: async () => ({}) });
   render(<OfficerDashboardPage />);
-  expect(await screen.findByRole("alert")).toHaveTextContent(/couldn't load your cases/i);
+  expect(await screen.findByRole("alert")).toHaveTextContent(/dashboard.loadError/i);
 });
 
 test("shows an error state when there is no session token (does not fetch)", async () => {
