@@ -1,16 +1,19 @@
 "use client";
-// Sync status indicator for the officer portal header (Story 4.1, FR-8.4). English-only
-// (FR-9.3, no next-intl — the officer tree has no i18n provider, same as the dashboard).
-// Drives the actual retry loop too: every poll tick (and the `online` event) calls
-// runSync() so a due item is retried even if the officer never looks at this bar.
+// Sync status indicator for the officer portal header (Story 4.1, FR-8.4). Localized si/ta/en
+// (Story 6.2, FR-9.1) via the officer i18n provider (Story 6.1) — strings from
+// `officer.syncBar`. Drives the actual retry loop too: every poll tick (and the `online` event)
+// calls runSync() so a due item is retried even if the officer never looks at this bar.
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useTranslations, useLocale } from "next-intl";
 import { getAccessToken } from "@/lib/auth";
 import { getLastSyncedAt, getQueuedItems, runSync } from "@/lib/syncQueue";
 
 const POLL_MS = 10_000;
 
 export function SyncStatusBar() {
+  const t = useTranslations("officer");
+  const locale = useLocale();
   const [pendingCount, setPendingCount] = useState(0);
   const [failedCount, setFailedCount] = useState(0);
   const [lastSynced, setLastSynced] = useState<Date | null>(null);
@@ -56,7 +59,7 @@ export function SyncStatusBar() {
           href="/officer/sync"
           className="block w-full px-design-4 py-design-2 text-center text-label text-ink-on-dark"
         >
-          Some reports failed to sync after 5 attempts. Tap to review.
+          {t("syncBar.failed")}
         </Link>
       </div>
     );
@@ -72,7 +75,7 @@ export function SyncStatusBar() {
         <span className="animate-spin" aria-hidden="true">
           ⟳
         </span>
-        {pendingCount} report{pendingCount === 1 ? "" : "s"} pending sync
+        {t("syncBar.pending", { count: pendingCount })}
       </div>
     );
   }
@@ -81,7 +84,7 @@ export function SyncStatusBar() {
 
   return (
     <div role="status" className="sticky top-0 z-50 w-full bg-forest-pale px-design-4 py-design-2 text-center text-label text-forest">
-      All reports synced · Last sync {lastSynced.toLocaleTimeString()}
+      {t("syncBar.synced", { time: lastSynced.toLocaleTimeString(locale) })}
     </div>
   );
 }

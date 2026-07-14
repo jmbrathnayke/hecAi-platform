@@ -1,14 +1,15 @@
 "use client";
 
-// Story 3.2 AC1/AC4. Officer routes are English-only with no next-intl provider (FR-9.3,
-// see app/officer/layout.tsx) — strings are hardcoded here rather than pulled from
-// messages/en.json, matching the existing officer/login page convention.
+// Story 3.2 AC1/AC4. Localized si/ta/en (Story 6.2, FR-9.1) via the officer i18n provider
+// (Story 6.1) — strings read from the `officer.modelStatus` namespace.
 import { useEffect, useRef, useState } from "react";
+import { useTranslations } from "next-intl";
 import { loadModel } from "@/lib/mobilenet";
 
 type Status = "idle" | "loading" | "ready" | "error";
 
 export function ModelLoadStatus() {
+  const t = useTranslations("officer");
   const [status, setStatus] = useState<Status>("idle");
   const statusRef = useRef<Status>("idle");
   statusRef.current = status;
@@ -58,18 +59,16 @@ export function ModelLoadStatus() {
           <span aria-hidden="true" className="animate-spin">
             ⟳
           </span>
-          <span>Preparing AI model...</span>
+          <span>{t("modelStatus.preparing")}</span>
         </>
       )}
       {status === "ready" && (
         <>
           <span aria-hidden="true">✓</span>
-          <span>AI model ready for offline classification</span>
+          <span>{t("modelStatus.ready")}</span>
         </>
       )}
-      {status === "error" && (
-        <span>AI model not available offline. Please reconnect to load the model.</span>
-      )}
+      {status === "error" && <span>{t("modelStatus.error")}</span>}
     </div>
   );
 }

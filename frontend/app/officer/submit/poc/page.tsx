@@ -3,17 +3,16 @@
 // Officer PoC receipt (Story 3.5, AC6). Renders the citizen's Proof of Claim after an
 // officer-assisted submission: reuses the existing PoCCard (QR of the offline_id via
 // qrcode.react + reference + timestamp) and composes an officer-ID badge and the citizen
-// NIC masked to its last 4 chars around it. English-only officer portal (FR-9.3) — PoCCard
-// uses next-intl, so it is wrapped in a minimal NextIntlClientProvider seeded with the English
-// `poc` messages (the officer tree has no i18n provider of its own).
+// NIC masked to its last 4 chars around it. Localized si/ta/en (Story 6.2, FR-9.1) via the
+// officer i18n provider added in Story 6.1 — PoCCard now inherits the officer layout's locale,
+// so the previous local English-only NextIntlClientProvider wrapper was removed.
 //
 // Offline-first (CRITICAL #3): the receipt is built from the persisted draft and shown
 // immediately; a best-effort online submit only upgrades the reference to the canonical id.
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { NextIntlClientProvider } from "next-intl";
-import enMessages from "@/messages/en.json";
+import { useTranslations } from "next-intl";
 import { PoCCard } from "@/components/PoCCard";
 import { getCase, updateDraft } from "@/lib/indexeddb";
 import { getDraftId, clearDraftId } from "@/lib/draft";
@@ -23,6 +22,7 @@ import { createClient } from "@/lib/supabase";
 import { OFFICER_POC_NIC_KEY, clearOfficerPocMask } from "@/lib/officerPoc";
 
 export default function OfficerPoCPage() {
+  const t = useTranslations("officer");
   const router = useRouter();
   const [poc, setPoc] = useState<PoCRecord | null>(null);
   const [canonicalId, setCanonicalId] = useState<string | null>(null);
@@ -135,27 +135,25 @@ export default function OfficerPoCPage() {
 
   return (
     <main className="mx-auto flex w-full max-w-md flex-col gap-design-6 bg-surface-base px-design-4 py-design-6">
-      <NextIntlClientProvider locale="en" messages={enMessages}>
-        <PoCCard poc={poc} canonicalId={canonicalId} />
-      </NextIntlClientProvider>
+      <PoCCard poc={poc} canonicalId={canonicalId} />
 
       <section
-        aria-label="Officer-assisted submission details"
+        aria-label={t("submitPoc.detailsLabel")}
         className="mx-auto flex w-full max-w-md flex-col gap-design-3 rounded-md border border-border-default bg-surface-raised p-design-4"
       >
         <div className="flex items-center justify-between gap-design-3">
-          <span className="text-label text-ink-secondary">Citizen NIC</span>
+          <span className="text-label text-ink-secondary">{t("submitPoc.citizenNic")}</span>
           <span data-testid="citizen-nic-mask" className="text-label font-semibold text-ink-primary">
             {nicLast4 ? `••••••••${nicLast4}` : "••••••••"}
           </span>
         </div>
         <div className="flex items-center justify-between gap-design-3">
-          <span className="text-label text-ink-secondary">Submitted by officer</span>
+          <span className="text-label text-ink-secondary">{t("submitPoc.submittedByOfficer")}</span>
           <span
             data-testid="officer-badge"
             className="rounded-pill bg-forest-pale px-design-3 py-design-1 text-caption font-semibold text-forest break-all"
           >
-            {officerId ?? "Officer"}
+            {officerId ?? t("submitPoc.officerFallback")}
           </span>
         </div>
       </section>
@@ -172,7 +170,7 @@ export default function OfficerPoCPage() {
         }}
         className="w-full min-h-primary-btn bg-forest text-ink-on-dark text-headline font-semibold rounded-md"
       >
-        Submit another citizen
+        {t("submitPoc.submitAnother")}
       </button>
     </main>
   );

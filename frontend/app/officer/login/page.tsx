@@ -1,15 +1,18 @@
 "use client";
 
-// Officer login (Story 3.1). English-only (FR-9.3) — lives outside app/[locale] so it never
-// gets a /si|/ta|/en prefix, mirroring the existing /admin bypass in middleware.ts.
+// Officer login (Story 3.1). Localized si/ta/en (Story 6.2, FR-9.1) via the officer i18n
+// provider (Story 6.1) — lives outside app/[locale] so its URL stays unprefixed. Supabase
+// auth error messages are passed through verbatim (they are provider-owned, not app copy).
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { createClient } from "@/lib/supabase";
 
 type SupabaseClient = ReturnType<typeof createClient>;
 
 export default function OfficerLoginPage() {
+  const t = useTranslations("officer");
   const router = useRouter();
   // Lazy-init: createClient() must NOT run during SSR prerender (env vars may be absent in CI).
   // The ref starts null and is populated on first access, which only happens in browser event
@@ -49,7 +52,7 @@ export default function OfficerLoginPage() {
       }
       // On success the browser navigates to Google; nothing else to do here.
     } catch {
-      if (mountedRef.current) setError("Could not reach the sign-in service. Check your connection and try again.");
+      if (mountedRef.current) setError(t("login.networkError"));
     } finally {
       if (mountedRef.current) setSubmitting(false);
     }
@@ -71,7 +74,7 @@ export default function OfficerLoginPage() {
       }
       router.push("/officer/dashboard");
     } catch {
-      if (mountedRef.current) setError("Could not reach the sign-in service. Check your connection and try again.");
+      if (mountedRef.current) setError(t("login.networkError"));
     } finally {
       if (mountedRef.current) setSubmitting(false);
     }
@@ -80,7 +83,7 @@ export default function OfficerLoginPage() {
   return (
     <main className="min-h-screen bg-surface-base flex items-center justify-center px-design-4">
       <div className="w-full max-w-sm bg-surface-raised rounded-lg border border-border-default p-design-6 space-y-design-4">
-        <h1 className="text-title text-ink-primary text-center">Officer Portal</h1>
+        <h1 className="text-title text-ink-primary text-center">{t("login.title")}</h1>
 
         <button
           type="button"
@@ -88,11 +91,11 @@ export default function OfficerLoginPage() {
           disabled={submitting}
           className="w-full min-h-touch-target bg-forest text-ink-on-dark text-label font-semibold rounded-md disabled:opacity-60"
         >
-          Sign in with Google
+          {t("login.google")}
         </button>
 
         <div className="relative text-center text-ink-disabled text-label">
-          <span className="bg-surface-raised px-design-2">or</span>
+          <span className="bg-surface-raised px-design-2">{t("login.or")}</span>
         </div>
 
         <form onSubmit={handleEmailSignIn} className="space-y-design-3">
@@ -100,7 +103,7 @@ export default function OfficerLoginPage() {
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="DWC email address"
+            placeholder={t("login.emailPlaceholder")}
             required
             className="w-full border border-border-default rounded-md px-design-3 py-design-2 text-body"
           />
@@ -108,7 +111,7 @@ export default function OfficerLoginPage() {
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            placeholder="Password"
+            placeholder={t("login.passwordPlaceholder")}
             required
             className="w-full border border-border-default rounded-md px-design-3 py-design-2 text-body"
           />
@@ -117,7 +120,7 @@ export default function OfficerLoginPage() {
             disabled={submitting}
             className="w-full min-h-touch-target bg-amber text-ink-on-amber text-label font-semibold rounded-md disabled:opacity-60"
           >
-            Sign In
+            {t("login.signIn")}
           </button>
         </form>
 

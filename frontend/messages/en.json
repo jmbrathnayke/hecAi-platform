@@ -119,7 +119,150 @@
     "signOut": "Sign out"
   },
   "officer": {
-    "languageLabel": "Language"
+    "languageLabel": "Language",
+    "dashboard": {
+      "title": "Officer Portal",
+      "syncQueueLink": "Sync Queue",
+      "divisions": "Divisions: {list}",
+      "noDivisions": "No divisions assigned",
+      "yourCases": "Your cases",
+      "filterGroupLabel": "Filter by status",
+      "filterAll": "All",
+      "loading": "Loading your cases…",
+      "loadError": "Couldn’t load your cases.",
+      "retry": "Retry",
+      "empty": "No cases in your scope yet.",
+      "pendingId": "(pending id)",
+      "via": "via {channel}"
+    },
+    "login": {
+      "title": "Officer Portal",
+      "google": "Sign in with Google",
+      "or": "or",
+      "emailPlaceholder": "DWC email address",
+      "passwordPlaceholder": "Password",
+      "signIn": "Sign In",
+      "networkError": "Could not reach the sign-in service. Check your connection and try again."
+    },
+    "classify": {
+      "title": "Damage Classification",
+      "startNewCase": "Start new case",
+      "analyzing": "Analyzing photo…",
+      "capture": "Capture damage photo",
+      "qualityWarning": "Photo quality looks low (blurry or poorly lit). You can retake it or continue.",
+      "classifyError": "Could not classify this photo. Please retake it and try again.",
+      "accepted": "Assessment accepted.",
+      "overrideError": "Could not save the override. Please try again.",
+      "overridden": "Override recorded."
+    },
+    "submit": {
+      "title": "Submit Report for Citizen",
+      "step1": "Step 1 of 5 — Citizen Identity",
+      "step2": "Step 2 of 5 — Location",
+      "step3": "Step 3 of 5 — Damage",
+      "step4": "Step 4 of 5 — Photo & Classification",
+      "step5": "Step 5 of 5 — Review & Submit",
+      "identityHint": "Enter the <strong>citizen’s</strong> details (the person you are assisting), not your own.",
+      "citizenNic": "Citizen’s NIC",
+      "citizenMobile": "Citizen’s mobile number",
+      "nicPlaceholder": "200012345678 or 000000000V",
+      "mobilePlaceholder": "07XXXXXXXX",
+      "nicError": "Enter a valid citizen NIC (e.g. 200012345678 or 000000000V).",
+      "mobileError": "Enter a valid citizen mobile number (07XXXXXXXX).",
+      "sessionError": "Your officer session could not be verified. Please log in again before continuing.",
+      "identitySaveError": "Could not save the citizen’s details. Please try again.",
+      "continue": "Continue",
+      "verifyingSession": "Verifying officer session…",
+      "districtLabel": "District (optional)",
+      "districtPlaceholder": "Select district",
+      "dsDivisionLabel": "DS Division (optional)",
+      "dsDivisionPlaceholder": "Select division",
+      "detectingGps": "Detecting GPS location…",
+      "gpsDetected": "GPS location detected",
+      "locationSaveError": "Could not save the location. Please try again.",
+      "gpsFailed": "Could not detect GPS. Drop a pin on the map instead.",
+      "confirmLocation": "Confirm location",
+      "damageCategoryGroup": "Damage category",
+      "damageRequired": "Select a damage category.",
+      "damageSaveError": "Could not save the damage category. Please try again.",
+      "reviewAndSubmit": "Review & Submit",
+      "reviewDamage": "Damage category",
+      "reviewAi": "AI assessment",
+      "reviewOverridden": " (overridden)",
+      "reviewLocation": "Location",
+      "reviewOfficer": "Assisting officer",
+      "submitError": "Could not complete the submission. Please try again.",
+      "submitting": "Submitting…",
+      "submit": "Submit report"
+    },
+    "submitPoc": {
+      "detailsLabel": "Officer-assisted submission details",
+      "citizenNic": "Citizen NIC",
+      "submittedByOfficer": "Submitted by officer",
+      "officerFallback": "Officer",
+      "submitAnother": "Submit another citizen"
+    },
+    "aiResult": {
+      "cardLabel": "AI classification result",
+      "confidenceBarLabel": "AI confidence",
+      "crop_damage": "Crop Damage",
+      "no_damage": "No Damage",
+      "property_damage": "Property Damage",
+      "confidence": "Confidence",
+      "processedIn": "Processed on device in {ms} ms",
+      "accept": "Accept",
+      "override": "Override"
+    },
+    "severity": {
+      "None": "None",
+      "Minor": "Minor",
+      "Moderate": "Moderate",
+      "Severe": "Severe"
+    },
+    "override": {
+      "formLabel": "Override AI classification",
+      "title": "Override classification",
+      "correctCategory": "Correct category",
+      "reasonLabel": "Reason for override",
+      "reasonPlaceholder": "Explain why the AI classification is incorrect",
+      "charCount": "{count}/{min} characters",
+      "reasonHint": "Please provide a more detailed reason",
+      "cancel": "Cancel",
+      "confirm": "Confirm Override"
+    },
+    "modelStatus": {
+      "preparing": "Preparing AI model…",
+      "ready": "AI model ready for offline classification",
+      "error": "AI model not available offline. Please reconnect to load the model."
+    },
+    "syncBar": {
+      "failed": "Some reports failed to sync after 5 attempts. Tap to review.",
+      "pending": "{count, plural, one {# report pending sync} other {# reports pending sync}}",
+      "synced": "All reports synced · Last sync {time}"
+    },
+    "syncItem": {
+      "statusPending": "Pending",
+      "statusInProgress": "Syncing…",
+      "statusFailed": "Failed",
+      "unknownDamage": "Unknown",
+      "damageLabel": "{category} damage",
+      "attempts": "{count, plural, one {# attempt} other {# attempts}}",
+      "connectionFailed": "Connection failed. Try again.",
+      "retry": "Retry",
+      "retryAria": "Retry {category} damage report"
+    },
+    "syncPage": {
+      "title": "Sync Queue",
+      "loadError": "Couldn’t load the sync queue. Check your connection and try again.",
+      "allSynced": "All reports synced",
+      "lastSync": "Last sync: {time}",
+      "offlineRetry": "You are offline — retry when connected",
+      "retryFailed": "Retry failed. Check your connection.",
+      "syncedSuccess": "Report synced successfully",
+      "errorNotConfirmed": "Sync couldn’t be confirmed. Try again or contact support.",
+      "errorServer": "Server error. Try again in a moment.",
+      "errorInProgress": "This report is already syncing."
+    }
   },
   "admin": {
     "languageLabel": "Language"

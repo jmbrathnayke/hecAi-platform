@@ -1,9 +1,10 @@
 "use client";
 // Sync Queue screen (Story 4.4, FR-8.4/8.5, UX-DR11). The officer's safety net after
 // BackgroundSync/SyncStatusBar auto-retry exhausts its attempts: full visibility into every
-// queued item plus a manual, immediate retry. English-only officer route (FR-9.3, no
-// next-intl — same convention as SyncStatusBar/dashboard/classify).
+// queued item plus a manual, immediate retry. Localized si/ta/en (Story 6.2, FR-9.1) via the
+// officer i18n provider (Story 6.1) — strings from `officer.syncPage`.
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslations, useLocale } from "next-intl";
 import { getAccessToken } from "@/lib/auth";
 import { getLastSyncedAt, getQueuedItems, retryItem } from "@/lib/syncQueue";
 import type { SyncQueueItem } from "@/lib/indexeddb";
@@ -20,23 +21,26 @@ function signature(items: SyncQueueItem[]): string {
     .join("|");
 }
 
-/** Maps a retryItem() failure to a message that reflects its actual cause (2026-07-09 code
- * review), instead of a single generic "connection" string for every failure mode. */
-function errorToastMessage(err: unknown): string {
+/** Maps a retryItem() failure to the `officer.syncPage.*` message key that reflects its actual
+ * cause (2026-07-09 code review), instead of a single generic "connection" string for every
+ * failure mode. Returns a key so the component can translate it in the active locale. */
+function errorToastKey(err: unknown): string {
   const message = err instanceof Error ? err.message : "";
   if (message === "not confirmed by server") {
-    return "Sync couldn't be confirmed. Try again or contact support.";
+    return "syncPage.errorNotConfirmed";
   }
   if (message.startsWith("HTTP")) {
-    return "Server error. Try again in a moment.";
+    return "syncPage.errorServer";
   }
   if (message.includes("already in progress")) {
-    return "This report is already syncing.";
+    return "syncPage.errorInProgress";
   }
-  return "Retry failed. Check your connection.";
+  return "syncPage.retryFailed";
 }
 
 export default function SyncQueuePage() {
+  const t = useTranslations("officer");
+  const locale = useLocale();
   const [items, setItems] = useState<SyncQueueItem[]>([]);
   const [lastSynced, setLastSynced] = useState<number | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
@@ -72,12 +76,12 @@ export default function SyncQueuePage() {
 
   async function handleRetry(id: number) {
     if (!navigator.onLine) {
-      setToastMsg("You are offline — retry when connected");
+      setToastMsg(t("syncPage.offlineRetry"));
       return;
     }
     const token = await getAccessToken();
     if (!token) {
-      setToastMsg("Retry failed. Check your connection.");
+      setToastMsg(t("syncPage.retryFailed"));
       return;
     }
 
@@ -93,9 +97,9 @@ export default function SyncQueuePage() {
 
     try {
       await retryItem(id, token);
-      setToastMsg("Report synced successfully");
+      setToastMsg(t("syncPage.syncedSuccess"));
     } catch (err) {
-      setToastMsg(errorToastMessage(err));
+      setToastMsg(t(errorToastKey(err)));
     } finally {
       await refresh();
     }
@@ -104,24 +108,24 @@ export default function SyncQueuePage() {
   return (
     <main className="min-h-screen bg-surface-base px-design-4 py-design-6">
       <div className="mx-auto max-w-2xl space-y-design-4">
-        <h1 className="text-title text-ink-primary">Sync Queue</h1>
+        <h1 className="text-title text-ink-primary">{t("syncPage.title")}</h1>
 
         {loadError ? (
           <div
             role="alert"
             className="rounded-md border border-status-error bg-status-error-pale px-design-4 py-design-4 text-label text-status-error"
           >
-            Couldn&apos;t load the sync queue. Check your connection and try again.
+            {t("syncPage.loadError")}
           </div>
         ) : items.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-design-12 gap-design-3" role="status">
             <span className="text-4xl" aria-hidden="true">
               ✓
             </span>
-            <p className="text-heading text-forest">All reports synced</p>
+            <p className="text-heading text-forest">{t("syncPage.allSynced")}</p>
             {lastSynced !== null && (
               <p className="text-label text-ink-disabled">
-                Last sync: {new Date(lastSynced).toLocaleTimeString()}
+                {t("syncPage.lastSync", { time: new Date(lastSynced).toLocaleTimeString(locale) })}
               </p>
             )}
           </div>

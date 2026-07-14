@@ -14,6 +14,7 @@
 import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { isValidNIC, isValidMobile } from "@/lib/validation";
 import { getOrCreateSessionKey, encryptField } from "@/lib/crypto";
 import { getCase, updateDraft, saveClassification, saveOverride } from "@/lib/indexeddb";
@@ -40,12 +41,8 @@ type Decision = "accepted" | "override" | "overridden" | null;
 
 const DAMAGE_CATEGORIES = ["crop", "property", "combined", "none"] as const;
 type DamageCategory = (typeof DAMAGE_CATEGORIES)[number];
-const DAMAGE_LABELS: Record<DamageCategory, string> = {
-  crop: "Crop Damage",
-  property: "Property Damage",
-  combined: "Combined",
-  none: "No Damage",
-};
+// Damage labels are reused from the citizen `report.step3` namespace (same 4-category set) rather
+// than duplicated under `officer` — see Story 6.2 CRITICAL #2.
 
 function classIdsFromCaseCategory(category: unknown): ClassId[] {
   switch (category) {
@@ -61,6 +58,8 @@ function classIdsFromCaseCategory(category: unknown): ClassId[] {
 }
 
 export default function OfficerSubmitPage() {
+  const t = useTranslations("officer");
+  const tReport = useTranslations("report");
   const router = useRouter();
 
   const [step, setStep] = useState<Step>("identity");
@@ -159,11 +158,11 @@ export default function OfficerSubmitPage() {
     // later reject the submission with 403 (officer_id mismatch), losing the officer's work
     // deep into the flow. Block here instead, while it's still recoverable via re-login.
     if (!sessionChecked || !officerId) {
-      setIdentityError("Your officer session could not be verified. Please log in again before continuing.");
+      setIdentityError(t("submit.sessionError"));
       return;
     }
-    const nicErr = isValidNIC(nic) ? null : "Enter a valid citizen NIC (e.g. 200012345678 or 000000000V).";
-    const mobErr = isValidMobile(mobile) ? null : "Enter a valid citizen mobile number (07XXXXXXXX).";
+    const nicErr = isValidNIC(nic) ? null : t("submit.nicError");
+    const mobErr = isValidMobile(mobile) ? null : t("submit.mobileError");
     setNicError(nicErr);
     setMobileError(mobErr);
     if (nicErr || mobErr || saving) return;
@@ -189,7 +188,7 @@ export default function OfficerSubmitPage() {
       setStep("location");
       void beginLocationDetect();
     } catch {
-      if (mountedRef.current) setIdentityError("Could not save the citizen's details. Please try again.");
+      if (mountedRef.current) setIdentityError(t("submit.identitySaveError"));
     } finally {
       if (mountedRef.current) setSaving(false);
     }
@@ -224,7 +223,7 @@ export default function OfficerSubmitPage() {
       });
       if (mountedRef.current) setStep("damage");
     } catch {
-      if (mountedRef.current) setSubmitError("Could not save the location. Please try again.");
+      if (mountedRef.current) setSubmitError(t("submit.locationSaveError"));
     } finally {
       if (mountedRef.current) setSaving(false);
     }
@@ -233,7 +232,7 @@ export default function OfficerSubmitPage() {
   // ---- Damage ------------------------------------------------------------
   async function handleDamageNext() {
     if (!damage) {
-      setDamageError("Select a damage category.");
+      setDamageError(t("submit.damageRequired"));
       return;
     }
     if (saving) return;
@@ -244,7 +243,7 @@ export default function OfficerSubmitPage() {
       await updateDraft(draftId, { damage_category: damage });
       if (mountedRef.current) setStep("classify");
     } catch {
-      if (mountedRef.current) setDamageError("Could not save the damage category. Please try again.");
+      if (mountedRef.current) setDamageError(t("submit.damageSaveError"));
     } finally {
       if (mountedRef.current) setSaving(false);
     }
@@ -363,25 +362,25 @@ export default function OfficerSubmitPage() {
       if (!mountedRef.current) return;
       router.push("/officer/submit/poc");
     } catch {
-      if (mountedRef.current) setSubmitError("Could not complete the submission. Please try again.");
+      if (mountedRef.current) setSubmitError(t("submit.submitError"));
     } finally {
       if (mountedRef.current) setSaving(false);
     }
   }
 
   const stepTitles: Record<Step, string> = {
-    identity: "Step 1 of 5 — Citizen Identity",
-    location: "Step 2 of 5 — Location",
-    damage: "Step 3 of 5 — Damage",
-    classify: "Step 4 of 5 — Photo & Classification",
-    review: "Step 5 of 5 — Review & Submit",
+    identity: t("submit.step1"),
+    location: t("submit.step2"),
+    damage: t("submit.step3"),
+    classify: t("submit.step4"),
+    review: t("submit.step5"),
   };
 
   return (
     <main className="min-h-screen bg-surface-base px-design-4 py-design-6">
       <div className="max-w-md mx-auto space-y-design-4">
         <header className="space-y-design-1">
-          <h1 className="text-title text-ink-primary">Submit Report for Citizen</h1>
+          <h1 className="text-title text-ink-primary">{t("submit.title")}</h1>
           <p className="text-caption text-ink-secondary">{stepTitles[step]}</p>
         </header>
 
@@ -394,17 +393,17 @@ export default function OfficerSubmitPage() {
             }}
           >
             <p className="text-label text-ink-secondary">
-              Enter the <strong>citizen&apos;s</strong> details (the person you are assisting), not your own.
+              {t.rich("submit.identityHint", { strong: (chunks) => <strong>{chunks}</strong> })}
             </p>
             <div className="flex flex-col gap-design-2">
               <label htmlFor="citizen-nic" className="text-label font-medium text-ink-primary">
-                Citizen&apos;s NIC
+                {t("submit.citizenNic")}
               </label>
               <input
                 id="citizen-nic"
                 type="text"
                 autoComplete="off"
-                placeholder="200012345678 or 000000000V"
+                placeholder={t("submit.nicPlaceholder")}
                 value={nic}
                 onChange={(e) => setNic(e.target.value)}
                 aria-invalid={!!nicError}
@@ -418,13 +417,13 @@ export default function OfficerSubmitPage() {
             </div>
             <div className="flex flex-col gap-design-2">
               <label htmlFor="citizen-mobile" className="text-label font-medium text-ink-primary">
-                Citizen&apos;s mobile number
+                {t("submit.citizenMobile")}
               </label>
               <input
                 id="citizen-mobile"
                 type="tel"
                 inputMode="numeric"
-                placeholder="07XXXXXXXX"
+                placeholder={t("submit.mobilePlaceholder")}
                 value={mobile}
                 onChange={(e) => setMobile(e.target.value)}
                 aria-invalid={!!mobileError}
@@ -438,7 +437,7 @@ export default function OfficerSubmitPage() {
             </div>
             {sessionChecked && !officerId && (
               <p role="alert" className="text-caption text-status-error">
-                Your officer session could not be verified. Please log in again before continuing.
+                {t("submit.sessionError")}
               </p>
             )}
             {identityError && (
@@ -451,7 +450,7 @@ export default function OfficerSubmitPage() {
               disabled={saving || !sessionChecked || !officerId}
               className="w-full min-h-primary-btn bg-amber text-ink-on-amber text-headline font-semibold rounded-md disabled:opacity-60"
             >
-              {sessionChecked ? "Continue" : "Verifying officer session..."}
+              {sessionChecked ? t("submit.continue") : t("submit.verifyingSession")}
             </button>
           </form>
         )}
@@ -461,21 +460,21 @@ export default function OfficerSubmitPage() {
             <DistrictPicker
               value={district}
               onChange={setDistrict}
-              districtLabel="District (optional)"
-              districtPlaceholder="Select district"
-              dsDivisionLabel="DS Division (optional)"
-              dsDivisionPlaceholder="Select division"
+              districtLabel={t("submit.districtLabel")}
+              districtPlaceholder={t("submit.districtPlaceholder")}
+              dsDivisionLabel={t("submit.dsDivisionLabel")}
+              dsDivisionPlaceholder={t("submit.dsDivisionPlaceholder")}
             />
             {locStatus === "detecting" && (
               <div className="flex flex-col items-center gap-design-3 py-design-7" role="status" aria-live="polite">
                 <span className="h-8 w-8 animate-spin rounded-full border-2 border-border-default border-t-forest" aria-hidden="true" />
-                <p className="text-body text-ink-secondary">Detecting GPS location...</p>
+                <p className="text-body text-ink-secondary">{t("submit.detectingGps")}</p>
               </div>
             )}
             {locStatus === "gps" && coords && (
               <div className="space-y-design-4">
                 <div className="rounded-md border border-status-success bg-surface-tint p-design-4">
-                  <p className="text-label font-semibold text-status-success">GPS location detected</p>
+                  <p className="text-label font-semibold text-status-success">{t("submit.gpsDetected")}</p>
                   <p className="text-body text-ink-primary">
                     {coords.lat.toFixed(5)}, {coords.lng.toFixed(5)}
                   </p>
@@ -486,16 +485,16 @@ export default function OfficerSubmitPage() {
                   onClick={() => void saveLocation(coords, "gps")}
                   className="w-full min-h-primary-btn bg-amber text-ink-on-amber text-headline font-semibold rounded-md disabled:opacity-60"
                 >
-                  Continue
+                  {t("submit.continue")}
                 </button>
               </div>
             )}
             {locStatus === "manual" && (
               <div className="space-y-design-3">
-                <p className="text-body text-ink-secondary">Could not detect GPS. Drop a pin on the map instead.</p>
+                <p className="text-body text-ink-secondary">{t("submit.gpsFailed")}</p>
                 <MapPinPicker
                   initial={coords ?? SRI_LANKA_CENTER}
-                  confirmLabel="Confirm location"
+                  confirmLabel={t("submit.confirmLocation")}
                   onConfirm={(c) => void saveLocation(c, "manual")}
                 />
               </div>
@@ -510,12 +509,12 @@ export default function OfficerSubmitPage() {
 
         {step === "damage" && (
           <div className="space-y-design-4">
-            <div role="radiogroup" aria-label="Damage category" className="grid grid-cols-2 gap-design-3">
+            <div role="radiogroup" aria-label={t("submit.damageCategoryGroup")} className="grid grid-cols-2 gap-design-3">
               {DAMAGE_CATEGORIES.map((cat) => (
                 <DamageCard
                   key={cat}
                   category={cat}
-                  label={DAMAGE_LABELS[cat]}
+                  label={tReport(`step3.${cat}`)}
                   selected={damage === cat}
                   onSelect={() => {
                     setDamage(cat);
@@ -535,7 +534,7 @@ export default function OfficerSubmitPage() {
               onClick={() => void handleDamageNext()}
               className="w-full min-h-primary-btn bg-amber text-ink-on-amber text-headline font-semibold rounded-md disabled:opacity-60"
             >
-              Continue
+              {t("submit.continue")}
             </button>
           </div>
         )}
@@ -557,17 +556,17 @@ export default function OfficerSubmitPage() {
               disabled={classifyStatus === "classifying"}
               className="w-full min-h-primary-btn bg-forest text-ink-on-dark text-headline font-semibold rounded-md disabled:opacity-60"
             >
-              {classifyStatus === "classifying" ? "Analyzing photo..." : "Capture damage photo"}
+              {classifyStatus === "classifying" ? t("classify.analyzing") : t("classify.capture")}
             </button>
 
             {qualityWarning && (
               <p role="alert" className="text-caption text-status-warning">
-                Photo quality looks low (blurry or poorly lit). You can retake it or continue.
+                {t("classify.qualityWarning")}
               </p>
             )}
             {classifyStatus === "error" && (
               <p role="alert" className="text-caption text-status-error">
-                Could not classify this photo. Please retake it and try again.
+                {t("classify.classifyError")}
               </p>
             )}
 
@@ -587,7 +586,7 @@ export default function OfficerSubmitPage() {
                   }}
                 />
                 {decision === "accepted" && (
-                  <p className="text-label text-status-success">Assessment accepted.</p>
+                  <p className="text-label text-status-success">{t("classify.accepted")}</p>
                 )}
                 {decision === "override" && (
                   <>
@@ -601,13 +600,13 @@ export default function OfficerSubmitPage() {
                     />
                     {overrideError && (
                       <p role="alert" className="text-caption text-status-error">
-                        Could not save the override. Please try again.
+                        {t("classify.overrideError")}
                       </p>
                     )}
                   </>
                 )}
                 {decision === "overridden" && (
-                  <p className="text-label text-status-success">Override recorded.</p>
+                  <p className="text-label text-status-success">{t("classify.overridden")}</p>
                 )}
 
                 {(decision === "accepted" || decision === "overridden") && (
@@ -616,7 +615,7 @@ export default function OfficerSubmitPage() {
                     onClick={() => setStep("review")}
                     className="w-full min-h-primary-btn bg-amber text-ink-on-amber text-headline font-semibold rounded-md"
                   >
-                    Review &amp; Submit
+                    {t("submit.reviewAndSubmit")}
                   </button>
                 )}
               </>
@@ -628,24 +627,24 @@ export default function OfficerSubmitPage() {
           <div className="space-y-design-4">
             <dl className="space-y-design-2 rounded-md border border-border-default bg-surface-raised p-design-4">
               <div className="flex justify-between gap-design-3">
-                <dt className="text-label text-ink-secondary">Damage category</dt>
-                <dd className="text-label text-ink-primary">{damage ? DAMAGE_LABELS[damage] : "—"}</dd>
+                <dt className="text-label text-ink-secondary">{t("submit.reviewDamage")}</dt>
+                <dd className="text-label text-ink-primary">{damage ? tReport(`step3.${damage}`) : "—"}</dd>
               </div>
               <div className="flex justify-between gap-design-3">
-                <dt className="text-label text-ink-secondary">AI assessment</dt>
+                <dt className="text-label text-ink-secondary">{t("submit.reviewAi")}</dt>
                 <dd className="text-label text-ink-primary">
-                  {result ? result.classId : "—"}
-                  {decision === "overridden" ? " (overridden)" : ""}
+                  {result ? t(`aiResult.${result.classId}`) : "—"}
+                  {decision === "overridden" ? t("submit.reviewOverridden") : ""}
                 </dd>
               </div>
               <div className="flex justify-between gap-design-3">
-                <dt className="text-label text-ink-secondary">Location</dt>
+                <dt className="text-label text-ink-secondary">{t("submit.reviewLocation")}</dt>
                 <dd className="text-label text-ink-primary">
                   {coords ? `${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)}` : "—"}
                 </dd>
               </div>
               <div className="flex justify-between gap-design-3">
-                <dt className="text-label text-ink-secondary">Assisting officer</dt>
+                <dt className="text-label text-ink-secondary">{t("submit.reviewOfficer")}</dt>
                 <dd className="text-label text-ink-primary break-all">{officerId ?? "—"}</dd>
               </div>
             </dl>
@@ -660,7 +659,7 @@ export default function OfficerSubmitPage() {
               onClick={() => void handleSubmit()}
               className="w-full min-h-primary-btn bg-forest text-ink-on-dark text-headline font-semibold rounded-md disabled:opacity-60"
             >
-              {saving ? "Submitting..." : "Submit report"}
+              {saving ? t("submit.submitting") : t("submit.submit")}
             </button>
           </div>
         )}

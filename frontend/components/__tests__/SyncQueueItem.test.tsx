@@ -2,6 +2,17 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { SyncQueueItemCard } from "@/components/SyncQueueItem";
 import type { SyncQueueItem } from "@/lib/indexeddb";
 
+// next-intl passthrough (Story 6.2): translator returns the key (+ interpolation values).
+jest.mock("next-intl", () => ({
+  useTranslations: () => {
+    const t = (key: string, vars?: Record<string, unknown>) =>
+      vars && Object.keys(vars).length ? `${key} ${Object.values(vars).join(" ")}` : key;
+    t.rich = (key: string) => key;
+    return t;
+  },
+  useLocale: () => "en",
+}));
+
 function item(overrides: Partial<SyncQueueItem> = {}): SyncQueueItem {
   return {
     id: 1,
@@ -17,13 +28,13 @@ function item(overrides: Partial<SyncQueueItem> = {}): SyncQueueItem {
 
 test("renders damage category, timestamp, and a Pending badge", () => {
   render(<SyncQueueItemCard item={item()} onRetry={jest.fn()} />);
-  expect(screen.getByText("crop damage")).toBeInTheDocument();
-  expect(screen.getByText("Pending")).toBeInTheDocument();
+  expect(screen.getByText("syncItem.damageLabel crop")).toBeInTheDocument();
+  expect(screen.getByText("syncItem.statusPending")).toBeInTheDocument();
 });
 
 test("shows a Syncing badge and hides Retry while in_progress", () => {
   render(<SyncQueueItemCard item={item({ status: "in_progress" })} onRetry={jest.fn()} />);
-  expect(screen.getByText("Syncing...")).toBeInTheDocument();
+  expect(screen.getByText("syncItem.statusInProgress")).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: /retry/i })).not.toBeInTheDocument();
 });
 
@@ -34,9 +45,9 @@ test("shows the Failed badge, attempt count, and a sanitized error (never the ra
       onRetry={jest.fn()}
     />,
   );
-  expect(screen.getByText("Failed")).toBeInTheDocument();
-  expect(screen.getByText("3 attempts")).toBeInTheDocument();
-  expect(screen.getByText("Connection failed. Try again.")).toBeInTheDocument();
+  expect(screen.getByText("syncItem.statusFailed")).toBeInTheDocument();
+  expect(screen.getByText("syncItem.attempts 3")).toBeInTheDocument();
+  expect(screen.getByText("syncItem.connectionFailed")).toBeInTheDocument();
   expect(screen.queryByText(/NetworkError raw stack/)).not.toBeInTheDocument();
 });
 
@@ -49,7 +60,7 @@ test("Retry is visible for pending and failed items, and calls onRetry with the 
 
 test("singular 'attempt' when sync_attempts is 1", () => {
   render(<SyncQueueItemCard item={item({ sync_attempts: 1 })} onRetry={jest.fn()} />);
-  expect(screen.getByText("1 attempt")).toBeInTheDocument();
+  expect(screen.getByText("syncItem.attempts 1")).toBeInTheDocument();
 });
 
 test("omits the attempt count when sync_attempts is 0", () => {
@@ -66,8 +77,8 @@ test("Retry buttons for different items have distinct accessible names", () => {
       <SyncQueueItemCard item={item({ id: 2, status: "failed", payload: { damage_category: "property" } })} onRetry={jest.fn()} />
     </>,
   );
-  expect(screen.getByRole("button", { name: "Retry crop damage report" })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Retry property damage report" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "syncItem.retryAria crop" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "syncItem.retryAria property" })).toBeInTheDocument();
 });
 
 test("renders no timestamp (and never 'Invalid Date') when timestamp_local is malformed", () => {
