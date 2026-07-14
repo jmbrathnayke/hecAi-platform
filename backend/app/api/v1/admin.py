@@ -922,11 +922,20 @@ def _trailing_12_months_start(end_date):
 
 
 def _confidence_histogram(confidences):
-    """confidences: iterable of float in [0, 1]. Returns a 10-element list of counts, index
-    i covering [i*10, (i+1)*10)%, with a confidence of exactly 1.0 (100%) folded into the
-    last bucket rather than overflowing a would-be 11th bucket."""
+    """confidences: iterable of float, expected in [0, 1]. Returns a 10-element list of
+    counts, index i covering [i*10, (i+1)*10)%, with a confidence of exactly 1.0 (100%)
+    folded into the last bucket rather than overflowing a would-be 11th bucket.
+
+    Code review fix: a value outside [0, 1] is now DISCARDED, not clamped/wrapped -- a
+    negative confidence previously produced a negative Python list index, which silently
+    corrupts bucket 9 via negative-index wraparound instead of erroring or being dropped.
+    `0.0 <= c <= 1.0` is also False for a NaN confidence (every comparison with NaN is
+    False), so NaN is discarded here too instead of reaching `int(nan * 10)`, which raises
+    ValueError uncaught by this endpoint's `except psycopg2.Error` block."""
     buckets = [0] * CONFIDENCE_BUCKETS
     for c in confidences:
+        if not (0.0 <= c <= 1.0):
+            continue
         idx = min(CONFIDENCE_BUCKETS - 1, int(c * CONFIDENCE_BUCKETS))
         buckets[idx] += 1
     return buckets
@@ -976,33 +985,46 @@ def get_analytics():
         to_date = date.today()
     if from_date is None:
         from_date = to_date - timedelta(days=30)
+    # Code review fix: an inverted range (from > to) previously fell through to a query that
+    # always returns zero rows -- silently indistinguishable from "no data in a valid range."
+    if from_date > to_date:
+        return jsonify({"error": "invalid_date"}), 400
 
     this_month_start = _month_start(to_date)
     next_month_start = _next_month_start(this_month_start)
     last_month_start = _prev_month_start(this_month_start)
+    # Code review fix: a `timestamp <= %s` comparison against a bare `date` casts the date to
+    # midnight (00:00:00) in Postgres, silently excluding every case timestamped later that
+    # same day -- the most common query an admin will run (today is almost always inside the
+    # default/selected range). Every date-range upper bound below uses this exclusive
+    # end-of-day boundary instead of a plain `<= to_date`.
+    to_date_exclusive = to_date + timedelta(days=1)
 
     try:
         conn = _get_connection()
         try:
             with conn:
                 with conn.cursor() as cur:
-                    # 1. Volume trend -- fixed trailing 12 months, anchored to to_date.
+                    # 1. Volume trend -- fixed trailing 12 months, anchored to to_date. Upper
+                    # bound added (code review fix): without it, cases submitted after
+                    # to_date (up to the real present) leaked into a trend that's supposed to
+                    # be anchored to to_date, not open-ended.
                     cur.execute(
                         """SELECT date_trunc('month', submitted_at) AS month, COUNT(*)
                              FROM cases
-                            WHERE district = %s AND submitted_at >= %s
+                            WHERE district = %s AND submitted_at >= %s AND submitted_at < %s
                             GROUP BY month
                             ORDER BY month""",
-                        [district, _trailing_12_months_start(to_date)],
+                        [district, _trailing_12_months_start(to_date), to_date_exclusive],
                     )
                     volume_rows = cur.fetchall()
 
                     # 2. Status distribution -- within the from/to filter.
                     cur.execute(
                         """SELECT status, COUNT(*) FROM cases
-                            WHERE district = %s AND submitted_at >= %s AND submitted_at <= %s
+                            WHERE district = %s AND submitted_at >= %s AND submitted_at < %s
                             GROUP BY status""",
-                        [district, from_date, to_date],
+                        [district, from_date, to_date_exclusive],
                     )
                     status_rows = cur.fetchall()
 
@@ -1014,10 +1036,10 @@ def get_analytics():
                                   COALESCE(SUM(approved_amount), 0)
                              FROM cases
                             WHERE district = %s AND status IN ('Approved', 'Payment Processed')
-                              AND updated_at >= %s AND updated_at <= %s
+                              AND updated_at >= %s AND updated_at < %s
                             GROUP BY month
                             ORDER BY month""",
-                        [district, from_date, to_date],
+                        [district, from_date, to_date_exclusive],
                     )
                     compensation_rows = cur.fetchall()
 
@@ -1033,8 +1055,8 @@ def get_analytics():
                                 ORDER BY created_at DESC LIMIT 1
                              ) il ON true
                             WHERE c.district = %s
-                              AND c.submitted_at >= %s AND c.submitted_at <= %s""",
-                        [district, from_date, to_date],
+                              AND c.submitted_at >= %s AND c.submitted_at < %s""",
+                        [district, from_date, to_date_exclusive],
                     )
                     ai_rows = cur.fetchall()
 
@@ -1069,7 +1091,16 @@ def get_analytics():
 
                     write_audit_log(
                         cur, None, "admin_viewed_analytics", g.admin_id,
-                        {"ip_address": _client_ip()},
+                        # Code review fix: record the range actually viewed, matching the
+                        # detail level list_cases's own audit write already includes
+                        # (result_count) -- "someone looked at analytics" alone is a weaker
+                        # forensic record than "someone looked at analytics for 2026-06-01..
+                        # 2026-07-15."
+                        {
+                            "ip_address": _client_ip(),
+                            "from": from_date.isoformat(),
+                            "to": to_date.isoformat(),
+                        },
                     )
         finally:
             conn.close()
@@ -1089,13 +1120,24 @@ def get_analytics():
     confidences = [float(c) for c, _features in ai_rows if c is not None]
     latencies_ms = []
     for _confidence, features in ai_rows:
-        features = features or {}
+        # Code review fix: `features or {}` kept a non-dict truthy JSONB value (e.g. a
+        # legacy row storing a list or string) as-is, and `.get(...)` on it raises
+        # AttributeError -- uncaught here, a 500 with a raw stack trace instead of this
+        # endpoint's own {"error": "server_error"} convention.
+        features = features if isinstance(features, dict) else {}
         raw = features.get("ai_processing_time_ms")
         if raw is not None:
             try:
-                latencies_ms.append(float(raw))
+                value = float(raw)
             except (TypeError, ValueError):
-                pass
+                continue
+            # Code review fix: Python's float() happily parses "NaN"/"Infinity"/"-Infinity"
+            # strings into a non-finite float. A non-finite value surviving into the average
+            # below would serialize as an invalid JSON token (jsonify/json.dumps emit the
+            # literal NaN/Infinity, which isn't valid JSON and breaks strict JSON.parse
+            # clients) -- discard it here instead, the same way a malformed row is discarded.
+            if math.isfinite(value):
+                latencies_ms.append(value)
 
     ai_metrics = {
         "confidence_histogram": _confidence_histogram(confidences),

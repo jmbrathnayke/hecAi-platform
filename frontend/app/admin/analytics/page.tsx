@@ -19,7 +19,11 @@ import { LanguageSelectorCookie } from "@/components/LanguageSelectorCookie";
 type LoadState = "loading" | "error" | "ready";
 
 function isoDate(d: Date): string {
-  return d.toISOString().slice(0, 10);
+  // Code review fix: `d.toISOString().slice(0, 10)` converts to UTC before slicing. For this
+  // app's Sri Lanka (UTC+5:30) admins, any local time before ~05:30 would resolve the
+  // default "to" date to the PREVIOUS day. Build the date string from local components.
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 // Mirrors the backend's own default (AC3): last 30 days, ending today. Computed client-side

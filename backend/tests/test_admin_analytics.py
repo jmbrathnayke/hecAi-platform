@@ -75,38 +75,42 @@ class FakeCursor:
         return sorted(rows, key=lambda r: r["created_at"], reverse=True)[0]
 
     def execute(self, sql, params=()):
+        # Every upper bound below is EXCLUSIVE (a `date`, compared with `<`, against the
+        # fixture's own `.date()`-truncated timestamp) -- mirrors the real query's fix for
+        # the midnight-truncation bug (code review): `submitted_at < to_date_exclusive` is
+        # the correct equivalent of "inclusive of every hour of to_date", not `<= to_date`.
         if "pg_advisory_xact_lock" in sql:
             self._result = None
         elif "date_trunc('month', submitted_at) AS month, COUNT(*)" in sql:
-            district, since = params
+            district, since, until_exclusive = params
             by_month = {}
             for c in self._district_cases(district):
-                if c["submitted_at"] and c["submitted_at"].date() >= since:
+                if c["submitted_at"] and since <= c["submitted_at"].date() < until_exclusive:
                     key = date(c["submitted_at"].year, c["submitted_at"].month, 1)
                     by_month[key] = by_month.get(key, 0) + 1
             self._rows = sorted(by_month.items())
         elif "SELECT status, COUNT(*) FROM cases" in sql:
-            district, from_d, to_d = params
+            district, from_d, until_exclusive = params
             by_status = {}
             for c in self._district_cases(district):
-                if c["submitted_at"] and from_d <= c["submitted_at"].date() <= to_d:
+                if c["submitted_at"] and from_d <= c["submitted_at"].date() < until_exclusive:
                     by_status[c["status"]] = by_status.get(c["status"], 0) + 1
             self._rows = list(by_status.items())
         elif "date_trunc('month', updated_at)" in sql:
-            district, from_d, to_d = params
+            district, from_d, until_exclusive = params
             by_month = {}
             for c in self._district_cases(district):
                 if c["status"] not in ("Approved", "Payment Processed"):
                     continue
-                if c["updated_at"] and from_d <= c["updated_at"].date() <= to_d:
+                if c["updated_at"] and from_d <= c["updated_at"].date() < until_exclusive:
                     key = date(c["updated_at"].year, c["updated_at"].month, 1)
                     by_month[key] = by_month.get(key, 0) + (c["approved_amount"] or 0)
             self._rows = sorted(by_month.items())
         elif "SELECT il.confidence, il.input_features" in sql:
-            district, from_d, to_d = params
+            district, from_d, until_exclusive = params
             out = []
             for c in self._district_cases(district):
-                if not (c["submitted_at"] and from_d <= c["submitted_at"].date() <= to_d):
+                if not (c["submitted_at"] and from_d <= c["submitted_at"].date() < until_exclusive):
                     continue
                 il = self._latest_inference(c["id"])
                 if il:
@@ -214,12 +218,28 @@ def test_no_district_assigned_403(client, store):
     assert store["audit"] == []
 
 
-def test_other_district_data_never_appears(client):
-    res = client.get("/api/v1/admin/analytics?to=2026-07-15", headers=_auth(district_id=DISTRICT_A))
+def test_other_district_data_never_appears(client, store):
+    # Code review fix: the original assertion only bounded status_distribution's total count
+    # (`<= 3`), which would still pass even if district B's data silently leaked into ANY
+    # OTHER section -- volume_trend, compensation_by_month, and ai_metrics were never
+    # checked. Give district B's case an approval + an inference_log row so a leak into
+    # every section is actually detectable, then check all four sections explicitly.
+    case_4 = next(c for c in store["cases"] if c["id"] == 4)
+    case_4["status"] = "Approved"
+    case_4["approved_amount"] = 999999.0
+    store["inference_log"].append(_inference(4, confidence=0.42, was_overridden=True))
+
+    res = client.get(
+        "/api/v1/admin/analytics?from=2026-06-01&to=2026-07-15", headers=_auth(district_id=DISTRICT_A)
+    )
     body = res.get_json()
-    total_status = sum(body["status_distribution"].values())
-    # District B's case (id 4) must not be counted anywhere in district A's response.
-    assert total_status <= 3
+
+    assert sum(body["status_distribution"].values()) == 3  # cases 1, 2, 3 -- never case 4
+    assert sum(m["count"] for m in body["volume_trend"]) == 3
+    # Cases 2 (45000.0) + 3 (30000.0) -- both within this range -- never case 4's 999999.0.
+    assert sum(m["total_lkr"] for m in body["compensation_by_month"]) == 75000.0
+    assert body["ai_metrics"]["sample_count"] == 0  # case 4's inference_log row must not count
+    assert body["ai_metrics"]["confidence_histogram"] == [0] * 10
 
 
 # --- date range validation + defaulting ------------------------------------------------
@@ -233,6 +253,14 @@ def test_invalid_from_date_400(client):
 
 def test_invalid_to_date_400(client):
     res = client.get("/api/v1/admin/analytics?to=not-a-date", headers=_auth())
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "invalid_date"
+
+
+def test_from_after_to_returns_400_not_silently_empty(client):
+    # Code review fix: an inverted range previously fell through to queries that return
+    # empty result sets, silently indistinguishable from "no data in a valid range."
+    res = client.get("/api/v1/admin/analytics?from=2026-08-01&to=2026-07-01", headers=_auth())
     assert res.status_code == 400
     assert res.get_json()["error"] == "invalid_date"
 
@@ -263,6 +291,18 @@ def test_status_distribution_widens_with_a_wider_filter(client):
     res = client.get("/api/v1/admin/analytics?from=2026-06-01&to=2026-07-15", headers=_auth())
     body = res.get_json()
     assert body["status_distribution"] == {"Submitted": 1, "Approved": 1, "Payment Processed": 1}
+
+
+def test_to_date_is_inclusive_of_the_whole_day_not_just_midnight(client, store):
+    # Code review fix (the headline bug): a case submitted late in the day ON `to` was
+    # previously excluded, because `submitted_at <= %s` against a bare `date` casts to
+    # 00:00:00 of that day in Postgres. A case at 23:00 on the `to` date must still count.
+    store["cases"].append(
+        _case(7, DISTRICT_A, status="Under Review", submitted_at=datetime(2026, 7, 15, 23, 0))
+    )
+    res = client.get("/api/v1/admin/analytics?from=2026-07-15&to=2026-07-15", headers=_auth())
+    body = res.get_json()
+    assert body["status_distribution"] == {"Under Review": 1}
 
 
 # --- compensation by month (AC1, CRITICAL: approved_amount not compensation_estimates) ----
@@ -307,6 +347,18 @@ def test_volume_trend_independent_of_the_narrower_from_filter(client):
     res = client.get("/api/v1/admin/analytics?from=2026-07-01&to=2026-07-15", headers=_auth())
     months = {m["month"]: m["count"] for m in res.get_json()["volume_trend"]}
     assert months.get("2026-06-01") == 1
+
+
+def test_volume_trend_has_an_upper_bound_anchored_to_to_date(client, store):
+    # Code review fix: the trend previously had NO upper bound at all -- a case submitted
+    # after `to` (up to the real present) leaked in even though the trend is documented as
+    # "anchored to to_date." A case submitted after `to` must be excluded.
+    store["cases"].append(_case(8, DISTRICT_A, submitted_at=datetime(2026, 7, 20, 9, 0)))
+    res = client.get("/api/v1/admin/analytics?to=2026-07-15", headers=_auth())
+    months = {m["month"]: m["count"] for m in res.get_json()["volume_trend"]}
+    # July bucket: cases 1 (07-05) and 2 (07-06), both <= to_date -- NOT case 8 (07-20, after
+    # to_date). Without the fix this would be 3 (case 8 leaking into the same month bucket).
+    assert months.get("2026-07-01") == 2
 
 
 # --- AI metrics: confidence histogram + processing time (AC2) -----------------------------
@@ -380,7 +432,10 @@ def test_override_rate_trend_no_data_when_neither_month_has_samples(client):
     assert trend == {"this_month_pct": None, "last_month_pct": None, "direction": "no_data"}
 
 
-def test_override_rate_trend_flat_when_rates_equal(client, store):
+def test_override_rate_trend_up_when_this_month_rate_is_higher(client, store):
+    # Renamed from the misleading "..._flat_when_rates_equal" (code review fix): this case
+    # is actually asymmetric (100% vs 50%) and was never a flat-rate test despite its old
+    # name/comment promising a "true-flat case below" that didn't exist in this file.
     store["cases"].append(_case(6, DISTRICT_A, submitted_at=datetime(2026, 6, 22, 9, 0)))
     store["inference_log"] = [
         _inference(1, was_overridden=True),   # this month
@@ -389,9 +444,21 @@ def test_override_rate_trend_flat_when_rates_equal(client, store):
     ]
     res = client.get("/api/v1/admin/analytics?to=2026-07-15", headers=_auth())
     trend = res.get_json()["ai_metrics"]["override_rate_trend"]
-    # this month: 1/1 = 100%; last month: 1/2 = 50% -> "up", not flat (sanity check the
-    # asymmetric case before the true-flat case below).
-    assert trend["direction"] == "up"
+    assert trend == {"this_month_pct": 100.0, "last_month_pct": 50.0, "direction": "up"}
+
+
+def test_override_rate_trend_flat_when_rates_are_equal(client, store):
+    # Code review fix: the genuine flat-rate case (`_override_trend`'s flat branch) was
+    # never actually exercised by any test until now.
+    store["cases"].append(_case(6, DISTRICT_A, submitted_at=datetime(2026, 6, 22, 9, 0)))
+    store["inference_log"] = [
+        _inference(1, was_overridden=True),   # this month: 1/1 = 100%
+        _inference(3, was_overridden=True),   # last month: 1/2 = 100%
+        _inference(6, was_overridden=True),   # last month
+    ]
+    res = client.get("/api/v1/admin/analytics?to=2026-07-15", headers=_auth())
+    trend = res.get_json()["ai_metrics"]["override_rate_trend"]
+    assert trend == {"this_month_pct": 100.0, "last_month_pct": 100.0, "direction": "flat"}
 
 
 def test_override_rate_trend_independent_of_from_to_filter(client, store):
@@ -405,6 +472,80 @@ def test_override_rate_trend_independent_of_from_to_filter(client, store):
     assert trend["last_month_pct"] == 100.0
 
 
+# --- empty-district response shape (AC5, Task 2's own "Empty-district case" bullet) -------
+
+
+def test_zero_case_district_returns_the_full_empty_shape(client, store):
+    # Code review fix: every prior "empty" test either narrowed the date filter or emptied
+    # inference_log against the same 3-case district fixture -- none actually verified the
+    # true zero-case-in-the-district response, where all 4 sections are simultaneously
+    # 0/[]/null, as Task 2's own bullet and AC5 call for.
+    store["cases"] = [c for c in store["cases"] if c["district"] != DISTRICT_A]
+    res = client.get("/api/v1/admin/analytics", headers=_auth(district_id=DISTRICT_A))
+    assert res.status_code == 200
+    body = res.get_json()
+    assert body["volume_trend"] == []
+    assert body["status_distribution"] == {}
+    assert body["compensation_by_month"] == []
+    assert body["ai_metrics"] == {
+        "confidence_histogram": [0] * 10,
+        "sample_count": 0,
+        "override_rate_trend": {"this_month_pct": None, "last_month_pct": None, "direction": "no_data"},
+        "avg_processing_time_ms": None,
+    }
+
+
+# --- malformed inference_log data (code review: response-shaping hardening) ---------------
+
+
+def test_confidence_outside_zero_to_one_is_discarded_not_corrupted(client, store):
+    # Code review fix: a negative confidence previously produced a negative Python list
+    # index, silently corrupting a bucket via wraparound instead of being discarded.
+    store["inference_log"] = [
+        _inference(1, confidence=-0.5),
+        _inference(2, confidence=1.5),
+        _inference(3, confidence=0.75),  # the only valid one -- bucket 7
+    ]
+    res = client.get("/api/v1/admin/analytics?from=2026-06-01&to=2026-07-15", headers=_auth())
+    ai = res.get_json()["ai_metrics"]
+    assert ai["confidence_histogram"] == [0, 0, 0, 0, 0, 0, 0, 1, 0, 0]
+    assert sum(ai["confidence_histogram"]) == 1
+
+
+def test_nan_confidence_is_discarded_not_a_500(client, store):
+    # Code review fix: int(nan * 10) previously raised ValueError, uncaught outside the
+    # try/except psycopg2.Error block -- a raw 500 instead of a clean, discarded row.
+    store["inference_log"] = [_inference(1, confidence=float("nan"))]
+    res = client.get("/api/v1/admin/analytics?from=2026-06-01&to=2026-07-15", headers=_auth())
+    assert res.status_code == 200
+    assert res.get_json()["ai_metrics"]["confidence_histogram"] == [0] * 10
+
+
+def test_non_dict_input_features_does_not_crash(client, store):
+    # Code review fix: `features or {}` kept a non-dict truthy JSONB value as-is, and
+    # `.get(...)` on a list/string raises AttributeError, uncaught -> 500.
+    row = _inference(1, confidence=0.5)
+    row["input_features"] = ["not", "a", "dict"]
+    store["inference_log"] = [row]
+    res = client.get("/api/v1/admin/analytics?from=2026-06-01&to=2026-07-15", headers=_auth())
+    assert res.status_code == 200
+    assert res.get_json()["ai_metrics"]["avg_processing_time_ms"] is None
+
+
+def test_non_finite_processing_time_string_is_discarded(client, store):
+    # Code review fix: Python's float() happily parses "Infinity"/"NaN" strings into a
+    # non-finite float, which would otherwise reach the average and produce an invalid JSON
+    # token in the response.
+    store["inference_log"] = [
+        _inference(1, processing_ms=None),
+        _inference(2, confidence=0.5, was_overridden=False),
+    ]
+    store["inference_log"][0]["input_features"] = {"ai_processing_time_ms": "Infinity"}
+    store["inference_log"][1]["input_features"] = {"ai_processing_time_ms": 300.0}
+    res = client.get("/api/v1/admin/analytics?from=2026-06-01&to=2026-07-15", headers=_auth())
+    assert res.get_json()["ai_metrics"]["avg_processing_time_ms"] == 300.0
+
+
 # --- audit ---------------------------------------------------------------------------------
 
 
@@ -412,3 +553,12 @@ def test_view_is_audited(client, store):
     client.get("/api/v1/admin/analytics", headers=_auth())
     events = [a["event"] for a in store["audit"]]
     assert "admin_viewed_analytics" in events
+
+
+def test_audit_metadata_records_the_range_viewed(client, store):
+    # Code review fix: the audit entry previously only logged ip_address, not the range the
+    # admin actually viewed -- a weaker forensic record than list_cases's own audit write.
+    client.get("/api/v1/admin/analytics?from=2026-06-01&to=2026-07-15", headers=_auth())
+    event = next(a for a in store["audit"] if a["event"] == "admin_viewed_analytics")
+    assert event["metadata"]["from"] == "2026-06-01"
+    assert event["metadata"]["to"] == "2026-07-15"

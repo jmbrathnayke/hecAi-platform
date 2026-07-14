@@ -23,7 +23,10 @@ interface CaseVolumeTrendProps {
 }
 
 function monthLabel(iso: string, locale: string): string {
-  return new Date(iso).toLocaleDateString(locale, { month: "short", year: "2-digit" });
+  // timeZone: "UTC" (code review fix): `iso` is a UTC-midnight date string from the backend;
+  // without pinning the format to UTC, a viewer in a negative-UTC-offset timezone would see
+  // the label shift back one calendar day/month.
+  return new Date(iso).toLocaleDateString(locale, { month: "short", year: "2-digit", timeZone: "UTC" });
 }
 
 export function CaseVolumeTrend({ data }: CaseVolumeTrendProps) {

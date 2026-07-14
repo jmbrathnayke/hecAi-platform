@@ -14,7 +14,10 @@ interface CompensationTotalProps {
 }
 
 function monthLabel(iso: string, locale: string): string {
-  return new Date(iso).toLocaleDateString(locale, { month: "short", year: "2-digit" });
+  // timeZone: "UTC" (code review fix): `iso` is a UTC-midnight date string from the backend;
+  // without pinning the format to UTC, a viewer in a negative-UTC-offset timezone would see
+  // the label shift back one calendar day/month.
+  return new Date(iso).toLocaleDateString(locale, { month: "short", year: "2-digit", timeZone: "UTC" });
 }
 
 function formatLkr(amount: number): string {
@@ -25,7 +28,11 @@ export function CompensationTotal({ data }: CompensationTotalProps) {
   const t = useTranslations("admin");
   const locale = useLocale();
 
-  const hasData = data.some((d) => d.total_lkr > 0);
+  // Code review fix: `.some((d) => d.total_lkr > 0)` treated "every month totals exactly
+  // $0" as "no data" -- but a $0 approved amount is an explicitly valid, tested value
+  // (backend test_action_approve_at_a_zero_rf_estimate_succeeds). Presence of any month
+  // entry at all is what "no data" should mean here, not the values within them.
+  const hasData = data.length > 0;
 
   return (
     <section className="rounded-md border border-border-default bg-surface-raised p-design-4">

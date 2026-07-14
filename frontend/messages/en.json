@@ -411,9 +411,9 @@
       "avgProcessingTime": "Avg. AI Processing Time",
       "processingTimeValue": "{ms} ms",
       "trend": {
-        "up": "vs {last}% last month",
-        "down": "vs {last}% last month",
-        "flat": "vs {last}% last month (no change)"
+        "up": "Up from {last}% last month",
+        "down": "Down from {last}% last month",
+        "flat": "No change from {last}% last month"
       }
     }
   }

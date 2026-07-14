@@ -76,9 +76,11 @@ export function AIMetrics({ data }: AIMetricsProps) {
           <div>
             <h3 className="text-label text-ink-secondary">{t("analytics.avgProcessingTime")}</h3>
             <p className="mt-design-1 text-title text-ink-primary">
-              {data.avg_processing_time_ms != null
-                ? t("analytics.processingTimeValue", { ms: Math.round(data.avg_processing_time_ms) })
-                : "—"}
+              {data.avg_processing_time_ms != null ? (
+                t("analytics.processingTimeValue", { ms: Math.round(data.avg_processing_time_ms) })
+              ) : (
+                <span className="text-body text-ink-secondary">{t("analytics.noData")}</span>
+              )}
             </p>
           </div>
         </div>
