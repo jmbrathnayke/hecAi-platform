@@ -54,6 +54,7 @@ class FakeCursor:
                 officer_id,
                 nic,
                 message_sid,
+                mobile,
             ) = params
             # ON CONFLICT (twilio_message_sid) DO NOTHING → no row when the sid already exists.
             if message_sid is not None and message_sid in self.store["cases_by_sid"]:
@@ -73,6 +74,7 @@ class FakeCursor:
                 "submitted_via": "sms",
                 "citizen_nic_plain": nic,
                 "twilio_message_sid": message_sid,
+                "citizen_mobile_plain": mobile,
                 "status": "Submitted",
             }
             self.store["cases"].append(row)
@@ -323,3 +325,36 @@ def test_sms_redelivery_does_not_re_trigger_compensation_estimate(client, store,
     client.post("/api/v1/sms/inbound", data=form)
     client.post("/api/v1/sms/inbound", data=form)
     assert len(estimate_spy) == 1
+
+
+# --- optional 5th token: citizen mobile (Story 5.6, FR-6.3) -----------------------------------
+
+
+def test_5_token_message_with_valid_mobile_stores_citizen_mobile_plain(client, store):
+    res = client.post(
+        "/api/v1/sms/inbound",
+        data=_form("REPORT 200012345678 7.2906,80.6337 CROP 0771234567"),
+    )
+    assert res.status_code == 200
+    assert len(store["cases"]) == 1
+    assert store["cases"][0]["citizen_mobile_plain"] == "0771234567"
+
+
+def test_5_token_message_with_invalid_mobile_replies_error_no_case(client, store, sent):
+    res = client.post(
+        "/api/v1/sms/inbound",
+        data=_form("REPORT 200012345678 7.29,80.63 CROP 123"),
+    )
+    assert res.status_code == 200
+    assert store["cases"] == []
+    assert sent[0]["body"].startswith("Invalid format.")
+
+
+def test_4_token_message_still_valid_with_no_mobile(client, store):
+    # Backward compatibility: the original grammar (no 5th token) must keep working exactly as
+    # before -- citizen_mobile_plain stays NULL.
+    res = client.post(
+        "/api/v1/sms/inbound", data=_form("REPORT 200012345678 7.29,80.63 CROP")
+    )
+    assert res.status_code == 200
+    assert store["cases"][0]["citizen_mobile_plain"] is None

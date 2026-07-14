@@ -24,6 +24,15 @@ SECRET = "test-jwt-secret-0123456789-abcdef-ghij"  # >=32 bytes for HS256
 DISTRICT_A = "අනුරාධපුරය"
 DISTRICT_B = "කොළඹ"
 
+# Story 5.6: a handful of real seeded (language, status) -> template pairs, enough to exercise
+# notify_status_change()'s {ref}/{amount} placeholder substitution without needing all 15 rows.
+_SMS_TEMPLATES = {
+    ("si", "Approved"): "අනුමතයි {ref} රු. {amount}",
+    ("si", "Rejected"): "ප්‍රතික්ෂේපයි {ref}",
+    ("si", "Under Review"): "සමාලෝචනය {ref}",
+    ("si", "Payment Processed"): "ගෙවීම {ref}",
+}
+
 
 def _token(sub="admin-1", role="admin", district_id=DISTRICT_A):
     claims = {"sub": sub, "user_metadata": {"role": role, "district_id": district_id}}
@@ -47,6 +56,7 @@ def _case(
     gps_lat=None,
     gps_lng=None,
     submitted_via="app",
+    citizen_mobile_plain=None,
 ):
     return {
         # Parsed from the HEC-YYYY-NNNN suffix -- guarantees uniqueness across all fixture
@@ -75,6 +85,9 @@ def _case(
         # docstring -- citizen_nic_plain never is, from either endpoint):
         "citizen_nic_plain": "200012345678",
         "submitter_identity_hash": "deadbeef",
+        # Story 5.6: NULL for every case except ones from the extended SMS-fallback grammar --
+        # never returned by any read endpoint (write-only, same convention as citizen_nic_plain).
+        "citizen_mobile_plain": citizen_mobile_plain,
     }
 
 
@@ -200,6 +213,26 @@ class FakeCursor:
                     "prev_hash": prev_hash,
                 }
             )
+        elif "FROM cases WHERE offline_id" in sql and "FOR UPDATE" in sql:
+            # Story 5.6: post_case_action's own copy of the cases SELECT (FOR UPDATE-locked,
+            # distinct query text from _load_case_detail's below since Story 5.5's code review
+            # fix) gained a 12th column, citizen_mobile_plain, so notify_status_change() never
+            # needs a second query.
+            offline_id, district = params
+            matches = [
+                c for c in self.store["cases"]
+                if c["offline_id"] == offline_id and c["district"] == district
+            ]
+            if matches:
+                c = matches[0]
+                self._result = (
+                    c["canonical_id"], c["offline_id"], c["damage_category"], c["status"],
+                    c.get("gps_lat"), c.get("gps_lng"), c["submitted_at"], c["updated_at"],
+                    c.get("submitted_via", "app"), c.get("approved_amount"), c["id"],
+                    c.get("citizen_mobile_plain"),
+                )
+            else:
+                self._result = None
         elif "FROM cases WHERE offline_id" in sql:
             # Story 5.4 case-detail lookup: offline_id + district, both must match (a
             # wrong-district match must miss, same as a nonexistent offline_id). No
@@ -290,6 +323,46 @@ class FakeCursor:
             self.store["payment_authorizations"].append(
                 {"case_id": case_id, "amount_lkr": amount, "authorized_by": authorized_by}
             )
+        elif "SELECT template FROM sms_templates" in sql:
+            # Story 5.6: notify_status_change() always queries language='si' today (CRITICAL
+            # #6 -- no per-case locale exists). A handful of real seeded templates, enough to
+            # exercise {ref}/{amount} placeholder substitution.
+            language, status = params
+            self._result = (_SMS_TEMPLATES.get((language, status)),) if (language, status) in _SMS_TEMPLATES else None
+        elif "FROM compensation_caps" in sql:
+            (damage_type,) = params
+            rows = sorted(
+                (c for c in self.store["compensation_caps"] if c["damage_type"] == damage_type),
+                key=lambda c: c["district"],
+            )
+            self._rows = [
+                (c["district"], c["damage_type"], c["cap_amount_lkr"], c["updated_by"], c["updated_at"])
+                for c in rows
+            ]
+        elif "INSERT INTO compensation_caps" in sql:
+            district, damage_type, cap_amount_lkr, updated_by = params
+            updated_at = datetime(2026, 7, 14, 9, 0, 0)
+            existing = next(
+                (c for c in self.store["compensation_caps"]
+                 if c["district"] == district and c["damage_type"] == damage_type),
+                None,
+            )
+            if existing:
+                existing["cap_amount_lkr"] = cap_amount_lkr
+                existing["updated_by"] = updated_by
+                existing["updated_at"] = updated_at
+                row = existing
+            else:
+                row = {
+                    "district": district, "damage_type": damage_type,
+                    "cap_amount_lkr": cap_amount_lkr, "updated_by": updated_by,
+                    "updated_at": updated_at,
+                }
+                self.store["compensation_caps"].append(row)
+            self._result = (
+                row["district"], row["damage_type"], row["cap_amount_lkr"],
+                row["updated_by"], row["updated_at"],
+            )
         else:  # pragma: no cover
             raise AssertionError(f"unexpected SQL: {sql}")
 
@@ -360,6 +433,7 @@ def store():
         "inference_log": [],
         "compensation_estimates": [],
         "payment_authorizations": [],
+        "compensation_caps": [],
     }
 
 
@@ -372,7 +446,21 @@ def _seed_audit(store, case_id, event, actor_id="admin-1", metadata=None):
 
 
 @pytest.fixture
-def client(monkeypatch, store):
+def sent(monkeypatch):
+    """Captures every notify_status_change() -> send_sms() call. Story 5.6: monkeypatched at
+    notification_service's own import site (not twilio_client's), same level of fidelity as
+    test_notification_service.py -- the real notify_status_change()/write_audit_log() run for
+    real, only the actual Twilio call is faked out. Returns True (send succeeded) by default."""
+    calls = []
+    monkeypatch.setattr(
+        "app.infrastructure.sms.notification_service.send_sms",
+        lambda to, body: calls.append({"to": to, "body": body}) or True,
+    )
+    return calls
+
+
+@pytest.fixture
+def client(monkeypatch, store, sent):
     app = create_app(
         {"TESTING": True, "DATABASE_URL": "postgresql://fake", "SUPABASE_JWT_SECRET": SECRET}
     )
@@ -1042,3 +1130,169 @@ def test_verify_chain_still_valid_after_a_sequence_of_actions(client):
     _action(client, _CASE_3_OFFLINE_ID, "mark_paid")
     res = client.get("/api/v1/admin/audit/verify-chain", headers=_auth())
     assert res.get_json() == {"valid": True, "broken_id": None}
+
+
+# --- SMS status notifications (Story 5.6) -------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "offline_id, action, kwargs",
+    [
+        (_CASE_1_OFFLINE_ID, "escalate", {}),
+        (_CASE_1_OFFLINE_ID, "request_info", {}),
+        (_CASE_1_OFFLINE_ID, "reject", {"reason": VALID_REASON}),
+        # No compensation estimate exists for case 1 by default -- amount_lkr/reason required
+        # (see test_action_approve_no_estimate_with_amount_and_reason_succeeds).
+        (_CASE_1_OFFLINE_ID, "approve", {"amount_lkr": 30000, "reason": VALID_REASON}),
+        (_CASE_3_OFFLINE_ID, "mark_paid", {}),
+    ],
+)
+def test_every_action_logs_sms_skipped_no_mobile_when_no_mobile_on_file(
+    client, store, sent, offline_id, action, kwargs
+):
+    # Every fixture case has citizen_mobile_plain=None (true for essentially every case today
+    # -- only the SMS-fallback channel's extended grammar can ever populate it, CRITICAL #1).
+    res = _action(client, offline_id, action, **kwargs)
+    assert res.status_code == 200
+    assert sent == []
+    events = [a["event"] for a in store["audit"]]
+    assert "sms_skipped_no_mobile" in events
+
+
+def test_action_with_mobile_on_file_sends_sms_and_logs_sms_sent(client, store, sent):
+    case = next(c for c in store["cases"] if c["id"] == _CASE_1_ID)
+    case["citizen_mobile_plain"] = "0771234567"
+    res = _action(client, _CASE_1_OFFLINE_ID, "reject", reason=VALID_REASON)
+    assert res.status_code == 200
+    assert len(sent) == 1
+    assert sent[0]["to"] == "0771234567"
+    events = [a["event"] for a in store["audit"]]
+    assert "sms_sent" in events
+    assert "sms_skipped_no_mobile" not in events
+
+
+def test_action_sms_failure_logs_sms_failed_but_does_not_affect_the_action(
+    client, store, monkeypatch
+):
+    monkeypatch.setattr(
+        "app.infrastructure.sms.notification_service.send_sms", lambda to, body: False
+    )
+    case = next(c for c in store["cases"] if c["id"] == _CASE_1_ID)
+    case["citizen_mobile_plain"] = "0771234567"
+    res = _action(client, _CASE_1_OFFLINE_ID, "escalate")
+    assert res.status_code == 200
+    assert res.get_json()["case"]["status"] == "Under Review"
+    events = [a["event"] for a in store["audit"]]
+    assert "sms_failed" in events
+
+
+# --- compensation caps settings (Story 5.6, FR-4.4) ---------------------------------------
+
+
+def test_get_compensation_caps_returns_seeded_rows(client, store):
+    store["compensation_caps"].append(
+        {
+            "district": DISTRICT_A, "damage_type": "property", "cap_amount_lkr": 50000.0,
+            "updated_by": "admin-1", "updated_at": datetime(2026, 7, 10, 9, 0, 0),
+        }
+    )
+    res = client.get("/api/v1/admin/settings/compensation-caps", headers=_auth())
+    assert res.status_code == 200
+    caps = res.get_json()["caps"]
+    assert caps == [
+        {
+            "district": DISTRICT_A, "damage_type": "property", "cap_amount_lkr": 50000.0,
+            "updated_by": "admin-1", "updated_at": "2026-07-10T09:00:00",
+        }
+    ]
+    # Code review (Story 5.6): audit-on-view, same convention as list_cases/get_case_detail/
+    # get_verify_chain -- every other admin read endpoint logs its own view event.
+    events = [a["event"] for a in store["audit"]]
+    assert "admin_viewed_compensation_caps" in events
+
+
+@pytest.mark.parametrize("bad_amount", [float("nan"), float("inf"), float("-inf")])
+def test_put_compensation_cap_nan_or_infinity_400(client, bad_amount):
+    # Code review (Story 5.6): Python's json module accepts NaN/Infinity as valid floats by
+    # default, and both would otherwise pass the `< 0` check (never true for NaN or +Infinity).
+    res = client.put(
+        "/api/v1/admin/settings/compensation-caps",
+        headers=_auth(), json={"district": DISTRICT_A, "cap_amount_lkr": bad_amount},
+    )
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "invalid_amount"
+
+
+def test_get_compensation_caps_empty_when_none_configured(client):
+    res = client.get("/api/v1/admin/settings/compensation-caps", headers=_auth())
+    assert res.status_code == 200
+    assert res.get_json()["caps"] == []
+
+
+def test_put_compensation_cap_upserts_and_returns_the_row(client, store):
+    res = client.put(
+        "/api/v1/admin/settings/compensation-caps",
+        headers=_auth(),
+        json={"district": DISTRICT_A, "cap_amount_lkr": 60000},
+    )
+    assert res.status_code == 200
+    body = res.get_json()
+    assert body["district"] == DISTRICT_A
+    assert body["damage_type"] == "property"
+    assert body["cap_amount_lkr"] == 60000
+    assert body["updated_by"] == "admin-1"
+    assert len(store["compensation_caps"]) == 1
+
+    events = [a for a in store["audit"] if a["event"] == "compensation_cap_updated"]
+    assert len(events) == 1
+    assert events[0]["metadata"] == {"district": DISTRICT_A, "cap_amount_lkr": 60000}
+
+
+def test_put_compensation_cap_updates_existing_row_not_a_duplicate(client, store):
+    client.put(
+        "/api/v1/admin/settings/compensation-caps",
+        headers=_auth(), json={"district": DISTRICT_A, "cap_amount_lkr": 60000},
+    )
+    res = client.put(
+        "/api/v1/admin/settings/compensation-caps",
+        headers=_auth(), json={"district": DISTRICT_A, "cap_amount_lkr": 75000},
+    )
+    assert res.status_code == 200
+    assert res.get_json()["cap_amount_lkr"] == 75000
+    assert len(store["compensation_caps"]) == 1
+
+
+def test_put_compensation_cap_zero_amount_is_valid(client):
+    res = client.put(
+        "/api/v1/admin/settings/compensation-caps",
+        headers=_auth(), json={"district": DISTRICT_A, "cap_amount_lkr": 0},
+    )
+    assert res.status_code == 200
+    assert res.get_json()["cap_amount_lkr"] == 0
+
+
+def test_put_compensation_cap_negative_amount_400(client):
+    res = client.put(
+        "/api/v1/admin/settings/compensation-caps",
+        headers=_auth(), json={"district": DISTRICT_A, "cap_amount_lkr": -100},
+    )
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "invalid_amount"
+
+
+def test_put_compensation_cap_invalid_district_400(client):
+    res = client.put(
+        "/api/v1/admin/settings/compensation-caps",
+        headers=_auth(), json={"district": "Narnia", "cap_amount_lkr": 50000},
+    )
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "invalid_district"
+
+
+def test_put_compensation_cap_no_district_assigned_403(client):
+    res = client.put(
+        "/api/v1/admin/settings/compensation-caps",
+        headers=_auth(district_id=""), json={"district": DISTRICT_A, "cap_amount_lkr": 50000},
+    )
+    assert res.status_code == 403
+    assert res.get_json()["error"] == "no_district_assigned"
