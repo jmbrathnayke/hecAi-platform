@@ -1205,6 +1205,22 @@ def test_get_compensation_caps_returns_seeded_rows(client, store):
             "updated_by": "admin-1", "updated_at": "2026-07-10T09:00:00",
         }
     ]
+    # Code review (Story 5.6): audit-on-view, same convention as list_cases/get_case_detail/
+    # get_verify_chain -- every other admin read endpoint logs its own view event.
+    events = [a["event"] for a in store["audit"]]
+    assert "admin_viewed_compensation_caps" in events
+
+
+@pytest.mark.parametrize("bad_amount", [float("nan"), float("inf"), float("-inf")])
+def test_put_compensation_cap_nan_or_infinity_400(client, bad_amount):
+    # Code review (Story 5.6): Python's json module accepts NaN/Infinity as valid floats by
+    # default, and both would otherwise pass the `< 0` check (never true for NaN or +Infinity).
+    res = client.put(
+        "/api/v1/admin/settings/compensation-caps",
+        headers=_auth(), json={"district": DISTRICT_A, "cap_amount_lkr": bad_amount},
+    )
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "invalid_amount"
 
 
 def test_get_compensation_caps_empty_when_none_configured(client):

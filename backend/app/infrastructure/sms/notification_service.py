@@ -29,7 +29,15 @@ def notify_status_change(cur, case_id, canonical_id, citizen_mobile_plain, new_s
         "SELECT template FROM sms_templates WHERE language = %s AND status = %s",
         (_LANGUAGE, new_status),
     )
-    template = cur.fetchone()[0]
+    row = cur.fetchone()
+    if row is None:
+        # No seeded (language, status) row -- e.g. migration 019 not applied, or a future status
+        # value with no template yet (code review, Story 5.6). Must not raise: this call happens
+        # inside the same DB transaction as the case's own status write (AC1), and an unhandled
+        # exception here would roll back that already-applied transition, contradicting AC5.
+        write_audit_log(cur, case_id, "sms_template_missing", admin_id, {"status": new_status})
+        return
+    template = row[0]
 
     rendered = template.replace("{ref}", canonical_id or "")
     if amount_lkr is not None:

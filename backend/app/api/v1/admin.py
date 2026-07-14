@@ -30,6 +30,7 @@ inclusive fallback the way officer's ds_division_id/officer_id OR-condition work
 admin has no equivalent "cases I personally touched" concept.
 """
 import json
+import math
 import uuid
 from datetime import date
 
@@ -727,14 +728,19 @@ _valid_districts = None
 def _load_valid_districts():
     """Lazily loads + caches the real district vocabulary (mirrors
     infrastructure/ml/compensation.py::_load_lookup()'s own lazy-load-once pattern) so a
-    PUT can be validated against real district names instead of accepting any string."""
+    PUT can be validated against real district names instead of accepting any string.
+
+    A read failure is NOT cached (code review, Story 5.6): the original version stored `set()`
+    into `_valid_districts` on error, which is indistinguishable from "loaded, genuinely empty"
+    to the `is None` guard above -- one transient disk/deploy hiccup would have locked out every
+    district as invalid_district for the life of the worker process."""
     global _valid_districts
     if _valid_districts is None:
         try:
             with open(DISTRICT_REF_PATH, encoding="utf-8") as f:
                 _valid_districts = set(json.load(f).values())
         except (FileNotFoundError, OSError, ValueError):
-            _valid_districts = set()
+            return set()
     return _valid_districts
 
 
@@ -759,6 +765,13 @@ def get_compensation_caps():
                         (_CAP_DAMAGE_TYPE,),
                     )
                     rows = cur.fetchall()
+                    # Audit-on-view (code review, Story 5.6): every other admin read endpoint in
+                    # this file (list_cases/admin_viewed_cases, get_case_detail, get_verify_chain)
+                    # logs its own view event -- case_id NULL, same admin_viewed_cases precedent.
+                    write_audit_log(
+                        cur, None, "admin_viewed_compensation_caps", g.admin_id,
+                        {"result_count": len(rows)},
+                    )
         finally:
             conn.close()
     except psycopg2.Error:
@@ -794,6 +807,12 @@ def put_compensation_caps():
 
     cap_amount_lkr = body.get("cap_amount_lkr")
     if isinstance(cap_amount_lkr, bool) or not isinstance(cap_amount_lkr, (int, float)):
+        return jsonify({"error": "invalid_amount"}), 400
+    # math.isfinite rejects NaN/Infinity (code review, Story 5.6): Python's json module accepts
+    # those non-standard tokens as valid floats by default, and both would otherwise pass the
+    # `< 0` check below (NaN is never < 0; Infinity is never < 0) and get stored as a cap that
+    # silently never triggers (every comparison against NaN/Infinity in compensation.py is False).
+    if not math.isfinite(cap_amount_lkr):
         return jsonify({"error": "invalid_amount"}), 400
     # >= 0, not > 0 (same reasoning as Story 5.5's approve-amount fix): a cap of exactly 0 is a
     # legitimate "no compensation for this district" policy, only negative is nonsensical.

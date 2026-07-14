@@ -113,3 +113,16 @@ def test_audit_metadata_never_contains_the_mobile_number(cur, sent):
         new_status="Rejected", admin_id="admin-1",
     )
     assert "0771234567" not in json.dumps(cur.audit_rows[0]["metadata"])
+
+
+def test_missing_template_logs_sms_template_missing_and_does_not_raise(cur, sent):
+    # Code review (Story 5.6): a status with no seeded (si, status) row must not crash --
+    # notify_status_change runs inside the same DB transaction as the case's own status write
+    # (AC1), so an unhandled exception here would roll back that already-applied transition.
+    notification_service.notify_status_change(
+        cur, case_id=1, canonical_id="HEC-2026-0001", citizen_mobile_plain="0771234567",
+        new_status="No Such Status", admin_id="admin-1",
+    )
+    assert sent == []
+    assert cur.audit_rows[0]["event"] == "sms_template_missing"
+    assert cur.audit_rows[0]["metadata"] == {"status": "No Such Status"}

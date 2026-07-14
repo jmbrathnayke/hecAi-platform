@@ -68,7 +68,10 @@ export default function CompensationCapsPage() {
   const [caps, setCaps] = useState<CompensationCap[] | null>(null);
   const [state, setState] = useState<LoadState>("loading");
   const [amounts, setAmounts] = useState<Record<string, string>>({});
-  const [saving, setSaving] = useState<string | null>(null);
+  // Set, not a single district (code review, Story 5.6): a single string meant starting a second
+  // district's save re-enabled the first district's still-in-flight Save button, allowing a
+  // duplicate concurrent PUT for it.
+  const [saving, setSaving] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -109,7 +112,7 @@ export default function CompensationCapsPage() {
     const amount = Number(raw);
     if (raw === undefined || raw === "" || Number.isNaN(amount) || amount < 0) return;
 
-    setSaving(district);
+    setSaving((prev) => new Set(prev).add(district));
     setError(null);
 
     const token = await getAccessToken();
@@ -119,7 +122,11 @@ export default function CompensationCapsPage() {
     }
 
     const result = await updateCompensationCap(token, district, amount);
-    setSaving(null);
+    setSaving((prev) => {
+      const next = new Set(prev);
+      next.delete(district);
+      return next;
+    });
     if (result === UNAUTHORIZED) {
       router.replace("/admin/login");
       return;
@@ -129,7 +136,11 @@ export default function CompensationCapsPage() {
       return;
     }
     setCaps((prev) => [...(prev ?? []).filter((c) => c.district !== district), result]);
+    // Only clear the pending edit if it still equals what was just saved (code review, Story
+    // 5.6) -- unconditionally deleting it discarded a newer edit typed while this save was
+    // still in flight, silently reverting the input to the just-saved value.
     setAmounts((prev) => {
+      if (prev[district] !== raw) return prev;
       const next = { ...prev };
       delete next[district];
       return next;
@@ -198,11 +209,11 @@ export default function CompensationCapsPage() {
                     <td className="py-design-2">
                       <button
                         type="button"
-                        disabled={saving === district}
+                        disabled={saving.has(district)}
                         onClick={() => handleSave(district)}
                         className="min-h-touch-target rounded-md bg-forest px-design-4 text-label font-semibold text-ink-on-dark disabled:opacity-50"
                       >
-                        {saving === district ? "Saving…" : "Save"}
+                        {saving.has(district) ? "Saving…" : "Save"}
                       </button>
                     </td>
                   </tr>

@@ -59,3 +59,19 @@ def test_send_sms_returns_false_on_twilio_failure_and_does_not_raise(monkeypatch
     with app.app_context():
         result = twilio_client.send_sms("+94771234567", "hello")
     assert result is False
+
+
+def test_send_sms_returns_false_and_does_not_raise_on_a_non_twilio_exception(monkeypatch):
+    # Code review (Story 5.6): the original except clause only caught TwilioRestException, so a
+    # misconfigured/missing credential raising inside get_twilio_client() itself (e.g. KeyError)
+    # would have escaped send_sms entirely, propagating up through notify_status_change() and
+    # rolling back the case's own already-applied status transition.
+    app = _app()
+
+    def _raise_key_error():
+        raise KeyError("TWILIO_ACCOUNT_SID")
+
+    monkeypatch.setattr(twilio_client, "get_twilio_client", _raise_key_error)
+    with app.app_context():
+        result = twilio_client.send_sms("+94771234567", "hello")
+    assert result is False
