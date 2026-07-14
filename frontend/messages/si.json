@@ -117,5 +117,11 @@
     "retry": "නැවත උත්සාහ කරන්න",
     "empty": "ඔබට තවම වාර්තා නොමැත.",
     "signOut": "පිටවෙන්න"
+  },
+  "officer": {
+    "languageLabel": "භාෂාව"
+  },
+  "admin": {
+    "languageLabel": "භාෂාව"
   }
 }

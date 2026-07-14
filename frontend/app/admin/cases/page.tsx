@@ -6,6 +6,7 @@
 // scoped, filtered, sorted, paginated list from GET /api/v1/admin/cases via lib/adminCases.
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { createClient } from "@/lib/supabase";
 import { getAccessToken } from "@/lib/auth";
 import {
@@ -18,6 +19,7 @@ import { CaseListTable, type SortColumn, type SortDirection } from "@/components
 import { FilterBar, type AdminCaseFilters } from "@/components/admin/FilterBar";
 import { AdminKpiCards } from "@/components/admin/AdminKpiCards";
 import { CaseDetailPanel } from "@/components/admin/CaseDetailPanel";
+import { LanguageSelectorCookie } from "@/components/LanguageSelectorCookie";
 
 type LoadState = "loading" | "error" | "ready";
 const PAGE_SIZE = 20;
@@ -41,6 +43,7 @@ export default function AdminCasesPage() {
 }
 
 function AdminCasesPageContent() {
+  const t = useTranslations("admin");
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -230,7 +233,13 @@ function AdminCasesPageContent() {
   return (
     <main className="min-h-screen bg-surface-base px-design-4 py-design-6">
       <div className="mx-auto max-w-6xl space-y-design-4">
-        <h1 className="text-title text-ink-primary">Admin — Case List</h1>
+        <header className="flex flex-wrap items-start justify-between gap-design-2">
+          <h1 className="text-title text-ink-primary">Admin — Case List</h1>
+          <div className="flex flex-col gap-design-1">
+            <span className="text-caption text-ink-secondary">{t("languageLabel")}</span>
+            <LanguageSelectorCookie />
+          </div>
+        </header>
 
         <AdminKpiCards kpis={data?.kpis ?? null} loading={state === "loading" && !data} />
 

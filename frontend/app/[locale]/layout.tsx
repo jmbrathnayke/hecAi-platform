@@ -1,30 +1,12 @@
 import type { Metadata, Viewport } from "next";
-import { Noto_Sans, Noto_Sans_Sinhala, Noto_Sans_Tamil } from "next/font/google";
 import { notFound } from "next/navigation";
 import { NextIntlClientProvider } from "next-intl";
 import { getMessages } from "next-intl/server";
 import { SWRegistrar } from "@/components/SWRegistrar";
 import { OfflineBanner } from "@/components/OfflineBanner";
+import { fontVariables } from "@/lib/fonts";
 import { routing } from "@/routing";
 import "../globals.css";
-
-// Self-hosted by next/font at build time → served from same origin and precached by the
-// Service Worker (part of the app-shell build output), so Sinhala/Tamil text renders offline.
-const notoSans = Noto_Sans({
-  subsets: ["latin"],
-  variable: "--font-noto-sans",
-  display: "swap",
-});
-const notoSansSinhala = Noto_Sans_Sinhala({
-  subsets: ["sinhala"],
-  variable: "--font-noto-sinhala",
-  display: "swap",
-});
-const notoSansTamil = Noto_Sans_Tamil({
-  subsets: ["tamil"],
-  variable: "--font-noto-tamil",
-  display: "swap",
-});
 
 export const metadata: Metadata = {
   title: "HEC Platform",
@@ -51,10 +33,7 @@ export default async function LocaleLayout({
   }
   const messages = await getMessages();
   return (
-    <html
-      lang={locale}
-      className={`${notoSans.variable} ${notoSansSinhala.variable} ${notoSansTamil.variable}`}
-    >
+    <html lang={locale} className={fontVariables}>
       <body className="font-sans">
         <SWRegistrar />
         <NextIntlClientProvider messages={messages}>

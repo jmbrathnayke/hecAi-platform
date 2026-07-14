@@ -4,10 +4,12 @@
 // to the officer (own cases OR their assigned divisions) and audits the view. PII is never sent.
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useTranslations } from "next-intl";
 import { getAccessToken } from "@/lib/auth";
 import { useOfficerSession } from "@/hooks/useOfficerSession";
 import { KNOWN_STATUSES } from "@/lib/status";
 import { ModelLoadStatus } from "@/components/ModelLoadStatus";
+import { LanguageSelectorCookie } from "@/components/LanguageSelectorCookie";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
 
@@ -32,6 +34,7 @@ function formatDate(iso: string | null): string {
 }
 
 export default function OfficerDashboardPage() {
+  const t = useTranslations("officer");
   const { officer_id, assigned_divisions } = useOfficerSession();
   const [cases, setCases] = useState<OfficerCase[]>([]);
   const [state, setState] = useState<LoadState>("loading");
@@ -90,6 +93,10 @@ export default function OfficerDashboardPage() {
                 : "No divisions assigned"}
             </p>
           )}
+          <div className="flex flex-col gap-design-1 pt-design-2">
+            <span className="text-caption text-ink-secondary">{t("languageLabel")}</span>
+            <LanguageSelectorCookie />
+          </div>
         </header>
 
         <ModelLoadStatus />
