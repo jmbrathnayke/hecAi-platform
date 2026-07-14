@@ -29,6 +29,7 @@ three intake channels support it) is excluded from every admin's view; there is 
 inclusive fallback the way officer's ds_division_id/officer_id OR-condition works, because
 admin has no equivalent "cases I personally touched" concept.
 """
+import json
 import uuid
 from datetime import date
 
@@ -38,6 +39,8 @@ from flask import Blueprint, current_app, g, jsonify, request
 from app.api.v1.middleware.auth import require_admin
 from app.domain.validation import MIN_REASON_LENGTH
 from app.infrastructure.audit import verify_chain, write_audit_log
+from app.infrastructure.ml.compensation import DISTRICT_REF_PATH
+from app.infrastructure.sms.notification_service import notify_status_change
 
 admin_bp = Blueprint("admin", __name__)
 
@@ -548,10 +551,15 @@ def post_case_action(offline_id):
                     # below), so a second concurrent request blocks here until the first
                     # commits, then re-reads the now-updated status and correctly gets
                     # invalid_transition/case_closed instead of racing the write.
+                    # citizen_mobile_plain (Story 5.6, 12th column): read once here alongside
+                    # canonical_id (row[0]) so the notify_status_change() calls below never
+                    # need a second query -- see Dev Notes Sec Design: Where Notifications Hook
+                    # In. Not part of _load_case_detail's response shape (the frontend has no
+                    # use for it).
                     cur.execute(
                         """SELECT canonical_id, offline_id, damage_category, status,
                                   gps_lat, gps_lng, submitted_at, updated_at, submitted_via,
-                                  approved_amount, id
+                                  approved_amount, id, citizen_mobile_plain
                              FROM cases WHERE offline_id = %s AND district = %s
                              FOR UPDATE""",
                         (offline_id, district),
@@ -560,6 +568,7 @@ def post_case_action(offline_id):
                     if row is None:
                         return jsonify({"error": "not_found"}), 404
                     case_id, current_status = row[10], row[3]
+                    citizen_mobile_plain = row[11]
 
                     if current_status not in _ACTION_ALLOWED_FROM[action]:
                         # Terminal states get their own error code (AC5) -- distinct from an
@@ -619,6 +628,10 @@ def post_case_action(offline_id):
                             cur, case_id, "case_approved", g.admin_id,
                             {"amount_lkr": resolved_amount, "reason": reason},
                         )
+                        notify_status_change(
+                            cur, case_id, row[0], citizen_mobile_plain, "Approved", g.admin_id,
+                            amount_lkr=resolved_amount,
+                        )
                         new_status = "Approved"
                         new_approved_amount = resolved_amount
                         known_comp_row = est_row
@@ -639,6 +652,9 @@ def post_case_action(offline_id):
                         # other action's optional reason.
                         metadata = {"reason": reason} if reason else {}
                         write_audit_log(cur, case_id, _ACTION_EVENT[action], g.admin_id, metadata)
+                        notify_status_change(
+                            cur, case_id, row[0], citizen_mobile_plain, target_status, g.admin_id,
+                        )
                         new_status = target_status
                         new_approved_amount = row[9]
 
@@ -696,3 +712,130 @@ def get_verify_chain():
         return jsonify({"error": "server_error"}), 500
 
     return jsonify({"valid": valid, "broken_id": broken_id}), 200
+
+
+# Story 5.6 (FR-4.4): compensation_caps.damage_type is effectively single-valued -- see
+# infrastructure/ml/compensation.py's _DAMAGE_TYPE_MAP, which collapses crop/property/combined
+# onto one "property" bucket the RF model ever reads. These routes only ever read/write
+# damage_type='property'; it is never client-supplied, so a client can't write an inert row
+# under a value nothing queries.
+_CAP_DAMAGE_TYPE = "property"
+
+_valid_districts = None
+
+
+def _load_valid_districts():
+    """Lazily loads + caches the real district vocabulary (mirrors
+    infrastructure/ml/compensation.py::_load_lookup()'s own lazy-load-once pattern) so a
+    PUT can be validated against real district names instead of accepting any string."""
+    global _valid_districts
+    if _valid_districts is None:
+        try:
+            with open(DISTRICT_REF_PATH, encoding="utf-8") as f:
+                _valid_districts = set(json.load(f).values())
+        except (FileNotFoundError, OSError, ValueError):
+            _valid_districts = set()
+    return _valid_districts
+
+
+@admin_bp.route("/admin/settings/compensation-caps", methods=["GET"])
+@require_admin()
+def get_compensation_caps():
+    # Consistency guard (same precedent as get_verify_chain) -- not a data-leak fix, since caps
+    # are cross-district policy data any admin may view/edit (CRITICAL #2: there is no separate
+    # "System Admin" role in this codebase's as-built RBAC).
+    if not g.district_id:
+        return jsonify({"error": "no_district_assigned"}), 403
+
+    try:
+        conn = _get_connection()
+        try:
+            with conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """SELECT district, damage_type, cap_amount_lkr, updated_by, updated_at
+                             FROM compensation_caps WHERE damage_type = %s
+                             ORDER BY district""",
+                        (_CAP_DAMAGE_TYPE,),
+                    )
+                    rows = cur.fetchall()
+        finally:
+            conn.close()
+    except psycopg2.Error:
+        current_app.logger.exception("compensation caps list failed")
+        return jsonify({"error": "server_error"}), 500
+
+    caps = [
+        {
+            "district": r[0],
+            "damage_type": r[1],
+            "cap_amount_lkr": float(r[2]),
+            "updated_by": r[3],
+            "updated_at": r[4].isoformat() if r[4] else None,
+        }
+        for r in rows
+    ]
+    return jsonify({"caps": caps}), 200
+
+
+@admin_bp.route("/admin/settings/compensation-caps", methods=["PUT"])
+@require_admin()
+def put_compensation_caps():
+    if not g.district_id:
+        return jsonify({"error": "no_district_assigned"}), 403
+
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return jsonify({"error": "invalid_body"}), 400
+
+    district = body.get("district")
+    if not isinstance(district, str) or district not in _load_valid_districts():
+        return jsonify({"error": "invalid_district"}), 400
+
+    cap_amount_lkr = body.get("cap_amount_lkr")
+    if isinstance(cap_amount_lkr, bool) or not isinstance(cap_amount_lkr, (int, float)):
+        return jsonify({"error": "invalid_amount"}), 400
+    # >= 0, not > 0 (same reasoning as Story 5.5's approve-amount fix): a cap of exactly 0 is a
+    # legitimate "no compensation for this district" policy, only negative is nonsensical.
+    if cap_amount_lkr < 0:
+        return jsonify({"error": "invalid_amount"}), 400
+
+    try:
+        conn = _get_connection()
+        try:
+            with conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """INSERT INTO compensation_caps (district, damage_type, cap_amount_lkr, updated_by)
+                           VALUES (%s, %s, %s, %s)
+                           ON CONFLICT (district, damage_type)
+                           DO UPDATE SET cap_amount_lkr = EXCLUDED.cap_amount_lkr,
+                                         updated_by = EXCLUDED.updated_by, updated_at = now()
+                           RETURNING district, damage_type, cap_amount_lkr, updated_by, updated_at""",
+                        (district, _CAP_DAMAGE_TYPE, cap_amount_lkr, g.admin_id),
+                    )
+                    row = cur.fetchone()
+                    # case_id NULL -- mirrors admin_viewed_cases's existing precedent for a
+                    # district/system-level, not per-case, event.
+                    write_audit_log(
+                        cur, None, "compensation_cap_updated", g.admin_id,
+                        {"district": district, "cap_amount_lkr": cap_amount_lkr},
+                    )
+        finally:
+            conn.close()
+    except psycopg2.Error:
+        current_app.logger.exception("compensation cap update failed")
+        return jsonify({"error": "server_error"}), 500
+
+    return (
+        jsonify(
+            {
+                "district": row[0],
+                "damage_type": row[1],
+                "cap_amount_lkr": float(row[2]),
+                "updated_by": row[3],
+                "updated_at": row[4].isoformat() if row[4] else None,
+            }
+        ),
+        200,
+    )
