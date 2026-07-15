@@ -3,6 +3,17 @@ import { SyncStatusBar } from "@/components/SyncStatusBar";
 import { getAccessToken } from "@/lib/auth";
 import { getLastSyncedAt, getQueuedItems, runSync } from "@/lib/syncQueue";
 
+// next-intl passthrough (Story 6.2): translator returns the key (+ interpolation values).
+jest.mock("next-intl", () => ({
+  useTranslations: () => {
+    const t = (key: string, vars?: Record<string, unknown>) =>
+      vars && Object.keys(vars).length ? `${key} ${Object.values(vars).join(" ")}` : key;
+    t.rich = (key: string) => key;
+    return t;
+  },
+  useLocale: () => "en",
+}));
+
 jest.mock("@/lib/auth", () => ({
   getAccessToken: jest.fn(),
 }));
@@ -42,7 +53,7 @@ test("shows the pending count with a spinner while items are queued", async () =
     { id: 2, offline_id: "b", payload: {}, status: "in_progress", sync_attempts: 1, queued_at: 1, next_attempt_at: 0 },
   ]);
   render(<SyncStatusBar />);
-  expect(await screen.findByText("2 reports pending sync")).toBeInTheDocument();
+  expect(await screen.findByText("syncBar.pending 2")).toBeInTheDocument();
 });
 
 test("shows the synced state with the last-sync time once the queue drains", async () => {
@@ -51,7 +62,7 @@ test("shows the synced state with the last-sync time once the queue drains", asy
   mockGetQueuedItems.mockResolvedValue([]);
   mockGetLastSyncedAt.mockResolvedValue(new Date("2026-07-08T09:30:00.000Z").getTime());
   render(<SyncStatusBar />);
-  expect(await screen.findByText(/All reports synced/)).toBeInTheDocument();
+  expect(await screen.findByText(/syncBar.synced/)).toBeInTheDocument();
 });
 
 test("shows the max-attempts notice for a failed item, even on a fresh mount (no live event needed)", async () => {
@@ -64,7 +75,7 @@ test("shows the max-attempts notice for a failed item, even on a fresh mount (no
   ]);
   render(<SyncStatusBar />);
   expect(await screen.findByRole("alert")).toHaveTextContent(
-    "Some reports failed to sync after 5 attempts. Tap to review.",
+    "syncBar.failed",
   );
 });
 
@@ -77,7 +88,7 @@ test("the max-attempts notice is a live link to the Sync Queue screen (Story 4.4
   ]);
   render(<SyncStatusBar />);
   await screen.findByRole("alert");
-  const link = screen.getByRole("link", { name: /tap to review/i });
+  const link = screen.getByRole("link", { name: /syncBar.failed/i });
   expect(link).toHaveAttribute("href", "/officer/sync");
 });
 

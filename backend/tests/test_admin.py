@@ -9,6 +9,7 @@ detail (AI result / compensation / audit trail, including their empty states), a
 hash-chain verification, all without a real database.
 """
 import json
+from typing import Any
 import uuid
 from datetime import datetime
 
@@ -23,6 +24,15 @@ SECRET = "test-jwt-secret-0123456789-abcdef-ghij"  # >=32 bytes for HS256
 
 DISTRICT_A = "අනුරාධපුරය"
 DISTRICT_B = "කොළඹ"
+
+# Story 5.6: a handful of real seeded (language, status) -> template pairs, enough to exercise
+# notify_status_change()'s {ref}/{amount} placeholder substitution without needing all 15 rows.
+_SMS_TEMPLATES = {
+    ("si", "Approved"): "අනුමතයි {ref} රු. {amount}",
+    ("si", "Rejected"): "ප්‍රතික්ෂේපයි {ref}",
+    ("si", "Under Review"): "සමාලෝචනය {ref}",
+    ("si", "Payment Processed"): "ගෙවීම {ref}",
+}
 
 
 def _token(sub="admin-1", role="admin", district_id=DISTRICT_A):
@@ -47,6 +57,7 @@ def _case(
     gps_lat=None,
     gps_lng=None,
     submitted_via="app",
+    citizen_mobile_plain=None,
 ):
     return {
         # Parsed from the HEC-YYYY-NNNN suffix -- guarantees uniqueness across all fixture
@@ -75,6 +86,9 @@ def _case(
         # docstring -- citizen_nic_plain never is, from either endpoint):
         "citizen_nic_plain": "200012345678",
         "submitter_identity_hash": "deadbeef",
+        # Story 5.6: NULL for every case except ones from the extended SMS-fallback grammar --
+        # never returned by any read endpoint (write-only, same convention as citizen_nic_plain).
+        "citizen_mobile_plain": citizen_mobile_plain,
     }
 
 
@@ -129,7 +143,7 @@ class FakeCursor:
     def _district_cases(self, district):
         return [c for c in self.store["cases"] if c["district"] == district]
 
-    def execute(self, sql, params=()):
+    def execute(self, sql: str, params: tuple[Any, ...] = ()):
         if "pg_advisory_xact_lock" in sql:
             self._result = None
         elif "SELECT hash FROM audit_log" in sql:
@@ -167,7 +181,7 @@ class FakeCursor:
             total = sum(
                 c["approved_amount"] or 0
                 for c in self._district_cases(district)
-                if c["status"] == "Approved"
+                if c["status"] in ("Approved", "Payment Processed")
             )
             self._result = (total,)
         elif "AVG(EXTRACT(EPOCH FROM (COALESCE(updated_at" in sql:
@@ -200,6 +214,26 @@ class FakeCursor:
                     "prev_hash": prev_hash,
                 }
             )
+        elif "FROM cases WHERE offline_id" in sql and "FOR UPDATE" in sql:
+            # Story 5.6: post_case_action's own copy of the cases SELECT (FOR UPDATE-locked,
+            # distinct query text from _load_case_detail's below since Story 5.5's code review
+            # fix) gained a 12th column, citizen_mobile_plain, so notify_status_change() never
+            # needs a second query.
+            offline_id, district = params
+            matches = [
+                c for c in self.store["cases"]
+                if c["offline_id"] == offline_id and c["district"] == district
+            ]
+            if matches:
+                c = matches[0]
+                self._result = (
+                    c["canonical_id"], c["offline_id"], c["damage_category"], c["status"],
+                    c.get("gps_lat"), c.get("gps_lng"), c["submitted_at"], c["updated_at"],
+                    c.get("submitted_via", "app"), c.get("approved_amount"), c["id"],
+                    c.get("citizen_mobile_plain"),
+                )
+            else:
+                self._result = None
         elif "FROM cases WHERE offline_id" in sql:
             # Story 5.4 case-detail lookup: offline_id + district, both must match (a
             # wrong-district match must miss, same as a nonexistent offline_id). No
@@ -264,6 +298,72 @@ class FakeCursor:
                 (a["id"], a["case_id"], a["event"], a["actor_id"], a["metadata"], a["created_at"], a["hash"], a["prev_hash"])
                 for a in rows
             ]
+        elif "UPDATE cases SET status = 'Approved'" in sql:
+            # Story 5.5 approve action: status + approved_amount + updated_at together.
+            # RETURNING updated_at: the endpoint fetches this back to build its response
+            # without a second SELECT, so the fake must hand it back the same way.
+            amount, case_id = params
+            for c in self.store["cases"]:
+                if c["id"] == case_id:
+                    c["status"] = "Approved"
+                    c["approved_amount"] = amount
+                    c["updated_at"] = datetime(2026, 7, 13, 12, 0, 0)  # fixed "now" for tests
+                    self._result = (c["updated_at"],)
+                    break
+        elif "UPDATE cases SET status = %s, updated_at = now()" in sql:
+            # Story 5.5 reject/request_info/escalate/mark_paid: status + updated_at.
+            new_status, case_id = params
+            for c in self.store["cases"]:
+                if c["id"] == case_id:
+                    c["status"] = new_status
+                    c["updated_at"] = datetime(2026, 7, 13, 12, 0, 0)
+                    self._result = (c["updated_at"],)
+                    break
+        elif "INSERT INTO payment_authorizations" in sql:
+            case_id, amount, authorized_by = params
+            self.store["payment_authorizations"].append(
+                {"case_id": case_id, "amount_lkr": amount, "authorized_by": authorized_by}
+            )
+        elif "SELECT template FROM sms_templates" in sql:
+            # Story 5.6: notify_status_change() always queries language='si' today (CRITICAL
+            # #6 -- no per-case locale exists). A handful of real seeded templates, enough to
+            # exercise {ref}/{amount} placeholder substitution.
+            language, status = params
+            self._result = (_SMS_TEMPLATES.get((language, status)),) if (language, status) in _SMS_TEMPLATES else None
+        elif "FROM compensation_caps" in sql:
+            (damage_type,) = params
+            rows = sorted(
+                (c for c in self.store["compensation_caps"] if c["damage_type"] == damage_type),
+                key=lambda c: c["district"],
+            )
+            self._rows = [
+                (c["district"], c["damage_type"], c["cap_amount_lkr"], c["updated_by"], c["updated_at"])
+                for c in rows
+            ]
+        elif "INSERT INTO compensation_caps" in sql:
+            district, damage_type, cap_amount_lkr, updated_by = params
+            updated_at = datetime(2026, 7, 14, 9, 0, 0)
+            existing = next(
+                (c for c in self.store["compensation_caps"]
+                 if c["district"] == district and c["damage_type"] == damage_type),
+                None,
+            )
+            if existing:
+                existing["cap_amount_lkr"] = cap_amount_lkr
+                existing["updated_by"] = updated_by
+                existing["updated_at"] = updated_at
+                row = existing
+            else:
+                row = {
+                    "district": district, "damage_type": damage_type,
+                    "cap_amount_lkr": cap_amount_lkr, "updated_by": updated_by,
+                    "updated_at": updated_at,
+                }
+                self.store["compensation_caps"].append(row)
+            self._result = (
+                row["district"], row["damage_type"], row["cap_amount_lkr"],
+                row["updated_by"], row["updated_at"],
+            )
         else:  # pragma: no cover
             raise AssertionError(f"unexpected SQL: {sql}")
 
@@ -333,6 +433,8 @@ def store():
         "audit": [],
         "inference_log": [],
         "compensation_estimates": [],
+        "payment_authorizations": [],
+        "compensation_caps": [],
     }
 
 
@@ -345,7 +447,21 @@ def _seed_audit(store, case_id, event, actor_id="admin-1", metadata=None):
 
 
 @pytest.fixture
-def client(monkeypatch, store):
+def sent(monkeypatch):
+    """Captures every notify_status_change() -> send_sms() call. Story 5.6: monkeypatched at
+    notification_service's own import site (not twilio_client's), same level of fidelity as
+    test_notification_service.py -- the real notify_status_change()/write_audit_log() run for
+    real, only the actual Twilio call is faked out. Returns True (send succeeded) by default."""
+    calls = []
+    monkeypatch.setattr(
+        "app.infrastructure.sms.notification_service.send_sms",
+        lambda to, body: calls.append({"to": to, "body": body}) or True,
+    )
+    return calls
+
+
+@pytest.fixture
+def client(monkeypatch, store, sent):
     app = create_app(
         {"TESTING": True, "DATABASE_URL": "postgresql://fake", "SUPABASE_JWT_SECRET": SECRET}
     )
@@ -488,6 +604,16 @@ def test_kpis_scoped_to_district_independent_of_list_filters(client):
 
 def test_total_approved_sums_approved_amount_not_ai_estimate(client):
     # CRITICAL #5 regression guard.
+    res = client.get("/api/v1/admin/cases", headers=_auth())
+    assert res.get_json()["kpis"]["total_approved_lkr"] == 50000.0
+
+
+def test_total_approved_lkr_still_counts_a_case_once_it_is_paid(client, store):
+    # Code review fix regression guard: Story 5.5's mark_paid moves a case from 'Approved' to
+    # 'Payment Processed' -- the KPI must not drop the case's approved_amount just because it
+    # was subsequently paid out.
+    case_3 = next(c for c in store["cases"] if c["id"] == 3)
+    case_3["status"] = "Payment Processed"
     res = client.get("/api/v1/admin/cases", headers=_auth())
     assert res.get_json()["kpis"]["total_approved_lkr"] == 50000.0
 
@@ -786,3 +912,388 @@ def test_case_detail_audit_trail_keeps_newest_rows_not_oldest_when_over_cap(clie
     assert events[0] == "event_5"  # oldest 5 dropped, not the newest 5
     assert events[-1] == "event_204"  # most recent event survives
     assert events == sorted(events, key=lambda e: int(e.split("_")[1]))  # chronological
+
+
+# --- case review actions (Story 5.5) --------------------------------------------------------
+
+_CASE_2_OFFLINE_ID = str(uuid.uuid5(uuid.NAMESPACE_DNS, "HEC-2026-0002"))
+_CASE_2_ID = 2
+_CASE_3_OFFLINE_ID = str(uuid.uuid5(uuid.NAMESPACE_DNS, "HEC-2026-0003"))  # fixture: Approved
+_CASE_3_ID = 3
+_CASE_4_OFFLINE_ID = str(uuid.uuid5(uuid.NAMESPACE_DNS, "HEC-2026-0004"))  # fixture: DISTRICT_B
+
+VALID_REASON = "Adjusted after re-inspecting the photos on file."  # >= 10 chars
+
+
+def _action(client, offline_id, action, **body):
+    return client.post(
+        f"/api/v1/admin/cases/{offline_id}/action",
+        headers=_auth(),
+        json={"action": action, **body},
+    )
+
+
+def test_action_approve_defaults_to_rf_estimate_when_no_amount_given(client, store):
+    store["compensation_estimates"].append(_compensation_row(_CASE_1_ID, amount_lkr=45000.0))
+    res = _action(client, _CASE_1_OFFLINE_ID, "approve")
+    assert res.status_code == 200
+    body = res.get_json()
+    assert body["case"]["status"] == "Approved"
+    assert body["case"]["approved_amount"] == 45000.0
+    assert store["payment_authorizations"] == [
+        {"case_id": _CASE_1_ID, "amount_lkr": 45000.0, "authorized_by": "admin-1"}
+    ]
+
+
+def test_action_approve_with_matching_amount_no_reason_required(client, store):
+    store["compensation_estimates"].append(_compensation_row(_CASE_1_ID, amount_lkr=45000.0))
+    res = _action(client, _CASE_1_OFFLINE_ID, "approve", amount_lkr=45000.0)
+    assert res.status_code == 200
+
+
+def test_action_approve_with_differing_amount_and_no_reason_400(client, store):
+    store["compensation_estimates"].append(_compensation_row(_CASE_1_ID, amount_lkr=45000.0))
+    res = _action(client, _CASE_1_OFFLINE_ID, "approve", amount_lkr=60000.0)
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "reason_required"
+
+
+def test_action_approve_with_short_reason_400(client, store):
+    store["compensation_estimates"].append(_compensation_row(_CASE_1_ID, amount_lkr=45000.0))
+    res = _action(client, _CASE_1_OFFLINE_ID, "approve", amount_lkr=60000.0, reason="too short")
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "reason_required"
+
+
+def test_action_approve_with_differing_amount_and_valid_reason_succeeds(client, store):
+    store["compensation_estimates"].append(_compensation_row(_CASE_1_ID, amount_lkr=45000.0))
+    res = _action(client, _CASE_1_OFFLINE_ID, "approve", amount_lkr=60000.0, reason=VALID_REASON)
+    assert res.status_code == 200
+    assert res.get_json()["case"]["approved_amount"] == 60000.0
+
+
+def test_action_approve_no_estimate_no_amount_400(client):
+    res = _action(client, _CASE_1_OFFLINE_ID, "approve")
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "amount_required"
+
+
+def test_action_approve_no_estimate_with_amount_requires_reason(client):
+    res = _action(client, _CASE_1_OFFLINE_ID, "approve", amount_lkr=30000.0)
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "reason_required"
+
+
+def test_action_approve_no_estimate_with_amount_and_reason_succeeds(client):
+    res = _action(client, _CASE_1_OFFLINE_ID, "approve", amount_lkr=30000.0, reason=VALID_REASON)
+    assert res.status_code == 200
+    assert res.get_json()["case"]["approved_amount"] == 30000.0
+
+
+def test_action_approve_amount_must_not_be_negative(client, store):
+    store["compensation_estimates"].append(_compensation_row(_CASE_1_ID, amount_lkr=45000.0))
+    res = _action(client, _CASE_1_OFFLINE_ID, "approve", amount_lkr=-100)
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "invalid_amount"
+
+
+def test_action_approve_at_a_zero_rf_estimate_succeeds(client, store):
+    # Code review fix regression guard: a genuine 0 LKR RF estimate (no assessed damage) must
+    # still be approvable at that amount -- amount_lkr=0 is valid, only negative amounts aren't.
+    store["compensation_estimates"].append(_compensation_row(_CASE_1_ID, amount_lkr=0.0))
+    res = _action(client, _CASE_1_OFFLINE_ID, "approve", amount_lkr=0)
+    assert res.status_code == 200
+    assert res.get_json()["case"]["approved_amount"] == 0.0
+
+
+def test_action_reject_no_reason_400(client):
+    res = _action(client, _CASE_1_OFFLINE_ID, "reject")
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "reason_required"
+
+
+def test_action_reject_short_reason_400(client):
+    res = _action(client, _CASE_1_OFFLINE_ID, "reject", reason="nope")
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "reason_required"
+
+
+def test_action_reject_valid_reason_succeeds(client, store):
+    res = _action(client, _CASE_1_OFFLINE_ID, "reject", reason=VALID_REASON)
+    assert res.status_code == 200
+    assert res.get_json()["case"]["status"] == "Rejected"
+    events = [a for a in store["audit"] if a["event"] == "case_rejected"]
+    assert len(events) == 1
+    assert events[0]["metadata"]["reason"] == VALID_REASON
+
+
+def test_action_request_info_no_reason_ok(client):
+    res = _action(client, _CASE_1_OFFLINE_ID, "request_info")
+    assert res.status_code == 200
+    assert res.get_json()["case"]["status"] == "Under Review"
+
+
+def test_action_escalate_no_reason_ok(client, store):
+    res = _action(client, _CASE_1_OFFLINE_ID, "escalate")
+    assert res.status_code == 200
+    assert res.get_json()["case"]["status"] == "Under Review"
+    events = [a for a in store["audit"] if a["event"] == "case_escalated"]
+    assert len(events) == 1
+
+
+def test_action_mark_paid_from_approved_succeeds(client, store):
+    res = _action(client, _CASE_3_OFFLINE_ID, "mark_paid")
+    assert res.status_code == 200
+    assert res.get_json()["case"]["status"] == "Payment Processed"
+
+
+def test_action_mark_paid_records_a_supplied_reason(client, store):
+    # Code review fix regression guard: mark_paid previously force-dropped any supplied
+    # reason to {}, silently discarding it. It's optional, but if given, it must be recorded.
+    res = _action(client, _CASE_3_OFFLINE_ID, "mark_paid", reason="Disbursed via bank transfer.")
+    assert res.status_code == 200
+    events = [a for a in store["audit"] if a["event"] == "case_paid"]
+    assert len(events) == 1
+    assert events[0]["metadata"]["reason"] == "Disbursed via bank transfer."
+
+
+def test_action_mark_paid_from_submitted_returns_invalid_transition(client):
+    res = _action(client, _CASE_1_OFFLINE_ID, "mark_paid")
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "invalid_transition"
+
+
+def test_action_on_rejected_case_returns_case_closed(client):
+    _action(client, _CASE_1_OFFLINE_ID, "reject", reason=VALID_REASON)
+    res = _action(client, _CASE_1_OFFLINE_ID, "approve", amount_lkr=1000)
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "case_closed"
+
+
+def test_action_on_payment_processed_case_returns_case_closed(client):
+    _action(client, _CASE_3_OFFLINE_ID, "mark_paid")
+    res = _action(client, _CASE_3_OFFLINE_ID, "escalate")
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "case_closed"
+
+
+def test_action_wrong_district_returns_404(client):
+    res = _action(client, _CASE_4_OFFLINE_ID, "escalate")  # DISTRICT_B, admin is DISTRICT_A
+    assert res.status_code == 404
+    assert res.get_json()["error"] == "not_found"
+
+
+def test_action_invalid_action_value_returns_400(client):
+    res = _action(client, _CASE_1_OFFLINE_ID, "delete_everything")
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "invalid_action"
+
+
+def test_action_no_district_assigned_returns_403(client):
+    res = client.post(
+        f"/api/v1/admin/cases/{_CASE_1_OFFLINE_ID}/action",
+        headers=_auth(district_id=""),
+        json={"action": "escalate"},
+    )
+    assert res.status_code == 403
+    assert res.get_json()["error"] == "no_district_assigned"
+
+
+def test_action_malformed_offline_id_returns_400(client):
+    res = client.post(
+        "/api/v1/admin/cases/not-a-uuid/action", headers=_auth(), json={"action": "escalate"},
+    )
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "invalid_offline_id"
+
+
+def test_action_bumps_updated_at(client, store):
+    # CRITICAL #2: Story 5.3's avg_processing_days KPI depends on updated_at reflecting the
+    # last real state change.
+    before = store["cases"][0]["updated_at"]
+    _action(client, _CASE_1_OFFLINE_ID, "escalate")
+    after = next(c for c in store["cases"] if c["id"] == _CASE_1_ID)["updated_at"]
+    assert after != before
+
+
+def test_action_response_includes_the_just_written_audit_event(client):
+    # Unlike get_case_detail's view-audit (deliberately written AFTER reading the trail), the
+    # action endpoint writes its event BEFORE loading the response, so it IS visible here.
+    res = _action(client, _CASE_1_OFFLINE_ID, "escalate")
+    events = [e["event"] for e in res.get_json()["audit_trail"]]
+    assert "case_escalated" in events
+
+
+def test_verify_chain_still_valid_after_a_sequence_of_actions(client):
+    _action(client, _CASE_1_OFFLINE_ID, "escalate")
+    _action(client, _CASE_1_OFFLINE_ID, "request_info")
+    _action(client, _CASE_2_OFFLINE_ID, "reject", reason=VALID_REASON)
+    _action(client, _CASE_3_OFFLINE_ID, "mark_paid")
+    res = client.get("/api/v1/admin/audit/verify-chain", headers=_auth())
+    assert res.get_json() == {"valid": True, "broken_id": None}
+
+
+# --- SMS status notifications (Story 5.6) -------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "offline_id, action, kwargs",
+    [
+        (_CASE_1_OFFLINE_ID, "escalate", {}),
+        (_CASE_1_OFFLINE_ID, "request_info", {}),
+        (_CASE_1_OFFLINE_ID, "reject", {"reason": VALID_REASON}),
+        # No compensation estimate exists for case 1 by default -- amount_lkr/reason required
+        # (see test_action_approve_no_estimate_with_amount_and_reason_succeeds).
+        (_CASE_1_OFFLINE_ID, "approve", {"amount_lkr": 30000, "reason": VALID_REASON}),
+        (_CASE_3_OFFLINE_ID, "mark_paid", {}),
+    ],
+)
+def test_every_action_logs_sms_skipped_no_mobile_when_no_mobile_on_file(
+    client, store, sent, offline_id, action, kwargs
+):
+    # Every fixture case has citizen_mobile_plain=None (true for essentially every case today
+    # -- only the SMS-fallback channel's extended grammar can ever populate it, CRITICAL #1).
+    res = _action(client, offline_id, action, **kwargs)
+    assert res.status_code == 200
+    assert sent == []
+    events = [a["event"] for a in store["audit"]]
+    assert "sms_skipped_no_mobile" in events
+
+
+def test_action_with_mobile_on_file_sends_sms_and_logs_sms_sent(client, store, sent):
+    case = next(c for c in store["cases"] if c["id"] == _CASE_1_ID)
+    case["citizen_mobile_plain"] = "0771234567"
+    res = _action(client, _CASE_1_OFFLINE_ID, "reject", reason=VALID_REASON)
+    assert res.status_code == 200
+    assert len(sent) == 1
+    assert sent[0]["to"] == "0771234567"
+    events = [a["event"] for a in store["audit"]]
+    assert "sms_sent" in events
+    assert "sms_skipped_no_mobile" not in events
+
+
+def test_action_sms_failure_logs_sms_failed_but_does_not_affect_the_action(
+    client, store, monkeypatch
+):
+    monkeypatch.setattr(
+        "app.infrastructure.sms.notification_service.send_sms", lambda to, body: False
+    )
+    case = next(c for c in store["cases"] if c["id"] == _CASE_1_ID)
+    case["citizen_mobile_plain"] = "0771234567"
+    res = _action(client, _CASE_1_OFFLINE_ID, "escalate")
+    assert res.status_code == 200
+    assert res.get_json()["case"]["status"] == "Under Review"
+    events = [a["event"] for a in store["audit"]]
+    assert "sms_failed" in events
+
+
+# --- compensation caps settings (Story 5.6, FR-4.4) ---------------------------------------
+
+
+def test_get_compensation_caps_returns_seeded_rows(client, store):
+    store["compensation_caps"].append(
+        {
+            "district": DISTRICT_A, "damage_type": "property", "cap_amount_lkr": 50000.0,
+            "updated_by": "admin-1", "updated_at": datetime(2026, 7, 10, 9, 0, 0),
+        }
+    )
+    res = client.get("/api/v1/admin/settings/compensation-caps", headers=_auth())
+    assert res.status_code == 200
+    caps = res.get_json()["caps"]
+    assert caps == [
+        {
+            "district": DISTRICT_A, "damage_type": "property", "cap_amount_lkr": 50000.0,
+            "updated_by": "admin-1", "updated_at": "2026-07-10T09:00:00",
+        }
+    ]
+    # Code review (Story 5.6): audit-on-view, same convention as list_cases/get_case_detail/
+    # get_verify_chain -- every other admin read endpoint logs its own view event.
+    events = [a["event"] for a in store["audit"]]
+    assert "admin_viewed_compensation_caps" in events
+
+
+@pytest.mark.parametrize("bad_amount", [float("nan"), float("inf"), float("-inf")])
+def test_put_compensation_cap_nan_or_infinity_400(client, bad_amount):
+    # Code review (Story 5.6): Python's json module accepts NaN/Infinity as valid floats by
+    # default, and both would otherwise pass the `< 0` check (never true for NaN or +Infinity).
+    res = client.put(
+        "/api/v1/admin/settings/compensation-caps",
+        headers=_auth(), json={"district": DISTRICT_A, "cap_amount_lkr": bad_amount},
+    )
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "invalid_amount"
+
+
+def test_get_compensation_caps_empty_when_none_configured(client):
+    res = client.get("/api/v1/admin/settings/compensation-caps", headers=_auth())
+    assert res.status_code == 200
+    assert res.get_json()["caps"] == []
+
+
+def test_put_compensation_cap_upserts_and_returns_the_row(client, store):
+    res = client.put(
+        "/api/v1/admin/settings/compensation-caps",
+        headers=_auth(),
+        json={"district": DISTRICT_A, "cap_amount_lkr": 60000},
+    )
+    assert res.status_code == 200
+    body = res.get_json()
+    assert body["district"] == DISTRICT_A
+    assert body["damage_type"] == "property"
+    assert body["cap_amount_lkr"] == 60000
+    assert body["updated_by"] == "admin-1"
+    assert len(store["compensation_caps"]) == 1
+
+    events = [a for a in store["audit"] if a["event"] == "compensation_cap_updated"]
+    assert len(events) == 1
+    assert events[0]["metadata"] == {"district": DISTRICT_A, "cap_amount_lkr": 60000}
+
+
+def test_put_compensation_cap_updates_existing_row_not_a_duplicate(client, store):
+    client.put(
+        "/api/v1/admin/settings/compensation-caps",
+        headers=_auth(), json={"district": DISTRICT_A, "cap_amount_lkr": 60000},
+    )
+    res = client.put(
+        "/api/v1/admin/settings/compensation-caps",
+        headers=_auth(), json={"district": DISTRICT_A, "cap_amount_lkr": 75000},
+    )
+    assert res.status_code == 200
+    assert res.get_json()["cap_amount_lkr"] == 75000
+    assert len(store["compensation_caps"]) == 1
+
+
+def test_put_compensation_cap_zero_amount_is_valid(client):
+    res = client.put(
+        "/api/v1/admin/settings/compensation-caps",
+        headers=_auth(), json={"district": DISTRICT_A, "cap_amount_lkr": 0},
+    )
+    assert res.status_code == 200
+    assert res.get_json()["cap_amount_lkr"] == 0
+
+
+def test_put_compensation_cap_negative_amount_400(client):
+    res = client.put(
+        "/api/v1/admin/settings/compensation-caps",
+        headers=_auth(), json={"district": DISTRICT_A, "cap_amount_lkr": -100},
+    )
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "invalid_amount"
+
+
+def test_put_compensation_cap_invalid_district_400(client):
+    res = client.put(
+        "/api/v1/admin/settings/compensation-caps",
+        headers=_auth(), json={"district": "Narnia", "cap_amount_lkr": 50000},
+    )
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "invalid_district"
+
+
+def test_put_compensation_cap_no_district_assigned_403(client):
+    res = client.put(
+        "/api/v1/admin/settings/compensation-caps",
+        headers=_auth(district_id=""), json={"district": DISTRICT_A, "cap_amount_lkr": 50000},
+    )
+    assert res.status_code == 403
+    assert res.get_json()["error"] == "no_district_assigned"

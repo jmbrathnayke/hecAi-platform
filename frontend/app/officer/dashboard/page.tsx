@@ -4,10 +4,19 @@
 // to the officer (own cases OR their assigned divisions) and audits the view. PII is never sent.
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useTranslations, useLocale } from "next-intl";
 import { getAccessToken } from "@/lib/auth";
 import { useOfficerSession } from "@/hooks/useOfficerSession";
 import { KNOWN_STATUSES } from "@/lib/status";
 import { ModelLoadStatus } from "@/components/ModelLoadStatus";
+import { LanguageSelectorCookie } from "@/components/LanguageSelectorCookie";
+
+// Reuse the canonical case-status labels (status.statusLabels) rather than duplicating them
+// under `officer` — the keys drop the space ("Under Review" -> "UnderReview"), matching the
+// citizen status page's own convention.
+function statusKey(status: string): string {
+  return status.replace(/\s/g, "");
+}
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
 
@@ -25,13 +34,16 @@ interface OfficerCase {
 
 type LoadState = "loading" | "error" | "ready";
 
-function formatDate(iso: string | null): string {
+function formatDate(iso: string | null, locale: string): string {
   if (!iso) return "—";
   const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString();
+  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString(locale);
 }
 
 export default function OfficerDashboardPage() {
+  const t = useTranslations("officer");
+  const tStatus = useTranslations("status");
+  const locale = useLocale();
   const { officer_id, assigned_divisions } = useOfficerSession();
   const [cases, setCases] = useState<OfficerCase[]>([]);
   const [state, setState] = useState<LoadState>("loading");
@@ -78,36 +90,40 @@ export default function OfficerDashboardPage() {
       <div className="mx-auto max-w-2xl space-y-design-4">
         <header className="space-y-design-1">
           <div className="flex items-center justify-between gap-design-2">
-            <h1 className="text-title text-ink-primary">Officer Portal</h1>
+            <h1 className="text-title text-ink-primary">{t("dashboard.title")}</h1>
             <Link href="/officer/sync" className="text-label font-semibold text-forest">
-              Sync Queue
+              {t("dashboard.syncQueueLink")}
             </Link>
           </div>
           {officer_id && (
             <p className="text-caption text-ink-secondary">
               {assigned_divisions.length > 0
-                ? `Divisions: ${assigned_divisions.join(", ")}`
-                : "No divisions assigned"}
+                ? t("dashboard.divisions", { list: assigned_divisions.join(", ") })
+                : t("dashboard.noDivisions")}
             </p>
           )}
+          <div className="flex flex-col gap-design-1 pt-design-2">
+            <span className="text-caption text-ink-secondary">{t("languageLabel")}</span>
+            <LanguageSelectorCookie />
+          </div>
         </header>
 
         <ModelLoadStatus />
 
         <section className="space-y-design-3">
-          <h2 className="text-heading text-ink-primary">Your cases</h2>
+          <h2 className="text-heading text-ink-primary">{t("dashboard.yourCases")}</h2>
 
           {/* Status filter chips */}
-          <div className="flex flex-wrap gap-design-2" role="group" aria-label="Filter by status">
+          <div className="flex flex-wrap gap-design-2" role="group" aria-label={t("dashboard.filterGroupLabel")}>
             <FilterChip
-              label="All"
+              label={t("dashboard.filterAll")}
               active={statusFilter === null}
               onClick={() => setStatusFilter(null)}
             />
             {KNOWN_STATUSES.map((s) => (
               <FilterChip
                 key={s}
-                label={s}
+                label={tStatus(`statusLabels.${statusKey(s)}`)}
                 active={statusFilter === s}
                 onClick={() => setStatusFilter(s)}
               />
@@ -116,25 +132,25 @@ export default function OfficerDashboardPage() {
 
           {state === "loading" && (
             <p className="text-body text-ink-secondary" role="status">
-              Loading your cases…
+              {t("dashboard.loading")}
             </p>
           )}
 
           {state === "error" && (
             <div role="alert" className="space-y-design-2">
-              <p className="text-body text-status-error">Couldn&apos;t load your cases.</p>
+              <p className="text-body text-status-error">{t("dashboard.loadError")}</p>
               <button
                 type="button"
                 onClick={() => setReloadNonce((n) => n + 1)}
                 className="min-h-touch-target rounded-md border border-forest px-design-4 text-label font-semibold text-forest"
               >
-                Retry
+                {t("dashboard.retry")}
               </button>
             </div>
           )}
 
           {state === "ready" && cases.length === 0 && (
-            <p className="text-body text-ink-secondary">No cases in your scope yet.</p>
+            <p className="text-body text-ink-secondary">{t("dashboard.empty")}</p>
           )}
 
           {state === "ready" && cases.length > 0 && (
@@ -146,14 +162,20 @@ export default function OfficerDashboardPage() {
                 >
                   <div className="flex items-center justify-between gap-design-2">
                     <span className="text-label font-semibold text-ink-primary">
-                      {c.canonical_id ?? "(pending id)"}
+                      {c.canonical_id ?? t("dashboard.pendingId")}
                     </span>
-                    <StatusBadge status={c.status} />
+                    <StatusBadge
+                      label={
+                        KNOWN_STATUSES.includes(c.status as (typeof KNOWN_STATUSES)[number])
+                          ? tStatus(`statusLabels.${statusKey(c.status)}`)
+                          : c.status
+                      }
+                    />
                   </div>
                   <dl className="mt-design-1 flex flex-wrap gap-x-design-4 gap-y-design-1 text-caption text-ink-secondary">
                     <span>{c.damage_category ?? "—"}</span>
-                    <span>via {c.submitted_via ?? "app"}</span>
-                    <span>{formatDate(c.submitted_at)}</span>
+                    <span>{t("dashboard.via", { channel: c.submitted_via ?? "app" })}</span>
+                    <span>{formatDate(c.submitted_at, locale)}</span>
                   </dl>
                 </li>
               ))}
@@ -190,10 +212,10 @@ function FilterChip({
   );
 }
 
-function StatusBadge({ status }: { status: string }) {
+function StatusBadge({ label }: { label: string }) {
   return (
     <span className="rounded-full bg-surface-base px-design-2 text-caption font-medium text-ink-secondary">
-      {status}
+      {label}
     </span>
   );
 }

@@ -3,8 +3,11 @@
 // Admin case-list table (Story 5.3, AC3/AC4). No NIC or other citizen-identifying column —
 // this list is deliberately PII-free, mirroring officer.py's "the payload is PII-free"
 // convention; case detail (Story 5.4) is where an admin with a specific case open sees more.
+import { useLocale, useTranslations } from "next-intl";
 import type { AdminCaseListItem } from "@/lib/adminCases";
-import { STATUS_STYLES } from "@/components/admin/statusVocabulary";
+import { statusKey } from "@/lib/status";
+import { STATUS_STYLES, STATUS_VALUES } from "@/components/admin/statusVocabulary";
+import { DAMAGE_CATEGORY_KEYS } from "@/components/admin/damageVocabulary";
 
 export type SortColumn = "submitted_at" | "canonical_id" | "damage_category" | "status";
 export type SortDirection = "asc" | "desc";
@@ -18,19 +21,21 @@ interface CaseListTableProps {
   selectedOfflineId?: string | null;
 }
 
-const COLUMNS: { key: SortColumn | null; label: string }[] = [
-  { key: "canonical_id", label: "Canonical ID" },
-  { key: "damage_category", label: "Damage Category" },
-  { key: null, label: "AI Confidence" },
-  { key: "status", label: "Status" },
-  { key: "submitted_at", label: "Submission Date" },
-  { key: null, label: "Days Pending" },
+// Story 6.3: labelKey resolves against the `admin.table.*` namespace; sortKey stays the canonical
+// SortColumn value the backend/URL contract expects (do not translate sortKey).
+const COLUMNS: { sortKey: SortColumn | null; labelKey: string }[] = [
+  { sortKey: "canonical_id", labelKey: "colCanonicalId" },
+  { sortKey: "damage_category", labelKey: "colDamageCategory" },
+  { sortKey: null, labelKey: "colAiConfidence" },
+  { sortKey: "status", labelKey: "colStatus" },
+  { sortKey: "submitted_at", labelKey: "colSubmissionDate" },
+  { sortKey: null, labelKey: "colDaysPending" },
 ];
 
-function formatDate(iso: string | null): string {
+function formatDate(iso: string | null, locale: string): string {
   if (!iso) return "—";
   const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString();
+  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString(locale);
 }
 
 function daysPending(iso: string | null, status: string): string {
@@ -53,27 +58,49 @@ export function CaseListTable({
   onSelect,
   selectedOfflineId,
 }: CaseListTableProps) {
+  const t = useTranslations("admin");
+  const tStatus = useTranslations("status");
+  const tReport = useTranslations("report");
+  const locale = useLocale();
+
+  const damageLabel = (cat: string | null): string =>
+    cat ? (DAMAGE_CATEGORY_KEYS.has(cat) ? tReport(`step3.${cat}`) : cat) : "—";
+
+  // Case status values are constrained to the 5 canonical STATUS_VALUES in normal operation, but
+  // the `status` column has no DB-level CHECK constraint -- fall back to the raw value for
+  // anything outside that set instead of rendering next-intl's missing-message placeholder
+  // (Story 6.3 code review fix, mirrors StatusCard.tsx's isKnown guard).
+  const statusLabel = (status: string): string =>
+    (STATUS_VALUES as readonly string[]).includes(status)
+      ? tStatus(`statusLabels.${statusKey(status)}`)
+      : status;
+
   return (
     <table className="w-full border-collapse text-body">
       <thead>
         <tr className="border-b border-border-default text-left text-label font-medium text-ink-secondary">
-          {COLUMNS.map(({ key, label }) => (
-            <th key={label} scope="col" className="px-design-3 py-design-2">
-              {key ? (
-                <button
-                  type="button"
-                  onClick={() => onSort(key)}
-                  className="flex items-center gap-design-1 font-medium"
-                  aria-label={`Sort by ${label}`}
-                >
-                  {label}
-                  {sortCol === key && <span aria-hidden="true">{sortDir === "asc" ? "▲" : "▼"}</span>}
-                </button>
-              ) : (
-                label
-              )}
-            </th>
-          ))}
+          {COLUMNS.map(({ sortKey, labelKey }) => {
+            const label = t(`table.${labelKey}`);
+            return (
+              <th key={labelKey} scope="col" className="px-design-3 py-design-2">
+                {sortKey ? (
+                  <button
+                    type="button"
+                    onClick={() => onSort(sortKey)}
+                    className="flex items-center gap-design-1 font-medium"
+                    aria-label={t("table.sortAria", { column: label })}
+                  >
+                    {label}
+                    {sortCol === sortKey && (
+                      <span aria-hidden="true">{sortDir === "asc" ? "▲" : "▼"}</span>
+                    )}
+                  </button>
+                ) : (
+                  label
+                )}
+              </th>
+            );
+          })}
         </tr>
       </thead>
       <tbody>
@@ -107,7 +134,7 @@ export function CaseListTable({
                 {c.canonical_id ?? "—"}
               </td>
               <td className="px-design-3 py-design-2 text-ink-secondary">
-                {c.damage_category ?? "—"}
+                {damageLabel(c.damage_category)}
               </td>
               <td className="px-design-3 py-design-2 text-ink-secondary">
                 {c.ai_confidence != null ? `${Math.round(c.ai_confidence * 100)}%` : "—"}
@@ -118,11 +145,11 @@ export function CaseListTable({
                     STATUS_STYLES[c.status] ?? "bg-surface-tint text-ink-secondary"
                   }`}
                 >
-                  {c.status}
+                  {statusLabel(c.status)}
                 </span>
               </td>
               <td className="px-design-3 py-design-2 text-ink-secondary">
-                {formatDate(c.submitted_at)}
+                {formatDate(c.submitted_at, locale)}
               </td>
               <td className="px-design-3 py-design-2 text-ink-secondary">
                 {daysPending(c.submitted_at, c.status)}

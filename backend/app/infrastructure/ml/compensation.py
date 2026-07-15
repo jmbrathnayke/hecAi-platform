@@ -15,6 +15,7 @@ Story 5.2 picker).
 import json
 import logging
 import os
+from typing import Any
 
 import joblib
 import numpy as np
@@ -44,9 +45,9 @@ _DAMAGE_TYPE_MAP = {"crop": "property", "property": "property", "combined": "pro
 # though both currently resolve to the same neutral multiplier.
 _SEVERITY_MULTIPLIER = {"Minor": 0.7, "Moderate": 1.0, "Severe": 1.3, "None": 1.0}
 
-_bundle = None
-_prior_year_lookup = None
-_district_reference = None
+_bundle: dict[str, Any] | str | None = None
+_prior_year_lookup: dict[str, Any] | None = None
+_district_reference: dict[str, Any] | None = None
 
 
 def _load_model():
@@ -152,6 +153,8 @@ def estimate_and_store(cur, case_id, damage_category, ds_division_id, submitted_
 
     try:
         bundle = _load_model()
+        if not isinstance(bundle, dict):
+            return None
         resolved_district, ds_division = _resolve_district(district, ds_division_id)
         year = submitted_at.year
         prior = _prior_year_features(resolved_district, ds_division, damage_type)

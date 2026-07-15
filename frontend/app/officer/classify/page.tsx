@@ -7,6 +7,7 @@
 // result never auto-advances the case; the officer must tap Accept or Override (NFR-6.1).
 
 import { useEffect, useRef, useState } from "react";
+import { useTranslations } from "next-intl";
 import { assessImageQuality } from "@/lib/imageQuality";
 import { classifyImage, type ClassId, type ClassificationResult } from "@/lib/mobilenet";
 import { deriveCaseCategory } from "@/lib/classification";
@@ -35,6 +36,7 @@ function classIdsFromCaseCategory(category: unknown): ClassId[] {
 }
 
 export default function OfficerClassifyPage() {
+  const t = useTranslations("officer");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [status, setStatus] = useState<Status>("idle");
   const [result, setResult] = useState<ClassificationResult | null>(null);
@@ -183,13 +185,13 @@ export default function OfficerClassifyPage() {
     <main className="min-h-screen bg-surface-base px-design-4 py-design-6">
       <div className="max-w-md mx-auto space-y-design-4">
         <div className="flex items-center justify-between gap-design-3">
-          <h1 className="text-title text-ink-primary">Damage Classification</h1>
+          <h1 className="text-title text-ink-primary">{t("classify.title")}</h1>
           <button
             type="button"
             onClick={handleStartNewCase}
             className="min-h-touch-target text-label font-semibold text-forest underline"
           >
-            Start new case
+            {t("classify.startNewCase")}
           </button>
         </div>
 
@@ -209,18 +211,18 @@ export default function OfficerClassifyPage() {
           disabled={status === "classifying"}
           className="w-full min-h-primary-btn bg-forest text-ink-on-dark text-headline font-semibold rounded-md disabled:opacity-60"
         >
-          {status === "classifying" ? "Analyzing photo..." : "Capture damage photo"}
+          {status === "classifying" ? t("classify.analyzing") : t("classify.capture")}
         </button>
 
         {qualityWarning && (
           <p role="alert" className="text-caption text-status-warning">
-            Photo quality looks low (blurry or poorly lit). You can retake it or continue.
+            {t("classify.qualityWarning")}
           </p>
         )}
 
         {status === "error" && (
           <p role="alert" className="text-caption text-status-error">
-            Could not classify this photo. Please retake it and try again.
+            {t("classify.classifyError")}
           </p>
         )}
 
@@ -242,7 +244,7 @@ export default function OfficerClassifyPage() {
               }}
             />
             {decision === "accepted" && (
-              <p className="text-label text-status-success">Assessment accepted.</p>
+              <p className="text-label text-status-success">{t("classify.accepted")}</p>
             )}
             {decision === "override" && (
               <>
@@ -256,13 +258,13 @@ export default function OfficerClassifyPage() {
                 />
                 {overrideError && (
                   <p role="alert" className="text-caption text-status-error">
-                    Could not save the override. Please try again.
+                    {t("classify.overrideError")}
                   </p>
                 )}
               </>
             )}
             {decision === "overridden" && (
-              <p className="text-label text-status-success">Override recorded.</p>
+              <p className="text-label text-status-success">{t("classify.overridden")}</p>
             )}
           </>
         )}

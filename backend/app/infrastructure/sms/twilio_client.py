@@ -11,7 +11,6 @@ rest of the backend resolves config.
 import logging
 
 from flask import current_app
-from twilio.base.exceptions import TwilioRestException
 from twilio.rest import Client
 
 logger = logging.getLogger(__name__)
@@ -24,10 +23,19 @@ def get_twilio_client() -> Client:
     )
 
 
-def send_sms(to: str, body: str) -> None:
+def send_sms(to: str, body: str) -> bool:
     """Send one SMS. A delivery failure is logged, never raised: by the time a reply is sent the
     case is already committed, and Twilio must still receive our HTTP 200 (raising here would turn
-    a successful submission into a 500 that Twilio then retries)."""
+    a successful submission into a 500 that Twilio then retries). Returns True/False so callers
+    that need to distinguish success from failure (Story 5.6's notification_service, logging
+    sms_sent vs. sms_failed) can -- existing callers that only want the never-raises guarantee
+    (sms.py's reply-SMS flow) simply ignore the return value.
+
+    Catches Exception broadly, not just TwilioRestException (code review, Story 5.6): a missing/
+    misconfigured credential raises inside get_twilio_client() itself, and a bare network error
+    from the underlying HTTP client isn't a TwilioRestException either -- either would otherwise
+    escape notify_status_change() and roll back the case's own already-applied status transition,
+    which is exactly what this function's docstring promises never happens (AC5)."""
     try:
         client = get_twilio_client()
         client.messages.create(
@@ -35,5 +43,7 @@ def send_sms(to: str, body: str) -> None:
             from_=current_app.config["TWILIO_FROM_NUMBER"],
             body=body,
         )
-    except TwilioRestException:
+        return True
+    except Exception:
         logger.exception("failed to send reply SMS to %s", to)
+        return False

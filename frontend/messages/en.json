@@ -92,7 +92,8 @@
       "Submitted": "Submitted",
       "UnderReview": "Under Review",
       "Approved": "Approved",
-      "Rejected": "Rejected"
+      "Rejected": "Rejected",
+      "PaymentProcessed": "Payment Processed"
     }
   },
   "login": {
@@ -117,5 +118,303 @@
     "retry": "Retry",
     "empty": "You have no reports yet.",
     "signOut": "Sign out"
+  },
+  "officer": {
+    "languageLabel": "Language",
+    "dashboard": {
+      "title": "Officer Portal",
+      "syncQueueLink": "Sync Queue",
+      "divisions": "Divisions: {list}",
+      "noDivisions": "No divisions assigned",
+      "yourCases": "Your cases",
+      "filterGroupLabel": "Filter by status",
+      "filterAll": "All",
+      "loading": "Loading your cases…",
+      "loadError": "Couldn’t load your cases.",
+      "retry": "Retry",
+      "empty": "No cases in your scope yet.",
+      "pendingId": "(pending id)",
+      "via": "via {channel}"
+    },
+    "login": {
+      "title": "Officer Portal",
+      "google": "Sign in with Google",
+      "or": "or",
+      "emailPlaceholder": "DWC email address",
+      "passwordPlaceholder": "Password",
+      "signIn": "Sign In",
+      "networkError": "Could not reach the sign-in service. Check your connection and try again."
+    },
+    "classify": {
+      "title": "Damage Classification",
+      "startNewCase": "Start new case",
+      "analyzing": "Analyzing photo…",
+      "capture": "Capture damage photo",
+      "qualityWarning": "Photo quality looks low (blurry or poorly lit). You can retake it or continue.",
+      "classifyError": "Could not classify this photo. Please retake it and try again.",
+      "accepted": "Assessment accepted.",
+      "overrideError": "Could not save the override. Please try again.",
+      "overridden": "Override recorded."
+    },
+    "submit": {
+      "title": "Submit Report for Citizen",
+      "step1": "Step 1 of 5 — Citizen Identity",
+      "step2": "Step 2 of 5 — Location",
+      "step3": "Step 3 of 5 — Damage",
+      "step4": "Step 4 of 5 — Photo & Classification",
+      "step5": "Step 5 of 5 — Review & Submit",
+      "identityHint": "Enter the <strong>citizen’s</strong> details (the person you are assisting), not your own.",
+      "citizenNic": "Citizen’s NIC",
+      "citizenMobile": "Citizen’s mobile number",
+      "nicPlaceholder": "200012345678 or 000000000V",
+      "mobilePlaceholder": "07XXXXXXXX",
+      "nicError": "Enter a valid citizen NIC (e.g. 200012345678 or 000000000V).",
+      "mobileError": "Enter a valid citizen mobile number (07XXXXXXXX).",
+      "sessionError": "Your officer session could not be verified. Please log in again before continuing.",
+      "identitySaveError": "Could not save the citizen’s details. Please try again.",
+      "continue": "Continue",
+      "verifyingSession": "Verifying officer session…",
+      "districtLabel": "District (optional)",
+      "districtPlaceholder": "Select district",
+      "dsDivisionLabel": "DS Division (optional)",
+      "dsDivisionPlaceholder": "Select division",
+      "detectingGps": "Detecting GPS location…",
+      "gpsDetected": "GPS location detected",
+      "locationSaveError": "Could not save the location. Please try again.",
+      "gpsFailed": "Could not detect GPS. Drop a pin on the map instead.",
+      "confirmLocation": "Confirm location",
+      "damageCategoryGroup": "Damage category",
+      "damageRequired": "Select a damage category.",
+      "damageSaveError": "Could not save the damage category. Please try again.",
+      "reviewAndSubmit": "Review & Submit",
+      "reviewDamage": "Damage category",
+      "reviewAi": "AI assessment",
+      "reviewOverridden": " (overridden)",
+      "reviewLocation": "Location",
+      "reviewOfficer": "Assisting officer",
+      "submitError": "Could not complete the submission. Please try again.",
+      "submitting": "Submitting…",
+      "submit": "Submit report"
+    },
+    "submitPoc": {
+      "detailsLabel": "Officer-assisted submission details",
+      "citizenNic": "Citizen NIC",
+      "submittedByOfficer": "Submitted by officer",
+      "officerFallback": "Officer",
+      "submitAnother": "Submit another citizen"
+    },
+    "aiResult": {
+      "cardLabel": "AI classification result",
+      "confidenceBarLabel": "AI confidence",
+      "crop_damage": "Crop Damage",
+      "no_damage": "No Damage",
+      "property_damage": "Property Damage",
+      "confidence": "Confidence",
+      "processedIn": "Processed on device in {ms} ms",
+      "accept": "Accept",
+      "override": "Override"
+    },
+    "severity": {
+      "None": "None",
+      "Minor": "Minor",
+      "Moderate": "Moderate",
+      "Severe": "Severe"
+    },
+    "override": {
+      "formLabel": "Override AI classification",
+      "title": "Override classification",
+      "correctCategory": "Correct category",
+      "reasonLabel": "Reason for override",
+      "reasonPlaceholder": "Explain why the AI classification is incorrect",
+      "charCount": "{count}/{min} characters",
+      "reasonHint": "Please provide a more detailed reason",
+      "cancel": "Cancel",
+      "confirm": "Confirm Override"
+    },
+    "modelStatus": {
+      "preparing": "Preparing AI model…",
+      "ready": "AI model ready for offline classification",
+      "error": "AI model not available offline. Please reconnect to load the model."
+    },
+    "syncBar": {
+      "failed": "Some reports failed to sync after 5 attempts. Tap to review.",
+      "pending": "{count, plural, one {# report pending sync} other {# reports pending sync}}",
+      "synced": "All reports synced · Last sync {time}"
+    },
+    "syncItem": {
+      "statusPending": "Pending",
+      "statusInProgress": "Syncing…",
+      "statusFailed": "Failed",
+      "unknownDamage": "Unknown",
+      "damageLabel": "{category} damage",
+      "attempts": "{count, plural, one {# attempt} other {# attempts}}",
+      "connectionFailed": "Connection failed. Try again.",
+      "retry": "Retry",
+      "retryAria": "Retry {category} damage report"
+    },
+    "syncPage": {
+      "title": "Sync Queue",
+      "loadError": "Couldn’t load the sync queue. Check your connection and try again.",
+      "allSynced": "All reports synced",
+      "lastSync": "Last sync: {time}",
+      "offlineRetry": "You are offline — retry when connected",
+      "retryFailed": "Retry failed. Check your connection.",
+      "syncedSuccess": "Report synced successfully",
+      "errorNotConfirmed": "Sync couldn’t be confirmed. Try again or contact support.",
+      "errorServer": "Server error. Try again in a moment.",
+      "errorInProgress": "This report is already syncing."
+    }
+  },
+  "admin": {
+    "languageLabel": "Language",
+    "login": {
+      "title": "Admin Portal",
+      "google": "Sign in with Google",
+      "or": "or",
+      "emailPlaceholder": "DWC email address",
+      "passwordPlaceholder": "Password",
+      "signIn": "Sign In",
+      "networkError": "Could not reach the sign-in service. Check your connection and try again.",
+      "accessDenied": "Access denied. Admin account required."
+    },
+    "cases": {
+      "title": "Admin — Case List",
+      "selectPrompt": "Select a case to view details.",
+      "loading": "Loading cases…",
+      "loadError": "Couldn't load cases.",
+      "retry": "Retry",
+      "empty": "No cases match your current filters.",
+      "previous": "Previous",
+      "next": "Next",
+      "pageOf": "Page {page} of {total}",
+      "paginationAria": "Case list pagination"
+    },
+    "caps": {
+      "title": "Settings — Compensation Caps",
+      "intro": "Property damage cap per district. Crop and combined damage claims are bounded by the same value today — the compensation model has no separate crop/combined coverage yet.",
+      "loading": "Loading caps…",
+      "loadError": "Couldn't load compensation caps.",
+      "saveError": "Couldn't save this cap. Please try again.",
+      "colDistrict": "District",
+      "colCap": "Property damage cap (LKR)",
+      "capAria": "Property damage cap for {district}",
+      "noCapPlaceholder": "no cap enforced",
+      "saving": "Saving…",
+      "save": "Save"
+    },
+    "table": {
+      "colCanonicalId": "Canonical ID",
+      "colDamageCategory": "Damage Category",
+      "colAiConfidence": "AI Confidence",
+      "colStatus": "Status",
+      "colSubmissionDate": "Submission Date",
+      "colDaysPending": "Days Pending",
+      "sortAria": "Sort by {column}"
+    },
+    "filter": {
+      "formAria": "Filter cases",
+      "status": "Status",
+      "allStatuses": "All Statuses",
+      "from": "From",
+      "to": "To",
+      "damageType": "Damage Type",
+      "allTypes": "All Types",
+      "dsDivision": "DS Division",
+      "divisionPlaceholder": "Exact division name",
+      "apply": "Apply Filters",
+      "clear": "Clear Filters"
+    },
+    "kpi": {
+      "thisMonth": "Cases This Month",
+      "byStatus": "By Status",
+      "totalApproved": "Total Approved (LKR)",
+      "avgProcessing": "Avg Processing (Days)"
+    },
+    "detail": {
+      "loading": "Loading case…",
+      "loadError": "Couldn't load case detail.",
+      "retry": "Retry",
+      "channel": "Channel",
+      "damageCategory": "Damage Category",
+      "submitted": "Submitted",
+      "location": "Location"
+    },
+    "action": {
+      "heading": "Actions",
+      "closed": "This case is closed.",
+      "approve": "Approve",
+      "reject": "Reject",
+      "requestInfo": "Request More Info",
+      "escalate": "Escalate",
+      "markPaid": "Mark as Paid",
+      "confirmTitle": "Confirm {action}",
+      "labelApprove": "Approval",
+      "labelReject": "Rejection",
+      "labelRequestInfo": "Request for Info",
+      "labelEscalate": "Escalation",
+      "labelMarkPaid": "Mark as Paid",
+      "approvedAmount": "Approved Amount (LKR)",
+      "reason": "Reason",
+      "reasonOptional": "Reason (optional)",
+      "submitting": "Submitting…",
+      "confirm": "Confirm",
+      "cancel": "Cancel",
+      "actionError": "Couldn't complete this action. Please try again."
+    },
+    "compensation": {
+      "empty": "No estimate available.",
+      "heading": "Compensation Estimate",
+      "aiRecommendation": "AI Recommendation — Admin approval required",
+      "recommendedAmount": "Recommended Amount",
+      "capYes": "Cap applied: Yes — raw estimate: {amount}",
+      "capNo": "Cap applied: No",
+      "colFeature": "Feature",
+      "colValue": "Value"
+    },
+    "audit": {
+      "heading": "Audit Trail",
+      "verify": "Verify chain integrity",
+      "valid": "Chain intact — no tampering detected.",
+      "invalidWithRow": "Tampering detected in the audit log (row #{row}).",
+      "invalidNoRow": "Tampering detected in the audit log.",
+      "unauthorized": "Session expired — please sign in again.",
+      "error": "Couldn't verify chain integrity right now."
+    },
+    "ai": {
+      "empty": "Not yet AI-classified.",
+      "heading": "AI Classification",
+      "confidence": "{pct}% confidence",
+      "originalClass": "Original AI class:",
+      "officerOverride": "Officer override:",
+      "reasonLabel": "Reason:"
+    },
+    "photo": {
+      "unavailable": "Photo viewing isn't available yet."
+    },
+    "analytics": {
+      "title": "Analytics Dashboard",
+      "backToCases": "← Back to Cases",
+      "filterAria": "Filter analytics by date range",
+      "from": "From",
+      "to": "To",
+      "loading": "Loading analytics…",
+      "loadError": "Couldn't load analytics.",
+      "retry": "Retry",
+      "volumeTrend": "Case Volume (Last 12 Months)",
+      "statusDistribution": "Status Distribution",
+      "compensationTotal": "Total Approved Compensation by Month",
+      "aiMetrics": "AI Performance Metrics",
+      "noData": "No data available for this period.",
+      "caseCount": "Cases",
+      "confidenceHistogram": "AI Confidence Distribution",
+      "overrideRateTrend": "Override Rate",
+      "avgProcessingTime": "Avg. AI Processing Time",
+      "processingTimeValue": "{ms} ms",
+      "trend": {
+        "up": "Up from {last}% last month",
+        "down": "Down from {last}% last month",
+        "flat": "No change from {last}% last month"
+      }
+    }
   }
 }

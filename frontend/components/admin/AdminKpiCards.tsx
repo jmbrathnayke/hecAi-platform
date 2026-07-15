@@ -3,13 +3,18 @@
 // Admin dashboard KPI cards (Story 5.3 AC5, FR-7.1). District-wide, independent of the
 // case list's own filters (a deliberate design choice — see admin.py's separate KPI
 // queries, not the old stub's single combined query).
+import { useTranslations } from "next-intl";
 import type { AdminCaseKpis } from "@/lib/adminCases";
+import { statusKey } from "@/lib/status";
+import { STATUS_VALUES } from "@/components/admin/statusVocabulary";
 
 interface AdminKpiCardsProps {
   kpis: AdminCaseKpis | null;
   loading: boolean;
 }
 
+// Currency stays "Rs." + en-LK grouping (Sri Lankan number format is locale-invariant across the
+// UI languages here; Story 6.3 CRITICAL #7 keeps this untranslated).
 function formatLkr(amount: number): string {
   return `Rs. ${amount.toLocaleString("en-LK", { maximumFractionDigits: 0 })}`;
 }
@@ -33,6 +38,9 @@ function KpiSkeleton() {
 }
 
 export function AdminKpiCards({ kpis, loading }: AdminKpiCardsProps) {
+  const t = useTranslations("admin");
+  const tStatus = useTranslations("status");
+
   if (loading || !kpis) {
     return (
       <div className="grid grid-cols-2 gap-design-3 md:grid-cols-4" data-testid="kpi-skeleton">
@@ -44,18 +52,26 @@ export function AdminKpiCards({ kpis, loading }: AdminKpiCardsProps) {
     );
   }
 
+  // Falls back to the raw status string for any value outside the 5 canonical STATUS_VALUES
+  // (the `status` column has no DB-level CHECK constraint) instead of rendering next-intl's
+  // missing-message placeholder (Story 6.3 code review fix).
   const statusBreakdown =
     Object.entries(kpis.by_status)
-      .map(([status, count]) => `${status}: ${count}`)
+      .map(([status, count]) => {
+        const label = (STATUS_VALUES as readonly string[]).includes(status)
+          ? tStatus(`statusLabels.${statusKey(status)}`)
+          : status;
+        return `${label}: ${count}`;
+      })
       .join(", ") || "—";
 
   return (
     <div className="grid grid-cols-2 gap-design-3 md:grid-cols-4">
-      <KpiCard label="Cases This Month" value={kpis.this_month} />
-      <KpiCard label="By Status" value={statusBreakdown} />
-      <KpiCard label="Total Approved (LKR)" value={formatLkr(kpis.total_approved_lkr)} />
+      <KpiCard label={t("kpi.thisMonth")} value={kpis.this_month} />
+      <KpiCard label={t("kpi.byStatus")} value={statusBreakdown} />
+      <KpiCard label={t("kpi.totalApproved")} value={formatLkr(kpis.total_approved_lkr)} />
       <KpiCard
-        label="Avg Processing (Days)"
+        label={t("kpi.avgProcessing")}
         value={kpis.avg_processing_days != null ? kpis.avg_processing_days : "—"}
       />
     </div>

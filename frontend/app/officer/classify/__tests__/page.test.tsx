@@ -1,6 +1,18 @@
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import OfficerClassifyPage from "@/app/officer/classify/page";
 import { assessImageQuality } from "@/lib/imageQuality";
+
+// next-intl passthrough (Story 6.2): translator returns the key (+ interpolation values). Covers
+// the page plus the localized AIResultCard / OverrideForm it renders.
+jest.mock("next-intl", () => ({
+  useTranslations: () => {
+    const t = (key: string, vars?: Record<string, unknown>) =>
+      vars && Object.keys(vars).length ? `${key} ${Object.values(vars).join(" ")}` : key;
+    t.rich = (key: string) => key;
+    return t;
+  },
+  useLocale: () => "en",
+}));
 import { classifyImage } from "@/lib/mobilenet";
 import { saveClassification, saveOverride, getCase } from "@/lib/indexeddb";
 import { getDraftId, getOrCreateDraftId, clearDraftId } from "@/lib/draft";
@@ -55,7 +67,7 @@ describe("OfficerClassifyPage", () => {
     expect(await screen.findByTestId("ai-result-card")).toBeInTheDocument();
     expect(mockAssess).toHaveBeenCalledTimes(1);
     expect(mockClassify).toHaveBeenCalledTimes(1);
-    expect(screen.getByText("Property Damage")).toBeInTheDocument();
+    expect(screen.getByText("aiResult.property_damage")).toBeInTheDocument();
     expect(screen.getByText("89%")).toBeInTheDocument();
   });
 
@@ -137,7 +149,7 @@ describe("OfficerClassifyPage", () => {
     render(<OfficerClassifyPage />);
     selectPhoto();
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(/photo quality looks low/i);
+    expect(await screen.findByRole("alert")).toHaveTextContent(/classify.qualityWarning/i);
     expect(await screen.findByTestId("ai-result-card")).toBeInTheDocument();
     expect(mockClassify).toHaveBeenCalledTimes(1);
   });
@@ -147,7 +159,7 @@ describe("OfficerClassifyPage", () => {
     render(<OfficerClassifyPage />);
     selectPhoto();
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(/could not classify/i);
+    expect(await screen.findByRole("alert")).toHaveTextContent(/classify.classifyError/i);
     expect(screen.queryByTestId("ai-result-card")).not.toBeInTheDocument();
   });
 
@@ -156,9 +168,9 @@ describe("OfficerClassifyPage", () => {
     selectPhoto();
     await screen.findByTestId("ai-result-card");
 
-    expect(screen.queryByText("Assessment accepted.")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Accept" }));
-    expect(await screen.findByText("Assessment accepted.")).toBeInTheDocument();
+    expect(screen.queryByText("classify.accepted")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "aiResult.accept" }));
+    expect(await screen.findByText("classify.accepted")).toBeInTheDocument();
   });
 
   it("opens the OverrideForm (not the old prompt) when Override is tapped (AC1)", async () => {
@@ -166,7 +178,7 @@ describe("OfficerClassifyPage", () => {
     selectPhoto();
     await screen.findByTestId("ai-result-card");
 
-    fireEvent.click(screen.getByRole("button", { name: "Override" }));
+    fireEvent.click(screen.getByRole("button", { name: "aiResult.override" }));
     expect(await screen.findByTestId("override-form")).toBeInTheDocument();
     // the placeholder prompt from 3.3 is gone
     expect(screen.queryByText("Select the correct category to override.")).not.toBeInTheDocument();
@@ -179,13 +191,13 @@ describe("OfficerClassifyPage", () => {
     await screen.findByTestId("ai-result-card");
     await waitFor(() => expect(mockSave).toHaveBeenCalledTimes(1));
 
-    fireEvent.click(screen.getByRole("button", { name: "Override" }));
+    fireEvent.click(screen.getByRole("button", { name: "aiResult.override" }));
     await screen.findByTestId("override-form");
-    fireEvent.click(screen.getByLabelText("Crop Damage"));
-    fireEvent.change(screen.getByLabelText("Reason for override"), {
+    fireEvent.click(screen.getByLabelText("aiResult.crop_damage"));
+    fireEvent.change(screen.getByLabelText("override.reasonLabel"), {
       target: { value: "paddy field flooded, not a structure" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Confirm Override" }));
+    fireEvent.click(screen.getByRole("button", { name: "override.confirm" }));
 
     await waitFor(() => expect(mockSaveOverride).toHaveBeenCalledTimes(1));
     expect(mockSaveOverride).toHaveBeenCalledWith("draft-1", {
@@ -198,7 +210,7 @@ describe("OfficerClassifyPage", () => {
     // ai_* fields are never re-written by the override — only the initial classification save touched them.
     expect(mockSave).toHaveBeenCalledTimes(1);
     expect(mockSaveOverride.mock.calls[0][1]).not.toHaveProperty("ai_category");
-    expect(await screen.findByText("Override recorded.")).toBeInTheDocument();
+    expect(await screen.findByText("classify.overridden")).toBeInTheDocument();
   });
 
   it("recomputes case_category by substituting the corrected class for THIS photo (AC6)", async () => {
@@ -219,13 +231,13 @@ describe("OfficerClassifyPage", () => {
     await waitFor(() => expect(mockSave).toHaveBeenCalledTimes(2));
     expect(mockSave.mock.calls[1][1].case_category).toBe("combined");
 
-    fireEvent.click(screen.getByRole("button", { name: "Override" }));
+    fireEvent.click(screen.getByRole("button", { name: "aiResult.override" }));
     await screen.findByTestId("override-form");
-    fireEvent.click(screen.getByLabelText("Crop Damage"));
-    fireEvent.change(screen.getByLabelText("Reason for override"), {
+    fireEvent.click(screen.getByLabelText("aiResult.crop_damage"));
+    fireEvent.change(screen.getByLabelText("override.reasonLabel"), {
       target: { value: "second photo is also crop damage" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Confirm Override" }));
+    fireEvent.click(screen.getByRole("button", { name: "override.confirm" }));
 
     await waitFor(() => expect(mockSaveOverride).toHaveBeenCalledTimes(1));
     expect(mockSaveOverride.mock.calls[0][1].case_category).toBe("crop_damage");
@@ -239,13 +251,13 @@ describe("OfficerClassifyPage", () => {
     await screen.findByTestId("ai-result-card");
     await waitFor(() => expect(mockSave).toHaveBeenCalledTimes(1));
 
-    fireEvent.click(screen.getByRole("button", { name: "Override" }));
+    fireEvent.click(screen.getByRole("button", { name: "aiResult.override" }));
     await screen.findByTestId("override-form");
     // leave the category at the preselected property_damage
-    fireEvent.change(screen.getByLabelText("Reason for override"), {
+    fireEvent.change(screen.getByLabelText("override.reasonLabel"), {
       target: { value: "looks correct, noting the collapsed roof" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Confirm Override" }));
+    fireEvent.click(screen.getByRole("button", { name: "override.confirm" }));
 
     await waitFor(() => expect(mockSaveOverride).toHaveBeenCalledTimes(1));
     expect(mockSaveOverride.mock.calls[0][1].override_applied).toBe(false);
@@ -261,21 +273,21 @@ describe("OfficerClassifyPage", () => {
     selectPhoto();
     await screen.findByTestId("ai-result-card");
 
-    fireEvent.click(screen.getByRole("button", { name: "Override" }));
+    fireEvent.click(screen.getByRole("button", { name: "aiResult.override" }));
     await screen.findByTestId("override-form");
-    fireEvent.click(screen.getByLabelText("Crop Damage"));
-    fireEvent.change(screen.getByLabelText("Reason for override"), {
+    fireEvent.click(screen.getByLabelText("aiResult.crop_damage"));
+    fireEvent.change(screen.getByLabelText("override.reasonLabel"), {
       target: { value: "paddy field flooded, not a structure" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Confirm Override" }));
+    fireEvent.click(screen.getByRole("button", { name: "override.confirm" }));
 
     // an override-specific error appears; the classification "retake photo" error does NOT
-    expect(await screen.findByText(/could not save the override/i)).toBeInTheDocument();
-    expect(screen.queryByText(/could not classify this photo/i)).not.toBeInTheDocument();
+    expect(await screen.findByText(/classify.overrideError/i)).toBeInTheDocument();
+    expect(screen.queryByText(/classify.classifyError/i)).not.toBeInTheDocument();
     // result view (and the form with the typed reason) stays mounted; not marked recorded
     expect(screen.getByTestId("ai-result-card")).toBeInTheDocument();
     expect(screen.getByTestId("override-form")).toBeInTheDocument();
-    expect(screen.queryByText("Override recorded.")).not.toBeInTheDocument();
+    expect(screen.queryByText("classify.overridden")).not.toBeInTheDocument();
   });
 
   it("does not let Accept contradict a recorded override (P4)", async () => {
@@ -283,19 +295,19 @@ describe("OfficerClassifyPage", () => {
     selectPhoto();
     await screen.findByTestId("ai-result-card");
 
-    fireEvent.click(screen.getByRole("button", { name: "Override" }));
+    fireEvent.click(screen.getByRole("button", { name: "aiResult.override" }));
     await screen.findByTestId("override-form");
-    fireEvent.click(screen.getByLabelText("Crop Damage"));
-    fireEvent.change(screen.getByLabelText("Reason for override"), {
+    fireEvent.click(screen.getByLabelText("aiResult.crop_damage"));
+    fireEvent.change(screen.getByLabelText("override.reasonLabel"), {
       target: { value: "paddy field flooded, not a structure" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Confirm Override" }));
-    expect(await screen.findByText("Override recorded.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "override.confirm" }));
+    expect(await screen.findByText("classify.overridden")).toBeInTheDocument();
 
     // tapping Accept now must not flip to "Assessment accepted." (would contradict the save)
-    fireEvent.click(screen.getByRole("button", { name: "Accept" }));
-    expect(screen.queryByText("Assessment accepted.")).not.toBeInTheDocument();
-    expect(screen.getByText("Override recorded.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "aiResult.accept" }));
+    expect(screen.queryByText("classify.accepted")).not.toBeInTheDocument();
+    expect(screen.getByText("classify.overridden")).toBeInTheDocument();
   });
 
   it("'Start new case' clears the rollup so the next case does not inherit prior photos (Story 3.5 AC7)", async () => {
@@ -314,7 +326,7 @@ describe("OfficerClassifyPage", () => {
     await waitFor(() => expect(mockSave).toHaveBeenCalledTimes(1));
     expect(mockSave.mock.calls[0][1].case_category).toBe("crop_damage");
 
-    fireEvent.click(screen.getByRole("button", { name: "Start new case" }));
+    fireEvent.click(screen.getByRole("button", { name: "classify.startNewCase" }));
     expect(clearDraftId as jest.Mock).toHaveBeenCalledTimes(1);
     // the result card is torn down back to idle
     expect(screen.queryByTestId("ai-result-card")).not.toBeInTheDocument();
@@ -329,12 +341,12 @@ describe("OfficerClassifyPage", () => {
     selectPhoto();
     await screen.findByTestId("ai-result-card");
 
-    fireEvent.click(screen.getByRole("button", { name: "Override" }));
+    fireEvent.click(screen.getByRole("button", { name: "aiResult.override" }));
     await screen.findByTestId("override-form");
-    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    fireEvent.click(screen.getByRole("button", { name: "override.cancel" }));
 
     expect(screen.queryByTestId("override-form")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Accept" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "aiResult.accept" })).toBeInTheDocument();
     expect(mockSaveOverride).not.toHaveBeenCalled();
   });
 });

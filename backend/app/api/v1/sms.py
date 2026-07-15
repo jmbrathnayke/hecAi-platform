@@ -36,9 +36,15 @@ sms_bp = Blueprint("sms", __name__)
 NIC_RE = re.compile(r"^([0-9]{9}[VX]|[0-9]{12})$")
 COORD_RE = re.compile(r"^(-?\d+\.?\d*),(-?\d+\.?\d*)$")
 DAMAGE_MAP = {"CROP": "crop", "PROPERTY": "property", "COMBINED": "combined", "NONE": "none"}
+# Optional 5th token (Story 5.6, FR-6.3): the citizen's mobile, so status-change SMS
+# notifications have somewhere to go -- this is the ONLY channel that can ever produce a
+# PLAINTEXT, server-readable citizen mobile (the app/officer-assisted channels AES-GCM encrypt
+# it client-side with a non-extractable key -- see notification_service.py). Same shape as
+# frontend/lib/validation.ts's MOBILE_REGEX (Sri Lanka mobile, 10 digits starting with 07).
+MOBILE_RE = re.compile(r"^07[0-9]{8}$")
 
 ERROR_REPLY = (
-    "Invalid format. Send: REPORT <NIC> <LAT>,<LNG> <TYPE>. "
+    "Invalid format. Send: REPORT <NIC> <LAT>,<LNG> <TYPE> [MOBILE]. "
     "Types: CROP/PROPERTY/COMBINED/NONE"
 )
 UNREGISTERED_REPLY = "Your number is not registered as a DWC officer. Contact admin."
@@ -84,10 +90,20 @@ def inbound_sms():
 
     # --- Parse (AC4 / AC7: anything not matching the grammar, incl. USSD-shaped text, replies) ---
     parts = body.split()
-    if len(parts) != 4 or parts[0] != "REPORT":
+    if len(parts) not in (4, 5) or parts[0] != "REPORT":
         return reply(ERROR_REPLY)
 
-    _, nic, coords_raw, damage_raw = parts
+    # Optional 5th token (Story 5.6): backward compatible with the original 4-token form --
+    # an officer who never adopts the extended format keeps working exactly as before.
+    mobile = None
+    if len(parts) == 5:
+        _, nic, coords_raw, damage_raw, mobile_raw = parts
+        if not MOBILE_RE.match(mobile_raw):
+            return reply(ERROR_REPLY)
+        mobile = mobile_raw
+    else:
+        _, nic, coords_raw, damage_raw = parts
+
     if not NIC_RE.match(nic):
         return reply(ERROR_REPLY)
     coord_match = COORD_RE.match(coords_raw)
@@ -152,9 +168,10 @@ def inbound_sms():
                         """INSERT INTO cases
                              (offline_id, canonical_id, damage_category, gps_lat, gps_lng,
                               submitter_identity_hash, officer_id, submitted_by_officer,
-                              submitted_via, citizen_nic_plain, twilio_message_sid, status)
+                              submitted_via, citizen_nic_plain, twilio_message_sid,
+                              citizen_mobile_plain, status)
                            VALUES (%s, %s, %s, %s, %s, %s, %s, TRUE,
-                                   'sms', %s, %s, 'Submitted')
+                                   'sms', %s, %s, %s, 'Submitted')
                            ON CONFLICT (twilio_message_sid) DO NOTHING
                            RETURNING id""",
                         (
@@ -167,6 +184,7 @@ def inbound_sms():
                             officer_id,
                             nic,
                             message_sid,
+                            mobile,
                         ),
                     )
                     row = cur.fetchone()

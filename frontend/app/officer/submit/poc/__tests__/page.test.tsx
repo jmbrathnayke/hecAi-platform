@@ -1,6 +1,18 @@
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import OfficerPoCPage from "@/app/officer/submit/poc/page";
 import { getCase } from "@/lib/indexeddb";
+
+// next-intl passthrough (Story 6.2): translator returns the key. Story 6.2 removed this page's
+// local English-only provider, so PoCCard (useTranslations("poc")) now relies on this stub too.
+jest.mock("next-intl", () => ({
+  useTranslations: () => {
+    const t = (key: string, vars?: Record<string, unknown>) =>
+      vars && Object.keys(vars).length ? `${key} ${Object.values(vars).join(" ")}` : key;
+    t.rich = (key: string) => key;
+    return t;
+  },
+  useLocale: () => "en",
+}));
 import { buildPoC, submitCaseOnline } from "@/lib/poc";
 import { enqueueCase } from "@/lib/syncQueue";
 import { OFFICER_POC_NIC_KEY, clearOfficerPocMask } from "@/lib/officerPoc";
@@ -233,7 +245,7 @@ describe("OfficerPoCPage", () => {
     mockBuildPoC.mockResolvedValue(pocRecord());
     render(<OfficerPoCPage />);
 
-    const button = await screen.findByRole("button", { name: /Submit another citizen/i });
+    const button = await screen.findByRole("button", { name: "submitPoc.submitAnother" });
     fireEvent.click(button);
 
     expect(clearDraftId as jest.Mock).toHaveBeenCalledTimes(1);

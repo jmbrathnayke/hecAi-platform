@@ -6,6 +6,7 @@
 // scoped, filtered, sorted, paginated list from GET /api/v1/admin/cases via lib/adminCases.
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { createClient } from "@/lib/supabase";
 import { getAccessToken } from "@/lib/auth";
 import {
@@ -18,6 +19,8 @@ import { CaseListTable, type SortColumn, type SortDirection } from "@/components
 import { FilterBar, type AdminCaseFilters } from "@/components/admin/FilterBar";
 import { AdminKpiCards } from "@/components/admin/AdminKpiCards";
 import { CaseDetailPanel } from "@/components/admin/CaseDetailPanel";
+import { LanguageSelectorCookie } from "@/components/LanguageSelectorCookie";
+import Link from "next/link";
 
 type LoadState = "loading" | "error" | "ready";
 const PAGE_SIZE = 20;
@@ -41,6 +44,7 @@ export default function AdminCasesPage() {
 }
 
 function AdminCasesPageContent() {
+  const t = useTranslations("admin");
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -223,14 +227,25 @@ function AdminCasesPageContent() {
     <CaseDetailPanel offlineId={selectedOfflineId} />
   ) : (
     <div className="hidden rounded-md border border-dashed border-border-default p-design-4 text-body text-ink-disabled lg:block">
-      Select a case to view details.
+      {t("cases.selectPrompt")}
     </div>
   );
 
   return (
     <main className="min-h-screen bg-surface-base px-design-4 py-design-6">
       <div className="mx-auto max-w-6xl space-y-design-4">
-        <h1 className="text-title text-ink-primary">Admin — Case List</h1>
+        <header className="flex flex-wrap items-start justify-between gap-design-2">
+          <div>
+            <h1 className="text-title text-ink-primary">{t("cases.title")}</h1>
+            <Link href="/admin/analytics" className="text-label text-civic underline">
+              {t("analytics.title")}
+            </Link>
+          </div>
+          <div className="flex flex-col gap-design-1">
+            <span className="text-caption text-ink-secondary">{t("languageLabel")}</span>
+            <LanguageSelectorCookie />
+          </div>
+        </header>
 
         <AdminKpiCards kpis={data?.kpis ?? null} loading={state === "loading" && !data} />
 
@@ -238,25 +253,25 @@ function AdminCasesPageContent() {
 
         {state === "loading" && !data && (
           <p className="text-body text-ink-secondary" role="status">
-            Loading cases…
+            {t("cases.loading")}
           </p>
         )}
 
         {state === "error" && (
           <div role="alert" className="space-y-design-2">
-            <p className="text-body text-status-error">Couldn&apos;t load cases.</p>
+            <p className="text-body text-status-error">{t("cases.loadError")}</p>
             <button
               type="button"
               onClick={() => setReloadNonce((n) => n + 1)}
               className="min-h-touch-target rounded-md border border-forest px-design-4 text-label font-semibold text-forest"
             >
-              Retry
+              {t("cases.retry")}
             </button>
           </div>
         )}
 
         {state === "ready" && data && data.items.length === 0 && (
-          <p className="text-body text-ink-secondary">No cases match your current filters.</p>
+          <p className="text-body text-ink-secondary">{t("cases.empty")}</p>
         )}
 
         {data && data.items.length > 0 && (
@@ -274,7 +289,7 @@ function AdminCasesPageContent() {
               {totalPages > 1 && (
                 <nav
                   className="mt-design-3 flex items-center justify-between gap-design-2"
-                  aria-label="Case list pagination"
+                  aria-label={t("cases.paginationAria")}
                 >
                   <button
                     type="button"
@@ -282,10 +297,10 @@ function AdminCasesPageContent() {
                     onClick={() => updateUrl({ page: page - 1 })}
                     className="min-h-touch-target rounded-md border border-border-default px-design-3 text-label disabled:opacity-40"
                   >
-                    Previous
+                    {t("cases.previous")}
                   </button>
                   <span className="text-caption text-ink-secondary">
-                    Page {page} of {totalPages}
+                    {t("cases.pageOf", { page, total: totalPages })}
                   </span>
                   <button
                     type="button"
@@ -293,7 +308,7 @@ function AdminCasesPageContent() {
                     onClick={() => updateUrl({ page: page + 1 })}
                     className="min-h-touch-target rounded-md border border-border-default px-design-3 text-label disabled:opacity-40"
                   >
-                    Next
+                    {t("cases.next")}
                   </button>
                 </nav>
               )}

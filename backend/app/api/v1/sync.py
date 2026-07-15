@@ -205,13 +205,17 @@ def _sync_one(cur, item: dict, officer_id: str) -> dict:
     ai_severity = item.get("ai_severity")
     ai_severity = ai_severity if isinstance(ai_severity, str) and ai_severity else None
 
+    # Case locale for notifications (Story 5.6, FR-6.3, OQ-B)
+    locale = item.get("locale")
+    locale = locale if isinstance(locale, str) and locale in ("si", "ta", "en") else "si"
+
     # Race-safe insert: a concurrent sync of the same offline_id yields no row.
     cur.execute(
         """INSERT INTO cases
              (offline_id, canonical_id, damage_category,
               gps_lat, gps_lng, submitter_identity_hash,
-              officer_id, submitted_by_officer, district, ds_division_id)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+              officer_id, submitted_by_officer, district, ds_division_id, locale)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
            ON CONFLICT (offline_id) DO NOTHING
            RETURNING id""",
         (
@@ -225,6 +229,7 @@ def _sync_one(cur, item: dict, officer_id: str) -> dict:
             submitted_by_officer,
             district,
             ds_division,
+            locale,
         ),
     )
     row = cur.fetchone()

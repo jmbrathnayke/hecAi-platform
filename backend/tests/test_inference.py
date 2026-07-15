@@ -9,6 +9,7 @@ import json
 
 import jwt
 import pytest
+from typing import Any
 
 from app import create_app
 
@@ -31,7 +32,7 @@ class FakeCursor:
     def __exit__(self, *exc):
         return False
 
-    def execute(self, sql, params=()):
+    def execute(self, sql: str, params: tuple[Any, ...] = ()):
         if "SELECT id FROM cases" in sql:
             oid = params[0]
             self._result = (self.store["cases"][oid],) if oid in self.store["cases"] else None

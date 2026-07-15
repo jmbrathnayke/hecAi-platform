@@ -8,6 +8,7 @@ from datetime import datetime
 
 import jwt
 import pytest
+from typing import Any
 
 from app import create_app
 
@@ -52,7 +53,7 @@ class FakeCursor:
     def __exit__(self, *exc):
         return False
 
-    def execute(self, sql, params=()):
+    def execute(self, sql: str, params: tuple[Any, ...] = ()):
         if "FROM cases" in sql:
             citizen_id, _limit = params
             rows = [c for c in self.store["cases"] if c["citizen_id"] == citizen_id]

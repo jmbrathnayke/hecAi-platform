@@ -10,6 +10,7 @@ import type { CookieMethodsServer } from "@supabase/ssr";
 
 function requireEnv(name: string): string {
   const value = process.env[name];
+  console.log("[TEMP-DIAG] requireEnv", name, "=", JSON.stringify(value));
   if (!value) {
     // A missing env var here means a deployment misconfiguration, not a recoverable
     // runtime state — fail loudly and immediately rather than letting the Supabase SDK
