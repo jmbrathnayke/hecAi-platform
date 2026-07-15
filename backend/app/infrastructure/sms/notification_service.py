@@ -8,11 +8,8 @@ failure is recorded as its own audit event, not an error (see CRITICAL #1/#7 in 
 from app.infrastructure.audit import write_audit_log
 from app.infrastructure.sms.twilio_client import send_sms
 
-# Hardcoded (CRITICAL #6, Story 5.6): no locale/language column exists anywhere in the schema, so
-# there is no per-case language to look up. Sinhala matches the citizen portal's own default
-# locale (AD-6) and the primary rural-Sinhala persona -- sms_templates already has ta/en rows
-# seeded and ready the moment a per-case locale exists (see the story's Open Question OQ-B).
-_LANGUAGE = "si"
+# Look up case locale from the cases table (Story 5.6, FR-6.3, OQ-B resolved).
+# Fall back to 'si' (Sinhala) if not found.
 
 
 def notify_status_change(cur, case_id, canonical_id, citizen_mobile_plain, new_status, admin_id,
@@ -25,9 +22,17 @@ def notify_status_change(cur, case_id, canonical_id, citizen_mobile_plain, new_s
         write_audit_log(cur, case_id, "sms_skipped_no_mobile", admin_id, {"status": new_status})
         return
 
+    # Fetch locale from cases table
+    try:
+        cur.execute("SELECT locale FROM cases WHERE id = %s", (case_id,))
+        row_locale = cur.fetchone()
+        locale = row_locale[0] if row_locale else "si"
+    except Exception:
+        locale = "si"
+
     cur.execute(
         "SELECT template FROM sms_templates WHERE language = %s AND status = %s",
-        (_LANGUAGE, new_status),
+        (locale, new_status),
     )
     row = cur.fetchone()
     if row is None:

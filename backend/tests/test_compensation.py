@@ -10,6 +10,7 @@ The DB is faked (no Postgres in CI): FakeCursor implements just the two SQL stat
 estimate_and_store() issues, mirroring test_sync.py's pattern.
 """
 from datetime import datetime, timezone
+from typing import Any
 
 import numpy as np
 import pytest
@@ -42,7 +43,7 @@ class FakeCursor:
         self.store = store
         self._result = None
 
-    def execute(self, sql, params=()):
+    def execute(self, sql: str, params: tuple[Any, ...] = ()):
         if sql == "SAVEPOINT compensation_estimate":
             self.store.setdefault("savepoint_events", []).append("SAVEPOINT")
             self._result = None
@@ -200,6 +201,7 @@ def test_happy_path_no_gate_produces_zero_amount(store):
     result = compensation.estimate_and_store(
         FakeCursor(store), 42, "crop", None, SUBMITTED_AT
     )
+    assert result is not None
     assert result["amount_lkr"] == 0.0
     assert result["raw_estimate_lkr"] == 0.0
     assert result["capped"] is False
@@ -215,6 +217,7 @@ def test_happy_path_gate_true_produces_expm1_amount(store):
     result = compensation.estimate_and_store(
         FakeCursor(store), 7, "property", None, SUBMITTED_AT
     )
+    assert result is not None
     assert result["amount_lkr"] == pytest.approx(100000.0, rel=1e-6)
     assert result["raw_estimate_lkr"] == pytest.approx(100000.0, rel=1e-6)
     assert result["capped"] is False
@@ -227,6 +230,7 @@ def test_cap_present_and_exceeded_clamps_amount(store):
     result = compensation.estimate_and_store(
         FakeCursor(store), 7, "property", None, SUBMITTED_AT
     )
+    assert result is not None
     assert result["capped"] is True
     assert result["amount_lkr"] == 50000.0
     assert result["raw_estimate_lkr"] == pytest.approx(100000.0, rel=1e-6)  # raw preserved
@@ -239,6 +243,7 @@ def test_cap_present_but_not_exceeded_does_not_clamp(store):
     result = compensation.estimate_and_store(
         FakeCursor(store), 7, "property", None, SUBMITTED_AT
     )
+    assert result is not None
     assert result["capped"] is False
     assert result["amount_lkr"] == pytest.approx(30000.0, rel=1e-6)
 
@@ -249,6 +254,7 @@ def test_cap_absent_never_clamps(store):
     result = compensation.estimate_and_store(
         FakeCursor(store), 7, "property", None, SUBMITTED_AT
     )
+    assert result is not None
     assert result["capped"] is False
     assert result["amount_lkr"] == pytest.approx(999999.0, rel=1e-6)
 
@@ -273,6 +279,7 @@ def test_explicit_district_arg_used_directly(store):
     result = compensation.estimate_and_store(
         FakeCursor(store), 7, "property", "ඉපලෝගම", SUBMITTED_AT, district="අනුරාධපුරය",
     )
+    assert result is not None
     assert result["feature_values"]["district"] == "අනුරාධපුරය"
     assert result["feature_values"]["ds_division"] == "ඉපලෝගම"
 
@@ -288,6 +295,7 @@ def test_severe_severity_multiplies_raw_estimate_before_capping(store):
         FakeCursor(store), 7, "property", None, SUBMITTED_AT, ai_severity="Severe",
     )
     # 100000 * 1.3 = 130000, which now exceeds the 120000 cap -> still correctly capped
+    assert result is not None
     assert result["raw_estimate_lkr"] == pytest.approx(130000.0, rel=1e-6)
     assert result["capped"] is True
     assert result["amount_lkr"] == 120000.0
@@ -301,6 +309,7 @@ def test_absent_ai_severity_is_neutral_not_zero(store):
     result = compensation.estimate_and_store(
         FakeCursor(store), 7, "property", None, SUBMITTED_AT, ai_severity=None,
     )
+    assert result is not None
     assert result["raw_estimate_lkr"] == pytest.approx(100000.0, rel=1e-6)
     assert result["feature_values"]["severity_multiplier"] == 1.0
 
@@ -314,6 +323,7 @@ def test_feature_values_contains_no_pii(store):
     result = compensation.estimate_and_store(
         FakeCursor(store), 7, "property", None, SUBMITTED_AT
     )
+    assert result is not None
     keys = set(result["feature_values"].keys())
     assert keys == {
         "damage_type", "district", "ds_division", "year", "prior_year_amount",

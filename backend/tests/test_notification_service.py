@@ -5,6 +5,7 @@ calls the REAL write_audit_log(), not a mock of it) plus a sms_templates lookup 
 monkeypatched send_sms captured into a list.
 """
 import json
+from typing import Any
 
 import pytest
 
@@ -15,6 +16,8 @@ TEMPLATES = {
     ("si", "Rejected"): "ඔබගේ HEC හිමිකම් පත්‍රය {ref} ප්‍රතික්ෂේප කර ඇත.",
     ("si", "Under Review"): "ඔබගේ HEC හිමිකම් පත්‍රය {ref} සමාලෝචනය වෙමින් පවතී.",
     ("si", "Payment Processed"): "ඔබගේ HEC හිමිකම් පත්‍රය {ref} සඳහා ගෙවීම සිදු කර ඇත.",
+    ("ta", "Approved"): "உங்கள் HEC கோரிக்கை {ref} அங்கீகரிக்கப்பட்டது. அங்கீகரிக்கப்பட்ட தொகை: ரூ. {amount}.",
+    ("en", "Approved"): "Your HEC claim {ref} has been approved. Approved amount: LKR {amount}.",
 }
 
 
@@ -22,12 +25,15 @@ class FakeCursor:
     def __init__(self):
         self.audit_rows = []
         self._result = None
+        self.case_locale = "si"
 
-    def execute(self, sql, params=()):
+    def execute(self, sql: str, params: tuple[Any, ...] = ()):
         if "pg_advisory_xact_lock" in sql:
             self._result = None
         elif "SELECT hash FROM audit_log" in sql:
             self._result = (self.audit_rows[-1]["hash"],) if self.audit_rows else None
+        elif "SELECT locale FROM cases" in sql:
+            self._result = (self.case_locale,)
         elif "SELECT template FROM sms_templates" in sql:
             language, status = params
             template = TEMPLATES.get((language, status))
@@ -126,3 +132,19 @@ def test_missing_template_logs_sms_template_missing_and_does_not_raise(cur, sent
     assert sent == []
     assert cur.audit_rows[0]["event"] == "sms_template_missing"
     assert cur.audit_rows[0]["metadata"] == {"status": "No Such Status"}
+
+
+def test_notification_respects_case_locale(cur, sent):
+    cur.case_locale = "en"
+    notification_service.notify_status_change(
+        cur, case_id=1, canonical_id="HEC-2026-0001", citizen_mobile_plain="0771234567",
+        new_status="Approved", admin_id="admin-1", amount_lkr=25000.0,
+    )
+    assert sent[0]["body"] == "Your HEC claim HEC-2026-0001 has been approved. Approved amount: LKR 25,000.00."
+
+    cur.case_locale = "ta"
+    notification_service.notify_status_change(
+        cur, case_id=1, canonical_id="HEC-2026-0001", citizen_mobile_plain="0771234567",
+        new_status="Approved", admin_id="admin-1", amount_lkr=25000.0,
+    )
+    assert sent[1]["body"] == "உங்கள் HEC கோரிக்கை HEC-2026-0001 அங்கீகரிக்கப்பட்டது. அங்கீகரிக்கப்பட்ட தொகை: ரூ. 25,000.00."

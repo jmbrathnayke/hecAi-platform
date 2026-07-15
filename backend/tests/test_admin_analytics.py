@@ -10,6 +10,7 @@ now() -- see admin.py's module comment above get_analytics -- so every test belo
 deterministic regardless of when it actually runs, driven entirely by explicit `to=` params.
 """
 import json
+from typing import Any
 from datetime import date, datetime
 
 import jwt
@@ -74,7 +75,7 @@ class FakeCursor:
             return None
         return sorted(rows, key=lambda r: r["created_at"], reverse=True)[0]
 
-    def execute(self, sql, params=()):
+    def execute(self, sql: str, params: tuple[Any, ...] = ()):
         # Every upper bound below is EXCLUSIVE (a `date`, compared with `<`, against the
         # fixture's own `.date()`-truncated timestamp) -- mirrors the real query's fix for
         # the midnight-truncation bug (code review): `submitted_at < to_date_exclusive` is
@@ -525,7 +526,7 @@ def test_non_dict_input_features_does_not_crash(client, store):
     # Code review fix: `features or {}` kept a non-dict truthy JSONB value as-is, and
     # `.get(...)` on a list/string raises AttributeError, uncaught -> 500.
     row = _inference(1, confidence=0.5)
-    row["input_features"] = ["not", "a", "dict"]
+    row["input_features"] = ["not", "a", "dict"]  # type: ignore[assignment]  # intentionally wrong type to test runtime guard
     store["inference_log"] = [row]
     res = client.get("/api/v1/admin/analytics?from=2026-06-01&to=2026-07-15", headers=_auth())
     assert res.status_code == 200
