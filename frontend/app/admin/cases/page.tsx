@@ -20,6 +20,7 @@ import { FilterBar, type AdminCaseFilters } from "@/components/admin/FilterBar";
 import { AdminKpiCards } from "@/components/admin/AdminKpiCards";
 import { CaseDetailPanel } from "@/components/admin/CaseDetailPanel";
 import { LanguageSelectorCookie } from "@/components/LanguageSelectorCookie";
+import Link from "next/link";
 
 type LoadState = "loading" | "error" | "ready";
 const PAGE_SIZE = 20;
@@ -234,7 +235,12 @@ function AdminCasesPageContent() {
     <main className="min-h-screen bg-surface-base px-design-4 py-design-6">
       <div className="mx-auto max-w-6xl space-y-design-4">
         <header className="flex flex-wrap items-start justify-between gap-design-2">
-          <h1 className="text-title text-ink-primary">{t("cases.title")}</h1>
+          <div>
+            <h1 className="text-title text-ink-primary">{t("cases.title")}</h1>
+            <Link href="/admin/analytics" className="text-label text-civic underline">
+              {t("analytics.title")}
+            </Link>
+          </div>
           <div className="flex flex-col gap-design-1">
             <span className="text-caption text-ink-secondary">{t("languageLabel")}</span>
             <LanguageSelectorCookie />

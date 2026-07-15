@@ -7,6 +7,7 @@ list. This exercises parsing, officer resolution, idempotency, the recorded row 
 HTTP-200-on-business-error / 403-on-bad-signature contract without external services.
 """
 import hashlib
+from typing import Any
 
 import pytest
 
@@ -27,7 +28,7 @@ class FakeCursor:
     def __exit__(self, *exc):
         return False
 
-    def execute(self, sql, params=()):
+    def execute(self, sql: str, params: tuple[Any, ...] = ()):
         if "pg_advisory_xact_lock" in sql:
             self._result = None
         elif "SELECT hash FROM audit_log" in sql:

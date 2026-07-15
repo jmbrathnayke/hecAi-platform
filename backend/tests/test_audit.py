@@ -5,6 +5,7 @@ test files) since these tests need a real SELECT-all-rows-in-order to exercise
 verify_chain(), not just capture-the-last-INSERT.
 """
 import json
+from typing import Any
 
 from app.infrastructure import audit
 
@@ -18,7 +19,7 @@ class FakeAuditTable:
         self.lock_calls = 0
         self._result = None
 
-    def execute(self, sql, params=()):
+    def execute(self, sql: str, params: tuple[Any, ...] = ()):
         if "pg_advisory_xact_lock" in sql:
             self.lock_calls += 1
             self._result = None

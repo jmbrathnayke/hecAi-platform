@@ -6,6 +6,7 @@ write, and idempotency without a real database.
 """
 import jwt
 import pytest
+from typing import Any
 
 from app import create_app
 
@@ -27,7 +28,7 @@ class FakeCursor:
     def __exit__(self, *exc):
         return False
 
-    def execute(self, sql, params=()):
+    def execute(self, sql: str, params: tuple[Any, ...] = ()):
         if "pg_advisory_xact_lock" in sql:
             self._result = None
         elif "SELECT hash FROM audit_log" in sql:
@@ -51,6 +52,7 @@ class FakeCursor:
                 "citizen_id": params[8],
                 "district": params[9],
                 "ds_division": params[10],
+                "locale": params[11] if len(params) > 11 else "si",
             }
             self._result = (self.store["case_pk"],)
         elif "INSERT INTO audit_log" in sql:
@@ -408,3 +410,13 @@ def test_submit_empty_string_district_stored_as_none_not_empty_string(client, st
     assert estimate_spy[0]["district"] is None
     assert estimate_spy[0]["ds_division_id"] is None
     assert estimate_spy[0]["ai_severity"] is None
+
+
+def test_submit_saves_locale(client, store):
+    body = _body(locale="ta")
+    res = client.post(
+        "/api/v1/cases/submit", json=body, headers={"Authorization": f"Bearer {_token()}"}
+    )
+    assert res.status_code == 201
+    row = store["rows"][body["offline_id"]]
+    assert row["locale"] == "ta"

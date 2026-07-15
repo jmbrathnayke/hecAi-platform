@@ -9,6 +9,7 @@ detail (AI result / compensation / audit trail, including their empty states), a
 hash-chain verification, all without a real database.
 """
 import json
+from typing import Any
 import uuid
 from datetime import datetime
 
@@ -142,7 +143,7 @@ class FakeCursor:
     def _district_cases(self, district):
         return [c for c in self.store["cases"] if c["district"] == district]
 
-    def execute(self, sql, params=()):
+    def execute(self, sql: str, params: tuple[Any, ...] = ()):
         if "pg_advisory_xact_lock" in sql:
             self._result = None
         elif "SELECT hash FROM audit_log" in sql:

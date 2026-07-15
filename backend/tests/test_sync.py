@@ -6,6 +6,7 @@ idempotency, canonical-id assignment, the audit write, and the officer_id-from-J
 without a real database.
 """
 import json
+from typing import Any
 
 import jwt
 import psycopg2
@@ -31,7 +32,7 @@ class FakeCursor:
     def __exit__(self, *exc):
         return False
 
-    def execute(self, sql, params=()):
+    def execute(self, sql: str, params: tuple[Any, ...] = ()):
         if "INSERT INTO cases" in sql and params[0] == self.store.get("fail_offline_id"):
             raise psycopg2.OperationalError("simulated DB failure")
 
@@ -72,6 +73,7 @@ class FakeCursor:
                 submitted_by_officer,
                 district,
                 ds_division,
+                locale,
             ) = params
             if offline_id == self.store.get("race_offline_id") and offline_id not in self.store["cases"]:
                 # Simulate a concurrent winner committing between our fast-path SELECT
@@ -97,6 +99,7 @@ class FakeCursor:
                     "submitted_by_officer": submitted_by_officer,
                     "district": district,
                     "ds_division": ds_division,
+                    "locale": locale,
                 }
                 self._result = (self.store["case_pk"],)
         elif "INSERT INTO audit_log" in sql:
@@ -524,4 +527,15 @@ def test_batch_item_empty_string_district_stored_as_none_not_empty_string(client
     assert stored["ds_division"] is None
     assert estimate_spy[0]["district"] is None
     assert estimate_spy[0]["ds_division_id"] is None
+    assert estimate_spy[0]["ai_severity"] is None
+
+
+def test_batch_sync_saves_locale(client, store, estimate_spy):
+    item = _item("11111111-1111-4111-8111-111111111111", locale="ta")
+    res = client.post(
+        "/api/v1/sync/batch", json={"cases": [item]}, headers=_auth(_officer_token())
+    )
+    assert res.status_code == 200
+    stored = store["rows"][item["offline_id"]]
+    assert stored["locale"] == "ta"
     assert estimate_spy[0]["ai_severity"] is None
