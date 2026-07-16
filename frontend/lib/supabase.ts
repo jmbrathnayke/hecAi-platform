@@ -8,21 +8,18 @@
 import { createBrowserClient, createServerClient } from "@supabase/ssr";
 import type { CookieMethodsServer } from "@supabase/ssr";
 
-function requireEnv(name: string): string {
-  const value = process.env[name];
-  console.log("[TEMP-DIAG] requireEnv", name, "=", JSON.stringify(value));
-  if (!value) {
+export function createClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!url || !key) {
     // A missing env var here means a deployment misconfiguration, not a recoverable
     // runtime state — fail loudly and immediately rather than letting the Supabase SDK
     // fail confusingly later with `createBrowserClient(undefined, undefined)`.
-    throw new Error(`${name} is not set — Supabase auth cannot initialize.`);
+    throw new Error(
+      "NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY is not set — Supabase auth cannot initialize."
+    );
   }
-  return value;
-}
-
-export function createClient() {
-  const url = requireEnv("NEXT_PUBLIC_SUPABASE_URL");
-  const key = requireEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY");
   return createBrowserClient(url, key);
 }
 
@@ -32,7 +29,14 @@ export function createClient() {
  * version (^0.5.0) requires — callers pass an adapter appropriate to their context.
  */
 export function createServerSupabaseClient(cookies: CookieMethodsServer) {
-  const url = requireEnv("NEXT_PUBLIC_SUPABASE_URL");
-  const key = requireEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY");
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!url || !key) {
+    throw new Error(
+      "NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY is not set — Supabase auth cannot initialize."
+    );
+  }
   return createServerClient(url, key, { cookies });
 }
+
