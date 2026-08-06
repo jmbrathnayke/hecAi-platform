@@ -35,11 +35,12 @@ import uuid
 from datetime import date, timedelta
 
 import psycopg2
-from flask import Blueprint, current_app, g, jsonify, request
+from flask import Blueprint, Response, current_app, g, jsonify, request, stream_with_context
 
 from app.api.v1.middleware.auth import require_admin
 from app.domain.validation import MIN_REASON_LENGTH
 from app.infrastructure.audit import verify_chain, write_audit_log
+from app.infrastructure.export.report import build_pdf, stream_csv
 from app.infrastructure.ml.compensation import DISTRICT_REF_PATH
 from app.infrastructure.sms.notification_service import notify_status_change
 
@@ -1165,3 +1166,275 @@ def get_analytics():
         ),
         200,
     )
+
+
+# ---------------------------------------------------------------------------------------
+# Story 7.2 -- CSV/PDF case export (FR-7.2)
+# ---------------------------------------------------------------------------------------
+
+# Bounds the work a single export can cause (AC3). The CSV path streams and would survive a
+# larger set, but the PDF path must buffer (a PDF's xref table can only be written once the
+# document is complete), and Render's free plan is a 512 MB box -- one cap for both keeps the
+# two formats returning the same rows rather than silently diverging at some threshold.
+EXPORT_MAX_ROWS = 10000
+
+# The PDF path gets its own, much lower cap. Measured on this repo's venv, build_pdf grows
+# superlinearly -- 100 rows 0.1s, 1,000 rows 0.5s, 10,000 rows 13.1s -- and that excludes
+# fetchall(). render.yaml runs `gunicorn wsgi:app` with the default 30s worker timeout on
+# Render's *free* (shared, slower) CPU, so a full-district PDF would have the arbiter SIGKILL
+# the worker and hand the admin a 502 -- while the audit row, committed earlier in its own
+# transaction, permanently recorded a successful 10,000-row export that never reached anyone.
+# The CSV path is the complete-data channel; the PDF is the human-readable summary, and it now
+# says on its face when it is showing a subset.
+PDF_MAX_ROWS = 2000
+
+EXPORT_FORMATS = ("csv", "pdf")
+
+
+def _close_quietly(closeable):
+    """Closes a cursor/connection, tolerating double-close and already-dead handles.
+
+    Idempotent by design: both the stream generator's `finally` and the response's
+    call_on_close hook invoke this, and exactly one of them runs first depending on whether
+    the generator was ever advanced.
+    """
+    try:
+        closeable.close()
+    except Exception:  # pragma: no cover - defensive
+        pass
+
+# Same shape as list_cases's SELECT (explicit column list, never SELECT *), minus pagination
+# and plus the three columns the export adds. Order MUST match report.CSV_COLUMNS -- format_row()
+# unpacks positionally.
+#
+# CRITICAL: confidence and was_overridden come from a LEFT JOIN LATERAL, not a plain join.
+# inference_log is append-only (migration 006) -- an officer override inserts a SECOND row for
+# the same case -- so a plain join duplicates that case in the export. Same fan-out rule already
+# enforced in list_cases and get_analytics.
+#
+# CRITICAL: the money column is cases.approved_amount, NOT compensation_estimates.amount_lkr.
+# The latter is the AI's UNAPPROVED recommendation; exporting it as an approval would misstate
+# the district's financial position. Same rule as list_cases's KPI and get_analytics.
+#
+# NO PII (AC4/NFR-3.3): no submitter_identity_hash, no citizen_nic_plain, no
+# citizen_mobile_plain, no gps_lat/gps_lng.
+_EXPORT_SELECT = """SELECT c.canonical_id, c.submitted_at, c.damage_category,
+                           il.confidence, il.was_overridden, c.status,
+                           c.approved_amount, c.district, c.ds_division_id
+                      FROM cases c
+                      LEFT JOIN LATERAL (
+                        SELECT confidence, was_overridden FROM inference_log
+                         WHERE case_id = c.id
+                         ORDER BY created_at DESC, id DESC
+                         LIMIT 1
+                      ) il ON true
+                     WHERE {where}
+                     ORDER BY c.submitted_at DESC, c.id DESC
+                     LIMIT %s"""
+
+# `, id DESC` is a required tiebreaker, not decoration (review finding): now() is
+# transaction-stable in Postgres, so two inference_log rows written in the same transaction
+# (an AI classification and its officer override) share an identical created_at. Ordering on
+# created_at alone would then pick between them nondeterministically -- the export could report
+# was_overridden as false for a case that WAS overridden, and flip between runs. The same
+# tiebreaker is missing from list_cases and get_analytics; logged as deferred (pre-existing).
+
+
+@admin_bp.route("/admin/export", methods=["GET"])
+@require_admin()
+def export_cases():
+    """GET /api/v1/admin/export?format=csv|pdf&<same filters as /admin/cases>
+
+    Exports the CURRENT filter selection in full -- no pagination (AC1). The filter clause comes
+    from _build_conditions(), the very same builder list_cases uses, so "the export contains
+    exactly what the case list shows across all its pages" is true by construction rather than
+    by two hand-kept-in-sync query strings.
+    """
+    district = g.district_id  # verified JWT claim -- never from the request (AC4)
+    if not district:
+        return jsonify({"error": "no_district_assigned"}), 403
+
+    args = request.args
+
+    fmt = (args.get("format") or "csv").lower()
+    if fmt not in EXPORT_FORMATS:
+        # Rejected before any DB work, matching this module's reject-bad-input-early convention.
+        return jsonify({"error": "invalid_format"}), 400
+
+    conditions, params = _build_conditions(district, args)
+    if conditions is None:
+        return jsonify({"error": "invalid_date"}), 400
+
+    date_str = date.today().isoformat()
+    from_date = _parse_date(args.get("from"))
+    to_date = _parse_date(args.get("to"))
+    # Inverted range rejected explicitly (review finding), matching get_analytics' own
+    # code-review fix: `from` after `to` otherwise returns a valid, empty export plus a
+    # committed audit row claiming a successful export -- indistinguishable from "this
+    # district genuinely has no cases", the exact ambiguity no_district_assigned exists
+    # to prevent.
+    if from_date and to_date and from_date > to_date:
+        return jsonify({"error": "invalid_date"}), 400
+
+    row_limit = PDF_MAX_ROWS if fmt == "pdf" else EXPORT_MAX_ROWS
+    where = " AND ".join(conditions)
+    query = _EXPORT_SELECT.format(where=where)
+    query_params = params + [row_limit]
+
+    try:
+        conn = _get_connection()
+    except psycopg2.Error:
+        current_app.logger.exception("admin export failed to connect")
+        return jsonify({"error": "server_error"}), 500
+
+    # Count + audit first, in their own committed transaction, BEFORE any streaming starts.
+    #
+    # CRITICAL: the audit write must NOT live inside the stream generator. A stream_with_context
+    # generator body runs after the view function returns; if the client disconnects mid-download
+    # the generator can be closed early, so an audit write placed there might never commit --
+    # leaving a bulk data egress with no record at all. Counting up front costs one extra query
+    # and makes the audit row honest about how many rows were authorised for export.
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(f"SELECT COUNT(*) FROM cases c WHERE {where}", params)
+                matched = cur.fetchone()[0]
+                row_count = min(matched, row_limit)
+
+                write_audit_log(
+                    cur,
+                    None,
+                    "admin_exported_cases",
+                    g.admin_id,
+                    {
+                        "ip_address": _client_ip(),
+                        "format": fmt,
+                        # Named to be honest about what this number is (review finding): the
+                        # COUNT commits in this transaction and the export SELECT opens a new
+                        # one, so under READ COMMITTED a concurrent insert between them means
+                        # the delivered row count can exceed this. It is the count authorised
+                        # at audit time, not a guarantee of what was streamed. The ordering is
+                        # mandated by CRITICAL #6 and is not negotiable, so the fix is accurate
+                        # naming rather than a false guarantee.
+                        "row_count_at_audit": row_count,
+                        "matched_count": matched,
+                        "truncated": matched > row_limit,
+                        "row_limit": row_limit,
+                        "from": from_date.isoformat() if from_date else None,
+                        "to": to_date.isoformat() if to_date else None,
+                        # The non-range filters are recorded too (review finding): without
+                        # them an export narrowed to ?status=Approved&division=X audited
+                        # identically to an unfiltered one of the same size, which is weak
+                        # forensics for a bulk data egress.
+                        "filters": {
+                            key: args.get(key)
+                            for key in ("status", "type", "division")
+                            if args.get(key)
+                        },
+                    },
+                )
+    except Exception:
+        # Broadened from psycopg2.Error (review finding): a TypeError/AttributeError raised
+        # inside this block (e.g. from write_audit_log's json.dumps) previously propagated
+        # with the connection never closed. With no pool and a single sync worker, leaked
+        # connections accumulate against the Postgres connection cap. list_cases uses the
+        # try/finally shape for exactly this reason.
+        conn.close()
+        current_app.logger.exception("admin export audit/count failed")
+        return jsonify({"error": "server_error"}), 500
+
+    if fmt == "pdf":
+        try:
+            with conn:
+                with conn.cursor() as cur:
+                    cur.execute(query, query_params)
+                    rows = cur.fetchall()
+        except psycopg2.Error:
+            current_app.logger.exception("admin export pdf query failed")
+            return jsonify({"error": "server_error"}), 500
+        finally:
+            conn.close()
+
+        try:
+            pdf_bytes = build_pdf(
+                rows,
+                district,
+                from_date,
+                to_date,
+                truncated_from=matched if matched > row_limit else None,
+            )
+        except Exception:
+            # Rendering is the one step in this route that could previously escape as an
+            # unhandled traceback rather than this module's JSON 500 convention.
+            current_app.logger.exception("admin export pdf render failed")
+            return jsonify({"error": "server_error"}), 500
+
+        return Response(
+            pdf_bytes,
+            mimetype="application/pdf",
+            headers={
+                "Content-Disposition": f"attachment; filename=hec-cases-{date_str}.pdf",
+                "X-HEC-Row-Count": str(len(rows)),
+                "X-HEC-Truncated": "true" if matched > row_limit else "false",
+            },
+        )
+
+    # CSV: server-side (named) cursor + fetchmany so the result set is never fully resident
+    # (AC3). The connection stays open for the generator's lifetime and is closed in its
+    # finally -- which Werkzeug runs even when the client disconnects mid-download.
+    #
+    # The connection comes from _get_connection() rather than a fresh psycopg2.connect() so
+    # this route remains reachable by the suite's standard monkeypatch seam.
+    # The query is executed HERE, before the Response is constructed (review finding), not
+    # inside the generator. A generator body runs after the view returns, i.e. after 200 and
+    # the headers are already committed -- so a failing cur.execute() used to surface as a
+    # silently truncated (often empty) file that the browser saved as a successful download,
+    # while the audit row asserted a full export. The expensive part is fetchmany, not execute,
+    # so nothing is buffered by moving this up; only the knowable failure becomes a clean 500.
+    try:
+        cur = conn.cursor(name="hec_export_cursor")
+        cur.itersize = 500
+        cur.execute(query, query_params)
+    except Exception:
+        conn.close()
+        current_app.logger.exception("admin export csv query failed")
+        return jsonify({"error": "server_error"}), 500
+
+    def generate():
+        try:
+            yield from stream_csv(cur)
+            conn.commit()
+        except Exception:
+            # Nothing can be signalled in-band at this point (status and headers are long
+            # gone), but this must not vanish silently -- it is the one failure mode that
+            # produces a short file the admin cannot distinguish from a complete one.
+            current_app.logger.exception("admin export stream failed mid-download")
+            raise
+        finally:
+            _close_quietly(cur)
+            _close_quietly(conn)
+
+    response = Response(
+        stream_with_context(generate()),
+        # The payload carries Sinhala district names; Werkzeug appends charset=utf-8 for
+        # text/* mimetypes. (The previously hand-set Content-Type header here was inert --
+        # Werkzeug resolves `mimetype` last and overwrites it -- so it has been removed
+        # rather than left as a comment that describes something not happening.)
+        mimetype="text/csv",
+        headers={
+            "Content-Disposition": f"attachment; filename=hec-cases-{date_str}.csv",
+            # No Content-Length -- unknowable for a streamed body by construction.
+            "X-HEC-Row-Count": str(row_count),
+            "X-HEC-Truncated": "true" if matched > row_limit else "false",
+        },
+    )
+    # Safety net for the case the generator NEVER starts (review finding, verified): Python
+    # does not run a generator's finally when it is closed before being advanced, and Werkzeug
+    # does exactly that for a HEAD request -- Flask auto-registers HEAD for a GET route -- and
+    # on an immediate client disconnect. The connection was therefore leaked outright, one per
+    # request, until the Postgres connection cap was reached. call_on_close fires whether or
+    # not the iterable was ever consumed; _close_quietly is idempotent so the generator's own
+    # finally remains correct for the normal path.
+    response.call_on_close(lambda: _close_quietly(cur))
+    response.call_on_close(lambda: _close_quietly(conn))
+    return response
