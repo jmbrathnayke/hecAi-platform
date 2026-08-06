@@ -422,7 +422,9 @@
       "pdf": "Export PDF",
       "exporting": "Exporting…",
       "error": "Export failed. Please try again.",
-      "menuAria": "Choose an export format"
+      "menuAria": "Choose an export format",
+      "timeout": "Export timed out. Try narrowing the filters.",
+      "truncated": "Partial export — only the {count, number} most recent cases are included. Narrow the filters for a complete report."
     }
   }
 }

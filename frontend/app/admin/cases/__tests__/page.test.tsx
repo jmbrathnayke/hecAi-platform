@@ -426,3 +426,68 @@ test("FilterBar visibly resets after Clear Filters, not just the URL (code revie
   await screen.findByText("HEC-2026-0001");
   expect((screen.getByLabelText("filter.status") as HTMLSelectElement).value).toBe("");
 });
+
+// --- Story 7.2: ExportButton integration (Task 9) --------------------------------------
+// Code review finding: this file was never updated when ExportButton was mounted, so nothing
+// asserted that the button appears, receives the live total, or respects the empty/loading
+// states Task 7 mandates. The suite stayed green only because the button is inert until
+// clicked — which is exactly the kind of coverage gap that ships a broken integration.
+
+test("mounts the export button with the live filtered total", async () => {
+  mockAdmin();
+  render(<AdminCasesPage />);
+  await screen.findByText("HEC-2026-0001");
+  // The count comes from data.total (the whole filtered set), not the current page length.
+  expect(
+    screen.getByRole("button", { name: /export\.button/ }),
+  ).toBeInTheDocument();
+});
+
+test("export button is disabled when the filters match no cases", async () => {
+  mockAdmin();
+  (fetchAdminCases as jest.Mock).mockResolvedValue({
+    total: 0,
+    page: 1,
+    limit: 20,
+    items: [],
+    kpis: { this_month: 0, by_status: {}, total_approved_lkr: 0, avg_processing_days: null },
+  });
+  render(<AdminCasesPage />);
+  await screen.findByText("cases.empty");
+  expect(screen.getByRole("button", { name: /export\.button/ })).toBeDisabled();
+});
+
+test("export button is not offered while the list is still loading", async () => {
+  mockAdmin();
+  let release: (value: unknown) => void = () => {};
+  const pending = new Promise((resolve) => {
+    release = resolve;
+  });
+  (fetchAdminCases as jest.Mock).mockReturnValue(pending);
+
+  render(<AdminCasesPage />);
+  await screen.findByText("cases.loading");
+  expect(screen.getByRole("button", { name: /export\.button/ })).toBeDisabled();
+
+  // Settle with a real payload and wait for the resulting render, so the test doesn't leave an
+  // unawaited state update behind (React act() warning) after it returns.
+  release({
+    total: 1,
+    page: 1,
+    limit: 20,
+    items: [
+      {
+        canonical_id: "HEC-2026-0001",
+        offline_id: "o-1",
+        damage_category: "property",
+        status: "Submitted",
+        submitted_at: "2026-07-05T09:00:00Z",
+        updated_at: null,
+        ai_confidence: null,
+      },
+    ],
+    kpis: { this_month: 1, by_status: {}, total_approved_lkr: 0, avg_processing_days: null },
+  });
+  await screen.findByText("HEC-2026-0001");
+  expect(screen.getByRole("button", { name: /export\.button/ })).not.toBeDisabled();
+});

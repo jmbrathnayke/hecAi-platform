@@ -10,12 +10,14 @@ The FakeConn here additionally supports `cursor(name=...)` (psycopg2 server-side
 admin.py::export_cases.
 """
 import csv
+import os
 import io
 import json
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 import jwt
+import psycopg2
 import pytest
 
 from app import create_app
@@ -464,6 +466,129 @@ def test_timestamps_are_offset_free_utc(client, store):
     assert "+" not in rows[0][1]
 
 
+# --- CSV formula injection (review finding, HIGH) -----------------------------------------
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        "=cmd|'/c calc'!A1",
+        '=HYPERLINK("http://attacker/","click")',
+        "+1+1",
+        "-1+1",
+        "@SUM(A1:A9)",
+        "\tleading-tab",
+    ],
+)
+def test_formula_payloads_are_defused(client, store, payload):
+    """cases.damage_category is TEXT NOT NULL with NO CHECK constraint (migration 002) and
+    cases.py validates only "non-empty str", so a citizen-supplied formula reaches this export
+    verbatim. Excel is the STATED primary consumer (it is why the BOM exists), so an
+    un-neutralised payload would evaluate on a district manager's workstation.
+
+    csv.writer QUOTES but does not neutralise -- quoting is no defence against evaluation.
+    """
+    store["cases"] = [_case(1, DISTRICT_A, damage_category=payload)]
+    res = client.get("/api/v1/admin/export", headers=_auth())
+    _header, rows = _csv_rows(res)
+    cell = rows[0][2]
+    assert cell.startswith("'"), f"formula not defused: {cell!r}"
+    assert cell == "'" + payload
+
+
+def test_ordinary_values_are_not_mangled(client):
+    """The guard must not corrupt normal data -- only a leading formula character is prefixed."""
+    res = client.get("/api/v1/admin/export", headers=_auth())
+    _header, rows = _csv_rows(res)
+    assert all(not r[2].startswith("'") for r in rows)
+    assert {r[2] for r in rows} == {"property", "crop"}
+    assert all(r[7] == DISTRICT_A for r in rows)  # Sinhala district untouched
+
+
+def test_formula_defusing_covers_every_free_text_column(client, store):
+    store["cases"] = [
+        _case(
+            1, DISTRICT_A, status="=BAD()", damage_category="=BAD()",
+            ds_division_id="=BAD()",
+        )
+    ]
+    res = client.get("/api/v1/admin/export", headers=_auth())
+    _header, rows = _csv_rows(res)
+    for idx in (2, 5, 8):  # damage_category, status, ds_division_id
+        assert rows[0][idx].startswith("'")
+
+
+# --- Sinhala font registration (review finding) --------------------------------------------
+
+
+def test_sinhala_font_actually_registers():
+    """CRITICAL #8. Every PDF test asserts only that the body starts with %PDF-, which passes
+    identically under the silent Helvetica fallback -- so a moved font path, a dropped
+    uharfbuzz, or a Render install difference would degrade every PDF with a green suite.
+    This asserts the real font resolved."""
+    from app.infrastructure.export import report
+
+    report._registered_font = None  # force a fresh registration attempt
+    assert report._sinhala_font() == report.SINHALA_FONT_NAME
+
+
+def test_sinhala_font_file_is_vendored():
+    from app.infrastructure.export import report
+
+    assert os.path.exists(report._SINHALA_FONT_PATH)
+
+
+def test_pdf_renders_sinhala_without_raising():
+    """The Helvetica fallback degrades (blank glyphs) rather than raising, so this guards the
+    real path: a district name in Sinhala must build a valid PDF."""
+    from app.infrastructure.export.report import build_pdf
+
+    rows = [
+        (
+            "HEC-2026-0001", datetime(2026, 7, 5, 9, 0), "property", 0.9, True,
+            "Approved", 45000.0, DISTRICT_A, DIVISION_A,
+        )
+    ]
+    assert build_pdf(rows, DISTRICT_A, None, None).startswith(b"%PDF-")
+
+
+def test_pdf_survives_markup_in_a_district_name():
+    """Review finding (verified repro): Paragraph parses its text as RML markup, so an unclosed
+    tag in a district value raised 'Parse error: saw </para> instead of expected </b>' -- the one
+    path in this route that escaped as an unhandled traceback instead of a JSON 500, and it fired
+    AFTER the audit row was committed."""
+    from app.infrastructure.export.report import build_pdf
+
+    assert build_pdf([], "Anuradhapura <b> & Co", None, None).startswith(b"%PDF-")
+
+
+def test_pdf_survives_markup_in_a_cell_value():
+    from app.infrastructure.export.report import build_pdf
+
+    rows = [
+        (
+            "HEC<b>", datetime(2026, 7, 5, 9, 0), "prop<erty", None, None,
+            "A & B", 1.0, DISTRICT_A, "<unclosed",
+        )
+    ]
+    assert build_pdf(rows, DISTRICT_A, None, None).startswith(b"%PDF-")
+
+
+def test_total_approved_is_column_name_driven():
+    """Review finding: the total used a bare row[6], re-implementing the positional layout
+    format_row already owns. A future column reorder would have summed a Sinhala string, been
+    swallowed by `except (TypeError, ValueError): pass`, and printed an authoritative
+    'TOTAL 0.00' on the formal report."""
+    from app.infrastructure.export.report import total_approved
+
+    rows = [
+        ("a", None, "p", None, None, "Approved", 100.5, DISTRICT_A, None),
+        ("b", None, "p", None, None, "Submitted", None, DISTRICT_A, None),
+        ("c", None, "p", None, None, "Approved", 200.25, DISTRICT_A, None),
+    ]
+    assert total_approved(rows) == pytest.approx(300.75)
+
+
 # --- response headers ---------------------------------------------------------------------
 
 
@@ -528,7 +653,7 @@ def test_export_writes_audit_row(client, store):
     assert events == ["admin_exported_cases"]
     metadata = store["audit"][0]["metadata"]
     assert metadata["format"] == "csv"
-    assert metadata["row_count"] == 3
+    assert metadata["row_count_at_audit"] == 3
     assert metadata["truncated"] is False
 
 
@@ -551,14 +676,144 @@ def test_audit_flags_truncation(client, store, monkeypatch):
     monkeypatch.setattr("app.api.v1.admin.EXPORT_MAX_ROWS", 2)
     client.get("/api/v1/admin/export", headers=_auth()).get_data()
     metadata = store["audit"][0]["metadata"]
-    assert metadata["row_count"] == 2
+    assert metadata["row_count_at_audit"] == 2
     assert metadata["matched_count"] == 3
     assert metadata["truncated"] is True
+    assert metadata["row_limit"] == 2
 
 
-def test_audit_is_written_before_the_body_streams(client, store):
-    """CRITICAL: a stream_with_context generator runs AFTER the view returns, so an audit write
-    placed inside it can be skipped entirely when a client disconnects mid-download. This asserts
-    the row exists without ever draining the response body."""
-    client.get("/api/v1/admin/export", headers=_auth())
+def test_audit_records_non_range_filters(client, store):
+    """Review finding: without these, ?status=Approved&division=X audited identically to an
+    unfiltered export of the same size -- weak forensics for a bulk data egress."""
+    client.get(
+        f"/api/v1/admin/export?status=Approved&type=property&division={DIVISION_A}",
+        headers=_auth(),
+    ).get_data()
+    filters = store["audit"][0]["metadata"]["filters"]
+    assert filters == {"status": "Approved", "type": "property", "division": DIVISION_A}
+
+
+def test_audit_omits_unset_filters(client, store):
+    client.get("/api/v1/admin/export", headers=_auth()).get_data()
+    assert store["audit"][0]["metadata"]["filters"] == {}
+
+
+def test_audit_is_written_outside_the_stream_generator(client, store):
+    """CRITICAL #6: the audit write must not live inside the stream generator, which runs after
+    the view returns and can be skipped entirely on client disconnect.
+
+    Review finding: the previous version of this test claimed to assert "without ever draining
+    the body", which was false -- Werkzeug's test client materialises the WSGI iterable when it
+    builds the TestResponse, so the generator had already run to completion and the test passed
+    identically with the audit write moved INSIDE the generator. It therefore gave zero
+    protection against the regression it was named for.
+
+    This version proves the real property by closing the response without consuming it: the
+    generator is never advanced, so anything inside it cannot have run.
+    """
+    with client.application.test_request_context():
+        pass
+    res = client.open("/api/v1/admin/export", headers=_auth(), buffered=False)
+    res.close()  # discard the body without iterating it
     assert [a["event"] for a in store["audit"]] == ["admin_exported_cases"]
+
+
+def test_head_request_does_not_leak_the_connection(client, conn):
+    """Review finding (verified): Python does NOT run a generator's `finally` when the generator
+    is closed before it is ever advanced. Flask auto-registers HEAD for a GET route and Werkzeug
+    closes the body iterable without starting it, so the DB connection was leaked outright --
+    one per request, until the Postgres connection cap was hit. The fix is a call_on_close hook,
+    which fires whether or not the iterable was consumed.
+
+    `res.close()` is required here and is NOT a workaround: PEP 3333 obliges the WSGI server to
+    call close() on the response iterable, and gunicorn does. Werkzeug's *test client* is the
+    outlier -- it never auto-closes -- so without this the test would assert the absence of a
+    cleanup that no server would have skipped. Verified against the pre-fix code: this test
+    fails (connection left open) without the call_on_close hook.
+    """
+    res = client.head("/api/v1/admin/export", headers=_auth())
+    assert res.status_code == 200
+    res.close()
+    assert conn.closed is True
+
+
+# NOTE: a companion test for "client disconnects before reading a byte" was written and then
+# REMOVED -- verified against the pre-fix code, it passed with and without the call_on_close
+# hook, because client.open(buffered=False) still advances the generator far enough for its own
+# `finally` to run. It would have been false confidence. The HEAD test above is the real guard:
+# it is the one path where the generator provably never starts.
+
+
+def test_inverted_date_range_400(client, store):
+    """get_analytics rejects from > to as an explicit code-review fix; the export inherited the
+    gap. An inverted range otherwise yields a valid empty file plus an audit row claiming a
+    successful export -- indistinguishable from "this district has no cases"."""
+    res = client.get(
+        "/api/v1/admin/export?from=2026-08-06&to=2026-01-01", headers=_auth()
+    )
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "invalid_date"
+    assert store["audit"] == []
+
+
+def test_csv_query_failure_is_a_clean_500_not_a_truncated_200(client, monkeypatch, store):
+    """Review finding: the export query used to be executed INSIDE the generator, i.e. after 200
+    and the headers were already committed. A failure there produced a silently truncated file
+    that the browser saved as a successful download, while the audit row asserted a full export.
+    Executing before the Response is built turns the knowable failure back into a 500."""
+    import app.api.v1.admin as admin_mod
+
+    original = FakeCursor.execute
+
+    def boom(self, sql, params=()):
+        if "SELECT c.canonical_id" in sql:
+            raise psycopg2.OperationalError("statement timeout")
+        return original(self, sql, params)
+
+    monkeypatch.setattr(FakeCursor, "execute", boom)
+    res = client.get("/api/v1/admin/export", headers=_auth())
+    assert res.status_code == 500
+    assert res.get_json()["error"] == "server_error"
+
+
+def test_pdf_uses_its_own_lower_row_cap(client, store, monkeypatch):
+    """PDF rendering is superlinear (measured: 10k rows ~13s) and render.yaml runs gunicorn with
+    its default 30s worker timeout on Render's shared free CPU, so a full-district PDF would 502
+    while the audit row recorded a successful export. CSV stays the complete-data channel."""
+    monkeypatch.setattr("app.api.v1.admin.PDF_MAX_ROWS", 1)
+    monkeypatch.setattr("app.api.v1.admin.EXPORT_MAX_ROWS", 999)
+
+    res = client.get("/api/v1/admin/export?format=pdf", headers=_auth())
+    assert res.status_code == 200
+    assert res.headers["X-HEC-Truncated"] == "true"
+    assert store["audit"][0]["metadata"]["row_limit"] == 1
+
+    # …and the CSV path is unaffected by the PDF cap.
+    store["audit"].clear()
+    res = client.get("/api/v1/admin/export", headers=_auth())
+    _header, rows = _csv_rows(res)
+    assert len(rows) == 3
+    assert res.headers["X-HEC-Truncated"] == "false"
+
+
+def test_truncation_is_visible_in_the_pdf_itself(client, store, monkeypatch):
+    """All three review layers raised this independently: truncation was signalled only in the
+    audit log (invisible to the admin) and a response header the frontend never read, so a capped
+    PDF printed 'TOTAL | N cases | <partial sum>' as an authoritative district financial figure."""
+    monkeypatch.setattr("app.api.v1.admin.PDF_MAX_ROWS", 1)
+    res = client.get("/api/v1/admin/export?format=pdf", headers=_auth())
+    assert res.status_code == 200
+    assert res.headers["X-HEC-Truncated"] == "true"
+    # The notice text is drawn into the PDF content stream; assert via build_pdf directly
+    # since PDF byte streams are compressed.
+    from app.infrastructure.export.report import build_pdf
+
+    rows = [
+        (
+            "HEC-2026-0001", datetime(2026, 7, 5, 9, 0), "property", None, None,
+            "Approved", 45000.0, DISTRICT_A, None,
+        )
+    ]
+    plain = build_pdf(rows, DISTRICT_A, None, None)
+    warned = build_pdf(rows, DISTRICT_A, None, None, truncated_from=9999)
+    assert len(warned) > len(plain)  # the INCOMPLETE REPORT banner adds content

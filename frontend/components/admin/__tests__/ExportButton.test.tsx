@@ -32,7 +32,7 @@ const FILTERS = { ...EMPTY_FILTERS, status: "Approved" };
 beforeEach(() => {
   mockReplace.mockReset();
   mockGetAccessToken.mockReset().mockResolvedValue("tok-123");
-  mockDownloadExport.mockReset().mockResolvedValue("ok");
+  mockDownloadExport.mockReset().mockResolvedValue({ status: "ok" });
 });
 
 function openMenu() {
@@ -103,7 +103,7 @@ it("re-enables the trigger and reports an error when no token is available", asy
 });
 
 it("re-enables the trigger after a failed export", async () => {
-  mockDownloadExport.mockResolvedValue("error");
+  mockDownloadExport.mockResolvedValue({ status: "error" });
   render(<ExportButton filters={FILTERS} count={3} />);
   openMenu();
   fireEvent.click(screen.getByRole("menuitem", { name: "export.csv" }));
@@ -113,7 +113,7 @@ it("re-enables the trigger after a failed export", async () => {
 });
 
 it("redirects to login when the session has expired", async () => {
-  mockDownloadExport.mockResolvedValue("unauthorized");
+  mockDownloadExport.mockResolvedValue({ status: "unauthorized" });
   render(<ExportButton filters={FILTERS} count={3} />);
   openMenu();
   fireEvent.click(screen.getByRole("menuitem", { name: "export.csv" }));
@@ -123,7 +123,7 @@ it("redirects to login when the session has expired", async () => {
 });
 
 it("clears a previous error when a later export succeeds", async () => {
-  mockDownloadExport.mockResolvedValueOnce("error").mockResolvedValueOnce("ok");
+  mockDownloadExport.mockResolvedValueOnce({ status: "error" }).mockResolvedValueOnce({ status: "ok" });
   render(<ExportButton filters={FILTERS} count={3} />);
 
   openMenu();
@@ -135,10 +135,43 @@ it("clears a previous error when a later export succeeds", async () => {
   await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
 });
 
-it("does not fire a second export while one is in flight", async () => {
-  let release: (value: string) => void = () => {};
+it("does not fire a second export when both menu items are clicked in the same batch", async () => {
+  // Code review finding: the previous version clicked ONCE and only asserted the trigger was
+  // disabled, so the guard itself was never exercised. This version does click twice.
+  //
+  // Honest limitation, verified rather than assumed: this test does NOT prove the ref-based
+  // guard is better than the old state-based one — it passes against both. React Testing
+  // Library wraps fireEvent in act(), which flushes the state update between the two clicks,
+  // so the same-batch race the ref defends against cannot be reproduced here. The ref is kept
+  // because it is correct in a real browser (where two clicks CAN land in one batch and both
+  // read a stale `busy === false`), not because this test demonstrates it. What this test does
+  // guarantee is the user-visible contract: two clicks produce exactly one export.
+  let release: (value: { status: string }) => void = () => {};
   mockDownloadExport.mockReturnValue(
-    new Promise<string>((resolve) => {
+    new Promise<{ status: string }>((resolve) => {
+      release = resolve;
+    }),
+  );
+
+  render(<ExportButton filters={FILTERS} count={3} />);
+  openMenu();
+
+  const csv = screen.getByRole("menuitem", { name: "export.csv" });
+  // Both dispatched before React can re-render and disable/unmount the menu.
+  fireEvent.click(csv);
+  fireEvent.click(csv);
+
+  release({ status: "ok" });
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: /export\.button/ })).not.toBeDisabled(),
+  );
+  expect(mockDownloadExport).toHaveBeenCalledTimes(1);
+});
+
+it("shows the in-flight label while exporting", async () => {
+  let release: (value: { status: string }) => void = () => {};
+  mockDownloadExport.mockReturnValue(
+    new Promise<{ status: string }>((resolve) => {
       release = resolve;
     }),
   );
@@ -147,11 +180,57 @@ it("does not fire a second export while one is in flight", async () => {
   openMenu();
   fireEvent.click(screen.getByRole("menuitem", { name: "export.csv" }));
 
-  // While busy the trigger is disabled, so the menu cannot be reopened to fire a second one.
   await waitFor(() =>
     expect(screen.getByRole("button", { name: "export.exporting" })).toBeDisabled(),
   );
-
-  release("ok");
+  release({ status: "ok" });
   await waitFor(() => expect(mockDownloadExport).toHaveBeenCalledTimes(1));
+});
+
+it("warns the admin when the export was truncated", async () => {
+  // All three review layers raised this: truncation was previously signalled only in the audit
+  // log, which the admin never sees, so a capped PDF presented a partial total as authoritative.
+  mockDownloadExport.mockResolvedValue({ status: "ok", truncated: true, rowCount: 2000 });
+  render(<ExportButton filters={FILTERS} count={12000} />);
+  openMenu();
+  fireEvent.click(screen.getByRole("menuitem", { name: "export.pdf" }));
+
+  await waitFor(() =>
+    expect(screen.getByRole("status")).toHaveTextContent("export.truncated 2000"),
+  );
+});
+
+it("shows no truncation warning for a complete export", async () => {
+  mockDownloadExport.mockResolvedValue({ status: "ok", truncated: false, rowCount: 3 });
+  render(<ExportButton filters={FILTERS} count={3} />);
+  openMenu();
+  fireEvent.click(screen.getByRole("menuitem", { name: "export.csv" }));
+
+  await waitFor(() => expect(mockDownloadExport).toHaveBeenCalledTimes(1));
+  expect(screen.queryByRole("status")).not.toBeInTheDocument();
+});
+
+it("reports a timed-out export distinctly from a generic failure", async () => {
+  mockDownloadExport.mockResolvedValue({ status: "timeout" });
+  render(<ExportButton filters={FILTERS} count={3} />);
+  openMenu();
+  fireEvent.click(screen.getByRole("menuitem", { name: "export.csv" }));
+
+  await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("export.timeout"));
+  expect(screen.getByRole("button", { name: /export\.button/ })).not.toBeDisabled();
+});
+
+it("clears a truncation warning on the next export", async () => {
+  mockDownloadExport
+    .mockResolvedValueOnce({ status: "ok", truncated: true, rowCount: 2000 })
+    .mockResolvedValueOnce({ status: "ok", truncated: false });
+  render(<ExportButton filters={FILTERS} count={3} />);
+
+  openMenu();
+  fireEvent.click(screen.getByRole("menuitem", { name: "export.csv" }));
+  await waitFor(() => expect(screen.getByRole("status")).toBeInTheDocument());
+
+  openMenu();
+  fireEvent.click(screen.getByRole("menuitem", { name: "export.csv" }));
+  await waitFor(() => expect(screen.queryByRole("status")).not.toBeInTheDocument());
 });

