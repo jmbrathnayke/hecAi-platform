@@ -415,6 +415,14 @@
         "down": "Down from {last}% last month",
         "flat": "No change from {last}% last month"
       }
+    },
+    "export": {
+      "button": "Export {count, plural, =0 {cases} one {# case} other {# cases}}",
+      "csv": "Export CSV",
+      "pdf": "Export PDF",
+      "exporting": "Exporting…",
+      "error": "Export failed. Please try again.",
+      "menuAria": "Choose an export format"
     }
   }
 }

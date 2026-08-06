@@ -35,11 +35,12 @@ import uuid
 from datetime import date, timedelta
 
 import psycopg2
-from flask import Blueprint, current_app, g, jsonify, request
+from flask import Blueprint, Response, current_app, g, jsonify, request, stream_with_context
 
 from app.api.v1.middleware.auth import require_admin
 from app.domain.validation import MIN_REASON_LENGTH
 from app.infrastructure.audit import verify_chain, write_audit_log
+from app.infrastructure.export.report import build_pdf, stream_csv
 from app.infrastructure.ml.compensation import DISTRICT_REF_PATH
 from app.infrastructure.sms.notification_service import notify_status_change
 
@@ -1164,4 +1165,170 @@ def get_analytics():
             }
         ),
         200,
+    )
+
+
+# ---------------------------------------------------------------------------------------
+# Story 7.2 -- CSV/PDF case export (FR-7.2)
+# ---------------------------------------------------------------------------------------
+
+# Bounds the work a single export can cause (AC3). The CSV path streams and would survive a
+# larger set, but the PDF path must buffer (a PDF's xref table can only be written once the
+# document is complete), and Render's free plan is a 512 MB box -- one cap for both keeps the
+# two formats returning the same rows rather than silently diverging at some threshold.
+EXPORT_MAX_ROWS = 10000
+
+EXPORT_FORMATS = ("csv", "pdf")
+
+# Same shape as list_cases's SELECT (explicit column list, never SELECT *), minus pagination
+# and plus the three columns the export adds. Order MUST match report.CSV_COLUMNS -- format_row()
+# unpacks positionally.
+#
+# CRITICAL: confidence and was_overridden come from a LEFT JOIN LATERAL, not a plain join.
+# inference_log is append-only (migration 006) -- an officer override inserts a SECOND row for
+# the same case -- so a plain join duplicates that case in the export. Same fan-out rule already
+# enforced in list_cases and get_analytics.
+#
+# CRITICAL: the money column is cases.approved_amount, NOT compensation_estimates.amount_lkr.
+# The latter is the AI's UNAPPROVED recommendation; exporting it as an approval would misstate
+# the district's financial position. Same rule as list_cases's KPI and get_analytics.
+#
+# NO PII (AC4/NFR-3.3): no submitter_identity_hash, no citizen_nic_plain, no
+# citizen_mobile_plain, no gps_lat/gps_lng.
+_EXPORT_SELECT = """SELECT c.canonical_id, c.submitted_at, c.damage_category,
+                           il.confidence, il.was_overridden, c.status,
+                           c.approved_amount, c.district, c.ds_division_id
+                      FROM cases c
+                      LEFT JOIN LATERAL (
+                        SELECT confidence, was_overridden FROM inference_log
+                         WHERE case_id = c.id
+                         ORDER BY created_at DESC
+                         LIMIT 1
+                      ) il ON true
+                     WHERE {where}
+                     ORDER BY c.submitted_at DESC, c.id DESC
+                     LIMIT %s"""
+
+
+@admin_bp.route("/admin/export", methods=["GET"])
+@require_admin()
+def export_cases():
+    """GET /api/v1/admin/export?format=csv|pdf&<same filters as /admin/cases>
+
+    Exports the CURRENT filter selection in full -- no pagination (AC1). The filter clause comes
+    from _build_conditions(), the very same builder list_cases uses, so "the export contains
+    exactly what the case list shows across all its pages" is true by construction rather than
+    by two hand-kept-in-sync query strings.
+    """
+    district = g.district_id  # verified JWT claim -- never from the request (AC4)
+    if not district:
+        return jsonify({"error": "no_district_assigned"}), 403
+
+    args = request.args
+
+    fmt = (args.get("format") or "csv").lower()
+    if fmt not in EXPORT_FORMATS:
+        # Rejected before any DB work, matching this module's reject-bad-input-early convention.
+        return jsonify({"error": "invalid_format"}), 400
+
+    conditions, params = _build_conditions(district, args)
+    if conditions is None:
+        return jsonify({"error": "invalid_date"}), 400
+    where = " AND ".join(conditions)
+    query = _EXPORT_SELECT.format(where=where)
+    query_params = params + [EXPORT_MAX_ROWS]
+
+    date_str = date.today().isoformat()
+    from_date = _parse_date(args.get("from"))
+    to_date = _parse_date(args.get("to"))
+
+    try:
+        conn = _get_connection()
+    except psycopg2.Error:
+        current_app.logger.exception("admin export failed to connect")
+        return jsonify({"error": "server_error"}), 500
+
+    # Count + audit first, in their own committed transaction, BEFORE any streaming starts.
+    #
+    # CRITICAL: the audit write must NOT live inside the stream generator. A stream_with_context
+    # generator body runs after the view function returns; if the client disconnects mid-download
+    # the generator can be closed early, so an audit write placed there might never commit --
+    # leaving a bulk data egress with no record at all. Counting up front costs one extra query
+    # and makes the audit row honest about how many rows were authorised for export.
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(f"SELECT COUNT(*) FROM cases c WHERE {where}", params)
+                matched = cur.fetchone()[0]
+                row_count = min(matched, EXPORT_MAX_ROWS)
+
+                write_audit_log(
+                    cur,
+                    None,
+                    "admin_exported_cases",
+                    g.admin_id,
+                    {
+                        "ip_address": _client_ip(),
+                        "format": fmt,
+                        "row_count": row_count,
+                        "matched_count": matched,
+                        "truncated": matched > EXPORT_MAX_ROWS,
+                        "from": from_date.isoformat() if from_date else None,
+                        "to": to_date.isoformat() if to_date else None,
+                    },
+                )
+    except psycopg2.Error:
+        conn.close()
+        current_app.logger.exception("admin export audit/count failed")
+        return jsonify({"error": "server_error"}), 500
+
+    if fmt == "pdf":
+        try:
+            with conn:
+                with conn.cursor() as cur:
+                    cur.execute(query, query_params)
+                    rows = cur.fetchall()
+        except psycopg2.Error:
+            current_app.logger.exception("admin export pdf query failed")
+            return jsonify({"error": "server_error"}), 500
+        finally:
+            conn.close()
+
+        pdf_bytes = build_pdf(rows, district, from_date, to_date)
+        return Response(
+            pdf_bytes,
+            mimetype="application/pdf",
+            headers={
+                "Content-Disposition": f"attachment; filename=hec-cases-{date_str}.pdf",
+            },
+        )
+
+    # CSV: server-side (named) cursor + fetchmany so the result set is never fully resident
+    # (AC3). The connection stays open for the generator's lifetime and is closed in its
+    # finally -- which Werkzeug runs even when the client disconnects mid-download.
+    #
+    # The connection comes from _get_connection() rather than a fresh psycopg2.connect() so
+    # this route remains reachable by the suite's standard monkeypatch seam.
+    def generate():
+        try:
+            with conn.cursor(name="hec_export_cursor") as cur:
+                cur.itersize = 500
+                cur.execute(query, query_params)
+                yield from stream_csv(cur)
+            conn.commit()
+        finally:
+            conn.close()
+
+    return Response(
+        stream_with_context(generate()),
+        # charset is explicit: the payload carries Sinhala district names, and a client that
+        # assumes a legacy codepage renders them as mojibake (the BOM in stream_csv covers
+        # Excel, which ignores this header).
+        mimetype="text/csv",
+        headers={
+            "Content-Disposition": f"attachment; filename=hec-cases-{date_str}.csv",
+            "Content-Type": "text/csv; charset=utf-8",
+            # No Content-Length -- unknowable for a streamed body by construction.
+            "X-HEC-Row-Count": str(row_count),
+        },
     )

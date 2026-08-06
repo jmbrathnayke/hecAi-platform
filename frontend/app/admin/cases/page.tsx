@@ -19,6 +19,7 @@ import { CaseListTable, type SortColumn, type SortDirection } from "@/components
 import { FilterBar, type AdminCaseFilters } from "@/components/admin/FilterBar";
 import { AdminKpiCards } from "@/components/admin/AdminKpiCards";
 import { CaseDetailPanel } from "@/components/admin/CaseDetailPanel";
+import { ExportButton } from "@/components/admin/ExportButton";
 import { LanguageSelectorCookie } from "@/components/LanguageSelectorCookie";
 import Link from "next/link";
 
@@ -249,7 +250,17 @@ function AdminCasesPageContent() {
 
         <AdminKpiCards kpis={data?.kpis ?? null} loading={state === "loading" && !data} />
 
-        <FilterBar value={filters} onApply={handleApplyFilters} onClear={handleClearFilters} />
+        <div className="flex flex-wrap items-end justify-between gap-design-3">
+          <FilterBar value={filters} onApply={handleApplyFilters} onClear={handleClearFilters} />
+          {/* Story 7.2: exports the CURRENT filter selection in full — `filters` only, never
+              page/sort/dir. Disabled while loading or when the filters match nothing, so an
+              export can't be fired for a result set the admin can't see. */}
+          <ExportButton
+            filters={filters}
+            count={data?.total ?? 0}
+            disabled={state === "loading" || !data || data.total === 0}
+          />
+        </div>
 
         {state === "loading" && !data && (
           <p className="text-body text-ink-secondary" role="status">
