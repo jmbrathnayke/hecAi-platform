@@ -1,0 +1,58 @@
+{
+  "model": "mobilenetv2",
+  "classes": [
+    "crop_damage",
+    "no_damage",
+    "property_damage"
+  ],
+  "split": "80/20 train/validation, seed=123. NO separate test partition exists and model selection used this same split, so these are validation metrics and are optimistically biased.",
+  "n_val": 94,
+  "accuracy": 0.9468085106382979,
+  "macro_f1": 0.9284723797998135,
+  "per_class": {
+    "crop_damage": {
+      "precision": 0.9,
+      "recall": 0.9473684210526315,
+      "f1": 0.9230769230769231,
+      "support": 19
+    },
+    "no_damage": {
+      "precision": 0.9411764705882353,
+      "recall": 0.8421052631578947,
+      "f1": 0.8888888888888888,
+      "support": 19
+    },
+    "property_damage": {
+      "precision": 0.9649122807017544,
+      "recall": 0.9821428571428571,
+      "f1": 0.9734513274336283,
+      "support": 56
+    }
+  },
+  "confusion_matrix": [
+    [
+      18,
+      0,
+      1
+    ],
+    [
+      2,
+      16,
+      1
+    ],
+    [
+      0,
+      1,
+      55
+    ]
+  ],
+  "confusion_matrix_axes": {
+    "rows": "true",
+    "cols": "predicted",
+    "order": [
+      "crop_damage",
+      "no_damage",
+      "property_damage"
+    ]
+  }
+}
