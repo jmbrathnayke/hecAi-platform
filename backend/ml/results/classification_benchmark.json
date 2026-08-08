@@ -1,0 +1,106 @@
+{
+  "classes": [
+    "crop_damage",
+    "no_damage",
+    "property_damage"
+  ],
+  "split": "80/20 train/validation, seed=123. NO separate test partition exists and model selection used this same split, so these are validation metrics and are optimistically biased -- equally for both models, so the COMPARISON remains fair even though the absolute figures are optimistic.",
+  "n_val": 94,
+  "source_artifacts": {
+    "mobilenetv2": "C:\\Users\\User\\Desktop\\final research\\docs\\Human Elephant Conflict Datasets\\model_training\\artifacts\\inference_model.keras",
+    "resnet50": "C:\\Users\\User\\Desktop\\final research\\docs\\Human Elephant Conflict Datasets\\model_training\\artifacts\\resnet50\\best_model.keras",
+    "training_pipeline": "C:\\Users\\User\\Desktop\\final research\\docs\\Human Elephant Conflict Datasets\\model_training"
+  },
+  "models": {
+    "mobilenetv2": {
+      "accuracy": 0.9468085106382979,
+      "macro_f1": 0.9284723797998135,
+      "per_class": {
+        "crop_damage": {
+          "precision": 0.9,
+          "recall": 0.9473684210526315,
+          "f1": 0.9230769230769231,
+          "support": 19
+        },
+        "no_damage": {
+          "precision": 0.9411764705882353,
+          "recall": 0.8421052631578947,
+          "f1": 0.8888888888888888,
+          "support": 19
+        },
+        "property_damage": {
+          "precision": 0.9649122807017544,
+          "recall": 0.9821428571428571,
+          "f1": 0.9734513274336283,
+          "support": 56
+        }
+      },
+      "confusion_matrix": [
+        [
+          18,
+          0,
+          1
+        ],
+        [
+          2,
+          16,
+          1
+        ],
+        [
+          0,
+          1,
+          55
+        ]
+      ],
+      "params": 2261827,
+      "deployed_size_mb": 9.2,
+      "keras_file_mb": 9.63,
+      "inference_ms_per_image": 705.27
+    },
+    "resnet50": {
+      "accuracy": 0.925531914893617,
+      "macro_f1": 0.8913078149920256,
+      "per_class": {
+        "crop_damage": {
+          "precision": 0.8421052631578947,
+          "recall": 0.8421052631578947,
+          "f1": 0.8421052631578947,
+          "support": 19
+        },
+        "no_damage": {
+          "precision": 0.8095238095238095,
+          "recall": 0.8947368421052632,
+          "f1": 0.85,
+          "support": 19
+        },
+        "property_damage": {
+          "precision": 1.0,
+          "recall": 0.9642857142857143,
+          "f1": 0.9818181818181818,
+          "support": 56
+        }
+      },
+      "confusion_matrix": [
+        [
+          16,
+          3,
+          0
+        ],
+        [
+          2,
+          17,
+          0
+        ],
+        [
+          1,
+          1,
+          54
+        ]
+      ],
+      "params": 23593859,
+      "deployed_size_mb": null,
+      "keras_file_mb": 95.1,
+      "inference_ms_per_image": 1314.53
+    }
+  }
+}

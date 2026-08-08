@@ -1,0 +1,21 @@
+{
+  "model": "rf_compensation_v2",
+  "architecture": "two-stage hurdle RF",
+  "trained_on": "2010-2019",
+  "dataset": "compensation_long.csv",
+  "split": "time-based holdout: test = 2020-2021 (never seen in training)",
+  "n_test": 359,
+  "test_mean_lkr": 556395.938718663,
+  "mae": 338260.4892237662,
+  "rmse": 721452.9770641512,
+  "r2": 0.569151666918884,
+  "features": [
+    "damage_type",
+    "district",
+    "ds_division",
+    "year",
+    "prior_year_amount",
+    "prior_year_incident_count",
+    "prior_year_had_payout"
+  ]
+}
