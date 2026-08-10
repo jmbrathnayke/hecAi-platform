@@ -121,7 +121,7 @@ beforeEach(() => {
 // --- role gate (Story 5.1, must survive the Story 5.3 rewrite unchanged) ----------------
 
 test("a non-admin (e.g. Google OAuth officer/citizen) is signed out and redirected to /admin/login", async () => {
-  mockGetUser.mockResolvedValue({ data: { user: { user_metadata: { role: "officer" } } }, error: null });
+  mockGetUser.mockResolvedValue({ data: { user: { app_metadata: { role: "officer" } } }, error: null });
   render(<AdminCasesPage />);
 
   await waitFor(() => expect(mockSignOut).toHaveBeenCalled());
@@ -130,7 +130,7 @@ test("a non-admin (e.g. Google OAuth officer/citizen) is signed out and redirect
 });
 
 test("no role metadata at all is refused and redirected", async () => {
-  mockGetUser.mockResolvedValue({ data: { user: { user_metadata: {} } }, error: null });
+  mockGetUser.mockResolvedValue({ data: { user: { app_metadata: {} } }, error: null });
   render(<AdminCasesPage />);
   await waitFor(() => expect(mockReplace).toHaveBeenCalledWith("/admin/login"));
 });
@@ -148,7 +148,7 @@ test("a thrown network failure during getUser() fails closed — redirected", as
 });
 
 test("a signOut() failure still redirects (fails closed, never strands a non-admin on the page)", async () => {
-  mockGetUser.mockResolvedValue({ data: { user: { user_metadata: { role: "citizen" } } }, error: null });
+  mockGetUser.mockResolvedValue({ data: { user: { app_metadata: { role: "citizen" } } }, error: null });
   mockSignOut.mockRejectedValue(new Error("network down"));
   render(<AdminCasesPage />);
   await waitFor(() => expect(mockReplace).toHaveBeenCalledWith("/admin/login"));
@@ -163,7 +163,7 @@ test("unmounting before getUser() resolves does not throw or update state", asyn
   );
   const { unmount } = render(<AdminCasesPage />);
   unmount();
-  resolveGetUser({ data: { user: { user_metadata: { role: "admin" } } }, error: null });
+  resolveGetUser({ data: { user: { app_metadata: { role: "admin" } } }, error: null });
   await new Promise((r) => setTimeout(r, 0));
   expect(mockReplace).not.toHaveBeenCalled();
 });
@@ -171,7 +171,7 @@ test("unmounting before getUser() resolves does not throw or update state", asyn
 // --- real case list (Story 5.3) ----------------------------------------------------------
 
 function mockAdmin() {
-  mockGetUser.mockResolvedValue({ data: { user: { user_metadata: { role: "admin" } } }, error: null });
+  mockGetUser.mockResolvedValue({ data: { user: { app_metadata: { role: "admin" } } }, error: null });
 }
 
 test("an admin sees the real fetched case list, not placeholder text", async () => {

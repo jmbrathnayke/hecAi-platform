@@ -1,0 +1,45 @@
+{
+  "generated_at": "2026-08-10T20:01:08.444Z",
+  "target_rate": 0.95,
+  "app": "http://127.0.0.1:3055",
+  "api": "http://127.0.0.1:5055",
+  "scope": "PWA sync queue -> server confirmation. Excludes the citizen form UI; drives lib/syncQueue.ts via app/rer7-harness in real Chromium with real IndexedDB.",
+  "conditions": [
+    {
+      "condition": "offline",
+      "description": "queue every case with the network down, then reconnect and flush",
+      "submitted": 12,
+      "confirmed": 12,
+      "rate": 1,
+      "queue_remaining": 0,
+      "seconds": 48.4,
+      "pass": true
+    },
+    {
+      "condition": "intermittent",
+      "description": "connection flapping offline/online across repeated flush attempts",
+      "submitted": 12,
+      "confirmed": 12,
+      "rate": 1,
+      "queue_remaining": 0,
+      "seconds": 53,
+      "pass": true
+    },
+    {
+      "condition": "slow-2g",
+      "description": "online throughout on a throttled 2G-class link (~50 kbps, 2s RTT)",
+      "submitted": 12,
+      "confirmed": 12,
+      "rate": 1,
+      "queue_remaining": 0,
+      "seconds": 64.5,
+      "pass": true
+    }
+  ],
+  "overall": {
+    "submitted": 36,
+    "confirmed": 36,
+    "rate": 1,
+    "pass": true
+  }
+}

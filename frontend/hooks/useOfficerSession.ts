@@ -63,7 +63,7 @@ export function useOfficerSession(): OfficerSessionState {
           // rather than only the latter (this hook's own stated purpose is offline availability
           // on ANY failure to establish a live session, not just a clean "no session" resolve).
           if (!error && data.session?.user?.id) {
-            const metadata = data.session.user.user_metadata ?? {};
+            const metadata = data.session.user.app_metadata ?? {};
             const divisions: string[] = Array.isArray(metadata.assigned_divisions)
               ? metadata.assigned_divisions
               : [];

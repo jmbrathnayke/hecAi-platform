@@ -18,7 +18,7 @@ SECRET = "test-jwt-secret-0123456789-abcdef-ghij"  # >=32 bytes for HS256
 
 
 def _officer_token(sub="officer-1", role="officer"):
-    return jwt.encode({"sub": sub, "user_metadata": {"role": role}}, SECRET, algorithm="HS256")
+    return jwt.encode({"sub": sub, "app_metadata": {"role": role}}, SECRET, algorithm="HS256")
 
 
 class FakeCursor:

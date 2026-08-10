@@ -44,7 +44,7 @@ def make_token(sub, role=None, district_id=None, expires_in=3600):
         metadata["district_id"] = district_id
     payload = {
         "sub": sub,
-        "user_metadata": metadata,
+        "app_metadata": metadata,
         "exp": datetime.now(timezone.utc) + timedelta(seconds=expires_in),
     }
     return jwt.encode(payload, SCENARIO_JWT_SECRET, algorithm="HS256")

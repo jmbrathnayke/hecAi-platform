@@ -21,7 +21,7 @@ beforeEach(() => {
 
 test("live session populates admin_id and district_id, then caches to IDB under the 'admin' key", async () => {
   mockGetSession.mockResolvedValue({
-    data: { session: { user: { id: "admin-1", user_metadata: { district_id: "DIST-7" } } } },
+    data: { session: { user: { id: "admin-1", app_metadata: { district_id: "DIST-7" } } } },
     error: null,
   });
 
@@ -41,7 +41,7 @@ test("live session populates admin_id and district_id, then caches to IDB under 
 
 test("malformed district_id claim (non-string) is coerced to null", async () => {
   mockGetSession.mockResolvedValue({
-    data: { session: { user: { id: "admin-1", user_metadata: { district_id: 42 } } } },
+    data: { session: { user: { id: "admin-1", app_metadata: { district_id: 42 } } } },
     error: null,
   });
 
@@ -128,7 +128,7 @@ test("a hung getSession() that never resolves falls back to cache via the timeou
 
 test("a putSessionValue cache-write failure does not affect the resolved state", async () => {
   mockGetSession.mockResolvedValue({
-    data: { session: { user: { id: "admin-1", user_metadata: { district_id: "DIST-1" } } } },
+    data: { session: { user: { id: "admin-1", app_metadata: { district_id: "DIST-1" } } } },
     error: null,
   });
   mockPutSessionValue.mockRejectedValue(new Error("quota exceeded"));
@@ -149,7 +149,7 @@ test("unmounting before getSession() resolves does not throw or warn about state
   const { unmount } = renderHook(() => useAdminSession());
   unmount();
   resolveGetSession({
-    data: { session: { user: { id: "admin-1", user_metadata: {} } } },
+    data: { session: { user: { id: "admin-1", app_metadata: {} } } },
     error: null,
   });
   await new Promise((r) => setTimeout(r, 0));
