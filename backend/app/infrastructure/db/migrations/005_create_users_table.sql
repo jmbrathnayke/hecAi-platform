@@ -1,5 +1,5 @@
 -- Migration 005: users table (Story 3.1).
--- Mirrors the role/scope claims Supabase issues in the JWT user_metadata (officer:
+-- Mirrors the role/scope claims Supabase issues in the JWT app_metadata (officer:
 -- assigned_divisions[], admin: district_id) so the backend has a durable, queryable
 -- record independent of the token itself.
 --

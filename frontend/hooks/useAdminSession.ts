@@ -60,7 +60,7 @@ export function useAdminSession(): AdminSessionState {
           // Guard against a malformed session (truthy but missing `user`/`user.id`) as well
           // as the expected "no session" case — both fall through to the cache fallback below.
           if (!error && data.session?.user?.id) {
-            const metadata = data.session.user.user_metadata ?? {};
+            const metadata = data.session.user.app_metadata ?? {};
             const district_id =
               typeof metadata.district_id === "string" ? metadata.district_id : null;
             const next = { admin_id: data.session.user.id, district_id };

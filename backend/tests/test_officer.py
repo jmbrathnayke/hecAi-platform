@@ -3,7 +3,7 @@
 DB faked (no Postgres): a FakeConn/FakeCursor implements the two statements the endpoint issues
 (the scoped SELECT and the audit INSERT), so we exercise require_officer auth, the division/owner
 scoping, the PII-free payload, the audit-on-view, and the status filter without a real database.
-JWTs carry user_metadata.role="officer" because require_officer() checks role + assigned_divisions.
+JWTs carry app_metadata.role="officer" because require_officer() checks role + assigned_divisions.
 """
 from datetime import datetime
 
@@ -17,7 +17,7 @@ SECRET = "test-jwt-secret-0123456789-abcdef-ghij"  # >=32 bytes for HS256
 
 
 def _token(sub="officer-1", role="officer", divisions=("Kandy",)):
-    claims = {"sub": sub, "user_metadata": {"role": role, "assigned_divisions": list(divisions)}}
+    claims = {"sub": sub, "app_metadata": {"role": role, "assigned_divisions": list(divisions)}}
     return jwt.encode(claims, SECRET, algorithm="HS256")
 
 

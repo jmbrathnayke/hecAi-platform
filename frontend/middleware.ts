@@ -8,6 +8,18 @@ const intlMiddleware = createMiddleware(routing);
 export default async function middleware(request: NextRequest) {
   const path = request.nextUrl.pathname;
 
+  // RER-7 measurement harness (2026-08-11) — not a product route. Unprefixed and unlocalized,
+  // like /admin and /officer, otherwise intlMiddleware 307s it to /si/rer7-harness and the
+  // Playwright runner never reaches the page. Gated on the same build-time flag as the page
+  // itself, so a production build (flag unset) falls through to normal locale handling and the
+  // route resolves to nothing.
+  if (
+    process.env.NEXT_PUBLIC_ENABLE_RER7_HARNESS === "1" &&
+    path.toLowerCase() === "/rer7-harness"
+  ) {
+    return NextResponse.next();
+  }
+
   // Admin routes (Story 5.1) — English-only (FR-9.3, no locale prefix) AND session-protected.
   // Path-boundary + case-insensitive match so /administrator, /admin-x, etc. are NOT treated as
   // admin (defense-in-depth; Next.js route resolution is case-sensitive too). /admin/login is

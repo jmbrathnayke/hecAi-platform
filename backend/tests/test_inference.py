@@ -3,7 +3,7 @@
 The DB is faked (no Postgres in CI): a FakeConn/FakeCursor implements just the SQL the endpoint
 issues (resolve case_id from offline_id, insert one inference_log row), so we exercise auth
 (require_officer — first real consumer), body validation, and the recorded row shape without a
-real database. JWTs carry user_metadata.role="officer" because require_officer() checks the role.
+real database. JWTs carry app_metadata.role="officer" because require_officer() checks the role.
 """
 import json
 
@@ -17,7 +17,7 @@ SECRET = "test-jwt-secret-0123456789-abcdef-ghij"  # >=32 bytes for HS256
 
 
 def _token(sub="officer-1", role="officer"):
-    claims = {"sub": sub, "user_metadata": {"role": role, "assigned_divisions": ["DIV-1"]}}
+    claims = {"sub": sub, "app_metadata": {"role": role, "assigned_divisions": ["DIV-1"]}}
     return jwt.encode(claims, SECRET, algorithm="HS256")
 
 

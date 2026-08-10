@@ -36,7 +36,7 @@ _SMS_TEMPLATES = {
 
 
 def _token(sub="admin-1", role="admin", district_id=DISTRICT_A):
-    claims = {"sub": sub, "user_metadata": {"role": role, "district_id": district_id}}
+    claims = {"sub": sub, "app_metadata": {"role": role, "district_id": district_id}}
     return jwt.encode(claims, SECRET, algorithm="HS256")
 
 

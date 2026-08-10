@@ -4,7 +4,7 @@
 // FR-9.3 revised) — lives outside app/[locale] so it never gets a /si|/ta|/en prefix, mirroring the
 // officer login tree; locale comes from the NEXT_LOCALE cookie the admin layout resolves. Unlike
 // officer login, the email/password path additionally verifies role === "admin" from the returned
-// user's user_metadata and signs a non-admin straight back out (CRITICAL #4: separate pages + a
+// user's app_metadata and signs a non-admin straight back out (CRITICAL #4: separate pages + a
 // role check prevent role confusion). Supabase-returned auth errors are shown verbatim (provider
 // copy, not ours to translate); only our own error strings are localized.
 
@@ -81,7 +81,7 @@ export default function AdminLoginPage() {
       // Verify the authenticated user is actually an admin. A valid officer/citizen credential
       // must not land on the admin portal — sign them back out and refuse. (Backend
       // require_admin() is the real boundary; this is the client-side companion check.)
-      if (data.user?.user_metadata?.role !== "admin") {
+      if (data.user?.app_metadata?.role !== "admin") {
         try {
           await getSupabase().auth.signOut();
         } catch {

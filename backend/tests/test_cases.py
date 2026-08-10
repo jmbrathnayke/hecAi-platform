@@ -90,7 +90,7 @@ def store():
 
 def _officer_token(sub="officer-1", role="officer"):
     return jwt.encode(
-        {"sub": sub, "user_metadata": {"role": role}}, SECRET, algorithm="HS256"
+        {"sub": sub, "app_metadata": {"role": role}}, SECRET, algorithm="HS256"
     )
 
 
@@ -292,7 +292,7 @@ def test_officer_token_missing_sub_is_rejected_403_no_insert(client, store):
     # A validly-signed officer token that OMITS `sub` entirely decodes fine (PyJWT only rejects
     # an explicit non-string `sub`, not a missing one) — claims.get("sub") is None. Paired with a
     # body that also omits officer_id, the two falsy values must NOT compare equal-and-pass (P4).
-    token = jwt.encode({"user_metadata": {"role": "officer"}}, SECRET, algorithm="HS256")
+    token = jwt.encode({"app_metadata": {"role": "officer"}}, SECRET, algorithm="HS256")
     body = _body(submitted_by_officer=True)
     body.pop("officer_id", None)
     res = client.post(

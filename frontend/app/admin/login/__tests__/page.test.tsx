@@ -31,10 +31,10 @@ jest.mock("@/lib/supabase", () => ({
   }),
 }));
 
-// Convenience: a successful password sign-in returning a given role in user_metadata.
+// Convenience: a successful password sign-in returning a given role in app_metadata.
 function signInAs(role: string | undefined) {
   mockSignInWithPassword.mockResolvedValue({
-    data: { user: { id: "u-1", user_metadata: role === undefined ? {} : { role } } },
+    data: { user: { id: "u-1", app_metadata: role === undefined ? {} : { role } } },
     error: null,
   });
 }
@@ -139,7 +139,7 @@ test("unmounting before signInWithPassword resolves does not throw or update sta
   fillAndSubmit();
 
   unmount();
-  resolveSignIn({ data: { user: { id: "u-1", user_metadata: { role: "admin" } } }, error: null });
+  resolveSignIn({ data: { user: { id: "u-1", app_metadata: { role: "admin" } } }, error: null });
   await new Promise((r) => setTimeout(r, 0));
   expect(mockPush).not.toHaveBeenCalled();
 });
