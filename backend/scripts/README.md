@@ -44,9 +44,22 @@ Both accept `--database-url` to override `DATABASE_URL` from `.env`.
 | `ground_truth` | Populated on every row; disagrees with `prediction` on 8 (16%) |
 | Approved cases | Carry `approved_amount` ≠ the estimate, so MAE is non-zero |
 
-Deterministic: `random.Random(20260810)` plus `uuid5`-derived `offline_id`s, so two runs against
-two empty databases produce identical rows. Re-running against a seeded database reports
-`created=0, skipped=50` and does not advance `hec_canonical_seq`.
+Deterministic **given a fixed clock**: `random.Random(20260810)` plus `uuid5`-derived
+`offline_id`s. Every attribute except the timestamps is identical across runs; `submitted_at`,
+`updated_at` and therefore the year inside `canonical_id` are relative to when you run it, since
+`build_plan()` defaults `now` to the wall clock. The tests pin `now` explicitly, so only they see
+full determinism.
+
+Re-running against a seeded database reports `created=0, skipped=50` and does not advance
+`hec_canonical_seq`.
+
+**`--count` cannot be changed on an existing corpus.** Every attribute except `offline_id`
+depends on the count — the shuffles are over `range(count)`, `submitted_at` divides by
+`count - 1`, and the quotas are `round(count * rate)`. Re-seeding at a different count would skip
+the existing rows by `offline_id` and append rows planned under different assumptions, silently
+breaking the status quotas and the exact 0.30 override rate while still reporting success. The
+seeder refuses; clear first. The minimum is 12 (below that the corpus cannot cover four statuses
+and four districts, and the scenario assertions fail rather than skip).
 
 ## Two things that will bite you
 
@@ -59,9 +72,16 @@ form a contiguous tail, and it verifies the chain before *and* after, rolling ba
 
 Calling `GET /api/v1/research/export` writes a case-less `research_exported_data` audit row.
 After that, the strict clear refuses — which is absurd, since exporting the corpus is the whole
-point of seeding it. `--include-orphan-audit` widens the sweep to case-less bookkeeping rows
-(exports, chain verifications) written after seeding began. It does **not** widen it to audit
-rows attached to real cases; those still refuse, which is the case the guard exists for.
+point of seeding it. `--include-orphan-audit` widens the sweep to case-less rows written after seeding began whose
+event is on an explicit allowlist — `admin_viewed_cases`, `admin_viewed_analytics`,
+`admin_viewed_compensation_caps`, `admin_verified_chain`, `officer_viewed_cases`,
+`research_exported_data`. All of those record *looking at* data.
+
+It deliberately does **not** sweep `compensation_cap_updated` (a genuine system configuration
+change) or `admin_exported_cases` (an NFR-3.4 data-egress record), even though both also carry
+`case_id IS NULL`, nor any audit row attached to a real case. Those still refuse — which is the
+case the guard exists for. The refusal message names the blocking events so you can see what is
+in the way.
 
 **If a real case is submitted and audited after a seed run, the corpus becomes unclearable.**
 Clear before resuming real submissions, or accept that it stays.
@@ -89,6 +109,8 @@ HEC_SCENARIO_DB_URL="$DATABASE_URL" pytest tests/scenarios -v
 A separate variable, deliberately: CI runs a bare `pytest -v` with no database, and gating on
 `DATABASE_URL` would silently point the suite at whatever a developer's `.env` happens to hold.
 
+On a machine that *does* have a database, `pytest -m "not scenario"` excludes the suite.
+
 The suite creates real cases and cleans up after itself under the same contiguous-tail rule. If
 teardown cannot delete safely it fails loudly and leaves the rows in place rather than corrupting
 the chain.
@@ -97,3 +119,22 @@ the chain.
 duplicates, stable `canonical_id` across retries. RER-7's ≥95% offline *submission completion
 rate* is a PWA property (service worker + IndexedDB `sync_queue`, Stories 4.1/4.4) that a backend
 test client cannot measure. Do not quote these results as the whole of RER-7.
+
+## End-to-end smoke test
+
+`scripts/e2e_smoke.ps1` boots both tiers against the dev database and probes every
+research-relevant surface — auth gates, the PII-stripped export, admin analytics and KPIs, the
+audit-chain verification, and the citizen/officer/admin page shells.
+
+```powershell
+./scripts/e2e_smoke.ps1                 # backend + frontend
+./scripts/e2e_smoke.ps1 -SkipFrontend   # API only, ~20s
+./scripts/e2e_smoke.ps1 -AllowWrites    # also exercises a real submission (writes to the chain)
+```
+
+**It is not read-only, and cannot be**: every admin/officer/research read endpoint writes an
+access-audit row. What the default run avoids is rows the cleaner *cannot* sweep — the CSV-export
+probe is gated behind `-AllowWrites` for exactly that reason, since `admin_exported_cases` is an
+NFR-3.4 record the cleaner refuses to delete and it will then block clearing the seeded corpus.
+
+Writes a JSON report to `e2e-report.json` and exits non-zero on any failure.

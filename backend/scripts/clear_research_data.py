@@ -35,7 +35,7 @@ import sys
 import psycopg2
 from dotenv import load_dotenv
 
-from app.infrastructure.audit import verify_chain
+from app.infrastructure.audit import _AUDIT_CHAIN_LOCK_KEY, verify_chain
 from scripts._seed_common import SEED_ACTOR
 
 # Deletion order matters: only compensation_estimates cascades (migration 013). inference_log,
@@ -53,8 +53,36 @@ if hasattr(sys.stdout, "reconfigure"):  # pragma: no cover - environment-depende
     sys.stdout.reconfigure(encoding="utf-8")
 
 
+# Events written with case_id IS NULL that --include-orphan-audit may sweep. This is an
+# ALLOWLIST, not "anything case-less", and the distinction matters: the first version matched on
+# `case_id IS NULL` alone, which also swept `compensation_cap_updated` (a genuine system
+# configuration change) and `admin_exported_cases` (an NFR-3.4 data-egress record). Both are real
+# FR-5.5 retention records that happen to carry no case_id; deleting them alongside synthetic data
+# would be destroying audit history, which is precisely what the chain exists to prevent.
+#
+# Everything here records LOOKING at data. `research_exported_data` is included because it is the
+# row that verifying the seeded corpus creates — the whole reason this flag has to exist.
+SWEEPABLE_ORPHAN_EVENTS = (
+    "admin_viewed_cases",
+    "admin_viewed_analytics",
+    "admin_viewed_compensation_caps",
+    "admin_verified_chain",
+    "officer_viewed_cases",
+    "research_exported_data",
+)
+
+
 class ChainGuardRefusal(RuntimeError):
-    """Raised when deleting seeded audit rows would break the hash chain."""
+    """Raised when deleting seeded audit rows would break the hash chain.
+
+    Carries the partial `report` so the caller can print the chain verdict on a refusal too —
+    AC6 asks for the before/after verification on EVERY path, and an earlier version emitted the
+    report only on the success path.
+    """
+
+    def __init__(self, message, report=None):
+        super().__init__(message)
+        self.report = report or {}
 
 
 def _seeded_case_ids(cur):
@@ -70,13 +98,12 @@ def _seeded_audit_ids(cur, case_ids, include_orphans=False):
     'seed-script', and `case_id` alone would sweep up a real admin action taken on a seeded case
     while someone was demoing.
 
-    With `include_orphans`, also case-less bookkeeping rows written after seeding began
-    (`case_id IS NULL`: `research_exported_data`, `admin_verified_chain`). Why this exists:
-    calling `GET /api/v1/research/export` ONCE writes such a row, and it then sits after every
-    seeded row and blocks the strict clear forever. Since exporting the corpus is the entire
-    point of seeding it, the strict mode alone is unusable in practice — verified the hard way
-    on 2026-08-10. Kept opt-in because these rows are genuine audit records of real actions,
-    even if the actions were performed against synthetic data.
+    With `include_orphans`, also case-less rows written after seeding began whose event is in
+    SWEEPABLE_ORPHAN_EVENTS. Why this exists: calling `GET /api/v1/research/export` ONCE writes
+    such a row, and it then sits after every seeded row and blocks the strict clear forever.
+    Since exporting the corpus is the entire point of seeding it, strict mode alone is unusable
+    in practice — verified the hard way on 2026-08-10. Kept opt-in, and kept to an allowlist,
+    because a case-less audit row is not automatically disposable.
     """
     cur.execute(
         "SELECT id FROM audit_log WHERE actor_id = %s AND case_id = ANY(%s) ORDER BY id",
@@ -85,8 +112,9 @@ def _seeded_audit_ids(cur, case_ids, include_orphans=False):
     ids = [r[0] for r in cur.fetchall()]
     if include_orphans and ids:
         cur.execute(
-            "SELECT id FROM audit_log WHERE case_id IS NULL AND id > %s ORDER BY id",
-            (min(ids),),
+            "SELECT id FROM audit_log WHERE case_id IS NULL AND id > %s AND event = ANY(%s) "
+            "ORDER BY id",
+            (min(ids), list(SWEEPABLE_ORPHAN_EVENTS)),
         )
         ids = sorted(ids + [r[0] for r in cur.fetchall()])
     return ids
@@ -108,11 +136,21 @@ def check_audit_tail(cur, audit_ids):
 
 def clear(cur, *, dry_run, include_orphans=False):
     """Delete the seeded corpus. Raises ChainGuardRefusal rather than risking the chain."""
+    # Serialise against concurrent audit writers for the rest of this transaction. Without it
+    # there is a TOCTOU window: a real submission committing between the post-delete
+    # verify_chain() and our COMMIT chains its prev_hash onto a row we are deleting, so both
+    # transactions succeed, verification reported clean, and the chain is broken anyway.
+    # write_audit_log() takes the same key (infrastructure/audit.py), so acquiring it here makes
+    # this script and every submission mutually exclusive.
+    cur.execute("SELECT pg_advisory_xact_lock(%s)", (_AUDIT_CHAIN_LOCK_KEY,))
+
     case_ids = _seeded_case_ids(cur)
-    report = {"seeded_cases": len(case_ids), "deleted": {}, "dry_run": dry_run}
+    report = {"seeded_cases": len(case_ids), "deleted": {}, "dry_run": dry_run,
+              "include_orphans": include_orphans}
 
     if not case_ids:
         report["chain_before"] = verify_chain(cur)
+        report["chain_after"] = report["chain_before"]  # nothing changed
         report["note"] = "Nothing seeded; nothing to do."
         return report
 
@@ -121,31 +159,41 @@ def clear(cur, *, dry_run, include_orphans=False):
     if not valid_before:
         # Refuse on a pre-existing break too: deleting into an already-broken chain makes the
         # damage indistinguishable from ours.
+        report["chain_after"] = report["chain_before"]  # nothing deleted
         raise ChainGuardRefusal(
             f"audit_log chain is ALREADY broken at row id={broken_before}, before this script "
-            "touched anything. Investigate that first — deleting now would obscure the cause."
+            "touched anything. Investigate that first — deleting now would obscure the cause.",
+            report,
         )
 
     audit_ids = _seeded_audit_ids(cur, case_ids, include_orphans=include_orphans)
     intruders = check_audit_tail(cur, audit_ids)
     report["seeded_audit_rows"] = len(audit_ids)
     report["interleaved_foreign_audit_rows"] = intruders
-    report["include_orphans"] = include_orphans
 
     if intruders:
+        cur.execute(
+            "SELECT event, actor_id, case_id FROM audit_log WHERE id = ANY(%s) ORDER BY id "
+            "LIMIT 10",
+            (intruders,),
+        )
+        blocking = [{"event": e, "actor_id": a, "case_id": c} for e, a, c in cur.fetchall()]
+        report["blocking_rows"] = blocking
+
         hint = ""
         if not include_orphans:
-            orphans = _seeded_audit_ids(cur, case_ids, include_orphans=True)
-            if set(orphans) >= set(intruders):
-                hint = (" All of them are case-less bookkeeping rows (an export or a chain "
-                        "verification, not a real case event) — `--include-orphan-audit` "
-                        "would sweep them up with the corpus.")
+            sweepable = {r["event"] for r in blocking} <= set(SWEEPABLE_ORPHAN_EVENTS)
+            if sweepable and all(r["case_id"] is None for r in blocking):
+                hint = (" Every blocking row is a case-less view/export record — "
+                        "`--include-orphan-audit` would sweep them up with the corpus.")
+        report["chain_after"] = report["chain_before"]  # nothing deleted
         raise ChainGuardRefusal(
             f"{len(intruders)} non-seeded audit_log row(s) were written after the first seeded "
-            f"one (ids: {intruders[:10]}{'...' if len(intruders) > 10 else ''}). Deleting the "
-            "seeded rows would break the hash chain from that point on, and the FK from "
-            "audit_log.case_id means the cases cannot be removed while their audit rows remain. "
-            f"Nothing was deleted.{hint}"
+            f"one (ids: {intruders[:10]}{'...' if len(intruders) > 10 else ''}; events: "
+            f"{sorted({r['event'] for r in blocking})}). Deleting the seeded rows would break "
+            "the hash chain from that point on, and the FK from audit_log.case_id means the "
+            f"cases cannot be removed while their audit rows remain. Nothing was deleted.{hint}",
+            report,
         )
 
     if dry_run:
@@ -215,7 +263,10 @@ def main(argv=None):
                 if args.dry_run:
                     conn.rollback()
     except ChainGuardRefusal as exc:
+        import json as _json
         print(f"\nREFUSED — nothing deleted.\n{exc}", file=sys.stderr)
+        # AC6 asks for the chain verdict on every path, refusal included.
+        print(_json.dumps(exc.report, ensure_ascii=False, indent=2, default=str))
         return 1
     finally:
         conn.close()

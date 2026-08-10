@@ -8,9 +8,10 @@ would silently start writing to whatever that points at, and CI could not distin
 
 CLEANUP AND THE HASH CHAIN. These scenarios create real cases through the real routes, so they
 also create real hash-chained audit rows. Teardown removes them under the SAME contiguous-tail
-rule clear_research_data.py enforces, and re-verifies the chain afterwards. If the chain would
-break, teardown fails loudly and leaves the rows in place rather than silently corrupting the
-tamper-evidence the admin UI reports on.
+rule clear_research_data.py enforces, inside ONE explicit transaction holding the audit advisory
+lock, and re-verifies the chain before committing. If the chain would break, the transaction
+rolls back and the rows stay put rather than the tamper-evidence the admin UI reports on being
+silently corrupted.
 """
 import os
 import uuid
@@ -81,6 +82,8 @@ def tokens():
 
 @pytest.fixture(scope="session")
 def db():
+    """Autocommit, because the scenarios read state the ROUTES committed on their own
+    connections. Teardown deliberately turns it off — see _purge."""
     import psycopg2
 
     conn = psycopg2.connect(SCENARIO_DB_URL, connect_timeout=45)
@@ -108,19 +111,46 @@ def new_offline_id(created):
 
 
 def _purge(conn, offline_ids):
-    from app.infrastructure.audit import verify_chain
+    """Remove everything the session created, atomically.
+
+    ATOMICITY IS THE POINT. The first version ran the five DELETEs on the session's autocommit
+    connection and only then called verify_chain — so by the time it raised "the chain is
+    invalid", the rows were already durably gone and there was nothing left to roll back. Its
+    docstring promised the opposite. The deletes now run in one explicit transaction with the
+    same advisory lock write_audit_log() takes, so a concurrent submission cannot chain onto a
+    row this transaction is removing, and any failure (or a broken post-check) rolls the whole
+    thing back.
+    """
+    from app.infrastructure.audit import _AUDIT_CHAIN_LOCK_KEY, verify_chain
 
     if not offline_ids:
         return
+
+    conn.autocommit = False
+    try:
+        _purge_in_transaction(conn, offline_ids, _AUDIT_CHAIN_LOCK_KEY, verify_chain)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.autocommit = True
+
+
+def _purge_in_transaction(conn, offline_ids, lock_key, verify_chain):
     with conn.cursor() as cur:
+        cur.execute("SELECT pg_advisory_xact_lock(%s)", (lock_key,))
         # ::uuid[] is required, not cosmetic. cases.offline_id is a UUID column (migration 002)
         # and psycopg2 adapts a Python list of strings to a text[], so an uncast ANY() fails with
         # "operator does not exist: uuid = text" — which surfaces only at session teardown, long
         # after the tests themselves have passed.
         cur.execute("SELECT id FROM cases WHERE offline_id = ANY(%s::uuid[])", (offline_ids,))
         case_ids = [r[0] for r in cur.fetchall()]
-        if not case_ids:
-            return
+
+        # No early return on an empty case_ids. A run where every submit 403s (e.g. `-k` selecting
+        # only the mismatched-officer_id test) still writes case-less audit rows through the
+        # export and verify-chain calls; returning here would strand them in the chain forever
+        # and make every later clear refuse.
 
         # Two sources, and the second is not optional: several endpoints write audit rows with
         # case_id IS NULL — `admin_verified_chain` from the verify-chain call in scenario 6, and
@@ -129,9 +159,11 @@ def _purge(conn, offline_ids):
         # sitting among ours, and teardown refuses. (It really did, the first time this ran.)
         # Every scenario actor id starts with "scenario-", which makes them precisely
         # identifiable without guessing from timestamps.
+        # ::bigint[] so an empty case_ids list is a typed empty array rather than an untyped
+        # '{}', which Postgres rejects with "operator does not exist: bigint = text".
         cur.execute(
-            "SELECT id FROM audit_log WHERE case_id = ANY(%s) OR actor_id LIKE 'scenario-%%' "
-            "ORDER BY id",
+            "SELECT id FROM audit_log WHERE case_id = ANY(%s::bigint[]) "
+            "OR actor_id LIKE 'scenario-%%' ORDER BY id",
             (case_ids,),
         )
         audit_ids = [r[0] for r in cur.fetchall()]
@@ -150,12 +182,14 @@ def _purge(conn, offline_ids):
                     "manually once you understand what else wrote to this database."
                 )
 
-        cur.execute("DELETE FROM payment_authorizations WHERE case_id = ANY(%s)", (case_ids,))
-        cur.execute("DELETE FROM inference_log WHERE case_id = ANY(%s)", (case_ids,))
-        cur.execute("DELETE FROM compensation_estimates WHERE case_id = ANY(%s)", (case_ids,))
+        if case_ids:
+            cur.execute("DELETE FROM payment_authorizations WHERE case_id = ANY(%s)", (case_ids,))
+            cur.execute("DELETE FROM inference_log WHERE case_id = ANY(%s)", (case_ids,))
+            cur.execute("DELETE FROM compensation_estimates WHERE case_id = ANY(%s)", (case_ids,))
         if audit_ids:
             cur.execute("DELETE FROM audit_log WHERE id = ANY(%s)", (audit_ids,))
-        cur.execute("DELETE FROM cases WHERE id = ANY(%s)", (case_ids,))
+        if case_ids:
+            cur.execute("DELETE FROM cases WHERE id = ANY(%s)", (case_ids,))
 
         valid, broken = verify_chain(cur)
         if not valid:

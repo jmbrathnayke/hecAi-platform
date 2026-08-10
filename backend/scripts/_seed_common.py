@@ -39,6 +39,11 @@ SEED_MODEL_TYPE = "mobilenetv2"  # must be in inference.py's VALID_MODEL_TYPES
 DEFAULT_COUNT = 50
 RNG_SEED = 20260810
 
+# Below this the corpus cannot cover 4 districts (i % 4), 3 damage categories (i % 3) and all
+# four statuses at once, so the scenario assertions fail rather than skip. 12 gives every
+# district 3 cases and every status at least 1 at the configured ratios.
+MIN_USEFUL_COUNT = 12
+
 # PRD:344 — "Model training and pilot evaluation are limited to ... primarily Polonnaruwa,
 # Anuradhapura, Hambantota, and Monaragala." cases.district is TEXT holding the Sinhala name
 # (migration 015); there is no district_id column despite ds_division_id's misleading suffix.
@@ -76,6 +81,18 @@ _PREDICTION_FOR_CATEGORY = {
     # per-photo row we seed for it is whichever class the "first" photo produced.
     "combined": "crop_damage",
 }
+
+# Share of cases where the model predicts no_damage despite a citizen reporting damage. Without
+# this, `no_damage` never appears as a PREDICTION (only as a ground truth or an override target)
+# and RER-2's 3x3 confusion matrix has an all-zero predicted-no_damage row — making precision for
+# that class 0/0 and recall 0. Caught by review; it is also a realistic case (the AI sees nothing
+# in a photo the citizen filed a claim over).
+NO_DAMAGE_PREDICTION_RATE = 0.14
+
+# A decided case needs a plausible gap between submission and decision. Cases newer than this
+# are kept in the open statuses so `updated_at - submitted_at` is never 0 for a decided case,
+# which would feed admin.py's avg_processing_days KPI a meaningless zero.
+MIN_DECISION_AGE_DAYS = 3
 
 
 def load_pilot_divisions():
@@ -119,6 +136,20 @@ def _largest_remainder(count, ratios):
     return counts
 
 
+def _approval_factor(i):
+    """Ratio of the human-approved amount to the model's estimate, never exactly 1.0.
+
+    The previous formula `0.70 + 0.60 * ((i*7) % 11) / 10` hit 1.000 whenever (i*7) % 11 == 5
+    (i = 7, 18, 29, 40 at count=50). Any such case in the Approved bucket contributed exactly
+    zero to MAE — the fabricated-perfect artifact the field exists to avoid. This maps onto
+    0.70..0.94 and 1.06..1.30, skipping the neighbourhood of 1.0 entirely.
+    """
+    step = (i * 7) % 11          # 0..10, cycles through all residues
+    if step < 5:
+        return 0.70 + 0.06 * step        # 0.70, 0.76, 0.82, 0.88, 0.94
+    return 1.06 + 0.04 * (step - 5)      # 1.06, 1.10, 1.14, 1.18, 1.22, 1.26
+
+
 def _other_class(exclude, offset):
     """A model class that is not `exclude`, chosen deterministically by `offset`."""
     options = [c for c in MODEL_CLASSES if c != exclude]
@@ -143,21 +174,72 @@ def build_plan(count=DEFAULT_COUNT, now=None, rng=None, divisions=None):
     if divisions is None:
         divisions = load_pilot_divisions()
 
-    order = list(range(count))
-    rng.shuffle(order)
+    # EVERY QUOTA GETS ITS OWN INDEPENDENT SHUFFLE.
+    #
+    # The first version of this function shuffled once and sliced every quota off that single
+    # list — statuses from order[0:20], overrides from order[:15], officer cases from
+    # order[-10:]. The quotas were individually correct and every marginal test passed, but the
+    # dimensions were perfectly nested: all 15 overrides landed on Submitted cases, the override
+    # rate for Approved/Rejected/Under Review was exactly 0, and 100% of Rejected cases were
+    # officer-assisted. Any cross-tab in Story 7.1 or the dissertation would have been reporting
+    # an artefact of the slicing. Separate draws are what make the dimensions independent.
+    def _draw(k):
+        pool = list(range(count))
+        rng.shuffle(pool)
+        return pool[:k]
+
+    def _balanced(values):
+        """Deal `values` round-robin over a shuffled index order: balanced counts, but no
+        arithmetic relationship to `i`. Using `i % 3` (or any linear function of it) for
+        locale, severity AND damage_category aliased all three perfectly — every crop case was
+        si+Minor, every property case ta+Moderate — so a severity-by-damage-type breakdown was
+        a fabricated diagonal. Co-prime strides do not help: anything of the form (a*i+b) % 3 is
+        still a function of i % 3.
+        """
+        idx = list(range(count))
+        rng.shuffle(idx)
+        return {i: values[pos % len(values)] for pos, i in enumerate(idx)}
+
+    span = max(count - 1, 1)
+    age_days = {i: round(i * 365 / span) for i in range(count)}
 
     # --- statuses -------------------------------------------------------------------------
+    # Decided statuses are restricted to cases old enough to have a plausible decision gap.
     status_counts = _largest_remainder(count, STATUS_RATIOS)
-    status_by_index = {}
-    cursor = 0
-    for name, n in status_counts.items():
-        for idx in order[cursor:cursor + n]:
-            status_by_index[idx] = name
-        cursor += n
+    decidable = [i for i in range(count) if age_days[i] >= MIN_DECISION_AGE_DAYS]
+    rng.shuffle(decidable)
+    too_new = [i for i in range(count) if age_days[i] < MIN_DECISION_AGE_DAYS]
+    rng.shuffle(too_new)
 
-    # --- overrides: exactly round(count * 0.30) -------------------------------------------
+    status_by_index = {}
+    n_decided = status_counts["Approved"] + status_counts["Rejected"]
+    decided_pool = decidable[:n_decided]
+    for idx in decided_pool[:status_counts["Approved"]]:
+        status_by_index[idx] = "Approved"
+    for idx in decided_pool[status_counts["Approved"]:]:
+        status_by_index[idx] = "Rejected"
+
+    open_pool = too_new + decidable[n_decided:]
+    rng.shuffle(open_pool)
+    for idx in open_pool[:status_counts["Submitted"]]:
+        status_by_index[idx] = "Submitted"
+    for idx in open_pool[status_counts["Submitted"]:]:
+        status_by_index[idx] = "Under Review"
+
+    # --- overrides: exactly round(count * 0.30), independent of status --------------------
     n_override = round(count * OVERRIDE_RATE)
-    override_indices = set(order[:n_override])
+    override_indices = set(_draw(n_override))
+
+    # --- no_damage predictions, independent of everything ---------------------------------
+    no_damage_indices = set(_draw(round(count * NO_DAMAGE_PREDICTION_RATE)))
+
+    # --- confidence assignment, decoupled from submission date -----------------------------
+    # Confidence used to be 0.30 + 0.65 * i/span while submitted_at was also a function of i, so
+    # confidence fell monotonically with case age — a clean 12-month "model degradation" trend
+    # that is pure artefact. The values still span the full range exactly; only the pairing with
+    # dates is randomised.
+    confidence_slots = list(range(count))
+    rng.shuffle(confidence_slots)
 
     # --- ground-truth disagreements -------------------------------------------------------
     # Arbitrary synthetic labelling, chosen only so the confusion matrix is non-degenerate. It
@@ -169,15 +251,18 @@ def build_plan(count=DEFAULT_COUNT, now=None, rng=None, divisions=None):
     n_disagree_overridden = min(round(n_disagree * 0.625), n_override)
     n_disagree_clean = n_disagree - n_disagree_overridden
 
-    overridden_ordered = [i for i in order if i in override_indices]
-    clean_ordered = [i for i in order if i not in override_indices]
+    overridden_ordered = sorted(override_indices)
+    clean_ordered = [i for i in range(count) if i not in override_indices]
+    rng.shuffle(overridden_ordered)
+    rng.shuffle(clean_ordered)
     disagree_indices = set(overridden_ordered[:n_disagree_overridden])
     disagree_indices.update(clean_ordered[:n_disagree_clean])
 
-    # --- officer-assisted slice (~20%) -----------------------------------------------------
-    officer_indices = set(order[-max(1, round(count * 0.20)):])
+    # --- officer-assisted slice (~20%), independent of status ------------------------------
+    officer_indices = set(_draw(max(1, round(count * 0.20))))
 
-    span = max(count - 1, 1)
+    locale_by_index = _balanced(LOCALES)
+    severity_by_index = _balanced(SEVERITIES)
     plan = []
     for i in range(count):
         district = PILOT_DISTRICTS[i % len(PILOT_DISTRICTS)]
@@ -188,18 +273,23 @@ def build_plan(count=DEFAULT_COUNT, now=None, rng=None, divisions=None):
         # Spread evenly back over the trailing 12 months so Story 7.1's "last 12 months" trend
         # chart has a real shape. Leaving submitted_at to its NOW() default would pile all rows
         # onto one day and flatten the chart into a single spike.
-        submitted_at = now - timedelta(days=round(i * 365 / span))
+        submitted_at = now - timedelta(days=age_days[i])
 
         if status in ("Approved", "Rejected"):
             # admin.py's avg_processing_days KPI is updated_at - submitted_at; leaving them equal
-            # reports a meaningless 0.0 days. Clamped so a recent case never lands in the future.
-            decided_at = min(submitted_at + timedelta(days=3 + (i % 19)), now)
+            # reports a meaningless 0.0 days. The decided-status pool already excludes cases
+            # younger than MIN_DECISION_AGE_DAYS, so the clamp can never collapse the gap to zero.
+            gap = min(3 + (i % 19), age_days[i])
+            decided_at = submitted_at + timedelta(days=gap)
         else:
             decided_at = submitted_at
 
-        prediction = _PREDICTION_FOR_CATEGORY[damage_category]
-        if damage_category == "combined" and i % 2:
-            prediction = "property_damage"
+        if i in no_damage_indices:
+            prediction = "no_damage"
+        else:
+            prediction = _PREDICTION_FOR_CATEGORY[damage_category]
+            if damage_category == "combined" and i % 2:
+                prediction = "property_damage"
 
         was_overridden = i in override_indices
         # Story 3.4 decision D1: a same-category "override" is recorded as a NON-override so the
@@ -220,18 +310,22 @@ def build_plan(count=DEFAULT_COUNT, now=None, rng=None, divisions=None):
             "ds_division_id": district_divisions[i % len(district_divisions)],
             "submitted_at": submitted_at,
             "updated_at": decided_at,
-            "locale": LOCALES[i % len(LOCALES)],
+            "locale": locale_by_index[i],
             "submitted_by_officer": i in officer_indices,
             "officer_id": SEED_OFFICER_ID if i in officer_indices else None,
-            "ai_severity": SEVERITIES[i % len(SEVERITIES)],
+            "ai_severity": severity_by_index[i],
             "prediction": prediction,
-            "confidence": round(CONFIDENCE_MIN + (CONFIDENCE_MAX - CONFIDENCE_MIN) * i / span, 4),
+            "confidence": round(
+                CONFIDENCE_MIN
+                + (CONFIDENCE_MAX - CONFIDENCE_MIN) * confidence_slots[i] / span, 4
+            ),
             "was_overridden": was_overridden,
             "override_category": override_category,
             "ground_truth": ground_truth,
-            # Approved cases need a human figure that differs from the model's, or MAE is
-            # identically zero — another fabricated-perfect artifact. Deterministic +/-30%.
-            "approval_factor": round(0.70 + 0.60 * ((i * 7) % 11) / 10, 3),
+            # Approved cases need a human figure that differs from the model's, or that case
+            # contributes exactly 0 to MAE — a fabricated-perfect artifact. The offset skips
+            # 1.000 entirely: the previous formula hit it whenever (i*7) % 11 == 5.
+            "approval_factor": round(_approval_factor(i), 3),
         })
 
     return plan
