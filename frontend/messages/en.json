@@ -415,6 +415,16 @@
         "down": "Down from {last}% last month",
         "flat": "No change from {last}% last month"
       }
+    },
+    "export": {
+      "button": "Export {count, plural, =0 {cases} one {# case} other {# cases}}",
+      "csv": "Export CSV",
+      "pdf": "Export PDF",
+      "exporting": "Exporting…",
+      "error": "Export failed. Please try again.",
+      "menuAria": "Choose an export format",
+      "timeout": "Export timed out. Try narrowing the filters.",
+      "truncated": "Partial export — only the {count, number} most recent cases are included. Narrow the filters for a complete report."
     }
   }
 }

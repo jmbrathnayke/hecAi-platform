@@ -1,0 +1,23 @@
+# Research/benchmarking dependencies ONLY (Story 7.3).
+#
+# DO NOT merge these into backend/requirements.txt, and do not install them into backend/venv.
+# Render deploys with PYTHON_VERSION 3.14.0 and installs backend/requirements.txt; TensorFlow
+# publishes no cp314 wheel, so adding it there breaks the deploy at install time (the same
+# class of failure Story 5.2 hit with cp314 numpy).
+#
+# These run in the ML virtualenv (Python 3.12.10):
+#     C:/hecml/.venv/Scripts/python.exe -m pip install -r backend/ml/requirements-ml.txt
+#
+# Versions pinned to the environment that produced the committed results/ artifacts, so a
+# re-run reproduces the published figures rather than silently drifting.
+tensorflow==2.18.1
+keras==3.15.0
+
+# Already pinned identically in backend/requirements.txt -- repeated so this file stands alone.
+scikit-learn==1.9.0
+pandas==3.0.3
+numpy==2.5.1
+joblib==1.5.3
+
+# Charts produced by the original training pipeline (not required by the scripts here).
+matplotlib>=3.8

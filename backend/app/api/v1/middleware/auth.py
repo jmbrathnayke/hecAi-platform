@@ -104,6 +104,64 @@ def require_admin():
     return decorator
 
 
+def require_research():
+    """Guard the researcher-scoped export (Story 7.3, FR-7.3). Mirrors require_admin()'s
+    independent JWT validation and error-code conventions.
+
+    `system_admin` is introduced by this story (PO decision, OQ-A 2026-08-09). Authorization is
+    the signature-verified JWT, so no migration is required for this guard to work: the `users`
+    table is a durable mirror of Supabase's role claims, not the auth source — and its
+    CHECK (role IN ('officer','admin')) means a system_admin simply has no `users` row today.
+
+    NOTE (accepted, pre-existing): `user_metadata` is client-writable via `auth.updateUser()`
+    (deferred-work.md 2026-07-09), so this role — like `officer` and `admin` before it — is
+    only as trustworthy as the Supabase-side lockdown of that field. Carried forward
+    deliberately; must be resolved before this endpoint is exposed on a public HTTPS host.
+
+    Deliberately does NOT set a district scope: research spans every district, unlike
+    require_admin()'s g.district_id.
+    """
+    def decorator(f):
+        @functools.wraps(f)
+        def wrapper(*args, **kwargs):
+            secret = current_app.config.get("SUPABASE_JWT_SECRET")
+            if not secret:
+                return jsonify({"error": "server_misconfigured"}), 500
+
+            auth = request.headers.get("Authorization", "")
+            if not auth.startswith("Bearer "):
+                return jsonify({"error": "missing_token"}), 401
+            token = auth.split(" ", 1)[1]
+            try:
+                claims = jwt.decode(
+                    token, secret, algorithms=["HS256"], options={"verify_aud": False}
+                )
+            except jwt.ExpiredSignatureError:
+                return jsonify({"error": "token_expired"}), 401
+            except jwt.PyJWTError:
+                return jsonify({"error": "invalid_token"}), 401
+
+            metadata = claims.get("user_metadata", {})
+            if not isinstance(metadata, dict) or metadata.get("role") != "system_admin":
+                # An officer or DISTRICT-admin token must never reach the research corpus:
+                # unlike /admin/export it is not district-scoped, so a district admin would
+                # otherwise read every district's data through this route.
+                return jsonify({"error": "forbidden"}), 403
+
+            researcher_id = claims.get("sub")
+            if not researcher_id:
+                # A validly-signed token missing `sub` is malformed — don't let a None actor_id
+                # flow into the audit row for a bulk data egress.
+                return jsonify({"error": "invalid_token"}), 401
+
+            g.researcher_id = researcher_id
+            return f(*args, **kwargs)
+
+        return wrapper
+
+    return decorator
+
+
 def require_citizen():
     """Guard citizen-owned routes (Story 4.0). Mirrors require_officer()'s independent JWT
     validation, but a citizen is a plain authenticated Supabase user with NO staff role: any
