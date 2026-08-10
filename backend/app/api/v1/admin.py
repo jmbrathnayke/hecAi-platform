@@ -20,8 +20,9 @@ and be cryptographically meaningless. Requires g.district_id like every other ad
 (code review fix: consistency guard, not a data-leak fix -- the response carries no case or
 district data regardless) and is itself audited (admin_verified_chain, code review fix).
 
-District-scoping convention (Story 5.3 PO-Ratified Resolution 1): admin user_metadata.
-district_id holds the REAL Sinhala district name (matching district_reference.json's
+District-scoping convention (Story 5.3 PO-Ratified Resolution 1): admin app_metadata.
+district_id (moved from client-writable user_metadata 2026-08-11 -- see middleware/auth.py)
+holds the REAL Sinhala district name (matching district_reference.json's
 vocabulary from Story 5.2), not an arbitrary numeric code -- so g.district_id can be
 compared directly against cases.district with no separate mapping table. A case with
 district IS NULL (still most cases today -- district capture is optional and only two of

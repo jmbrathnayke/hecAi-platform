@@ -52,7 +52,7 @@ export default function AdminAnalyticsPage() {
       let isAdmin = false;
       try {
         const { data, error } = await supabase.auth.getUser();
-        isAdmin = !error && data.user?.user_metadata?.role === "admin";
+        isAdmin = !error && data.user?.app_metadata?.role === "admin";
       } catch {
         isAdmin = false;
       }

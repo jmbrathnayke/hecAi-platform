@@ -48,7 +48,7 @@ const mockUpdateCap = updateCompensationCap as jest.Mock;
 beforeEach(() => {
   mockReplace.mockReset();
   mockGetUser.mockReset().mockResolvedValue({
-    data: { user: { user_metadata: { role: "admin" } } },
+    data: { user: { app_metadata: { role: "admin" } } },
     error: null,
   });
   mockSignOut.mockReset();
@@ -60,7 +60,7 @@ beforeEach(() => {
 });
 
 test("non-admin is signed out and redirected to /admin/login", async () => {
-  mockGetUser.mockResolvedValue({ data: { user: { user_metadata: { role: "officer" } } }, error: null });
+  mockGetUser.mockResolvedValue({ data: { user: { app_metadata: { role: "officer" } } }, error: null });
   render(<CompensationCapsPage />);
   await waitFor(() => expect(mockSignOut).toHaveBeenCalled());
   await waitFor(() => expect(mockReplace).toHaveBeenCalledWith("/admin/login"));

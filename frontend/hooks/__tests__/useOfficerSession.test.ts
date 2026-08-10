@@ -23,7 +23,7 @@ test("live session populates officer_id and assigned_divisions, then caches to I
   mockGetSession.mockResolvedValue({
     data: {
       session: {
-        user: { id: "officer-1", user_metadata: { assigned_divisions: ["DIV-1", "DIV-2"] } },
+        user: { id: "officer-1", app_metadata: { assigned_divisions: ["DIV-1", "DIV-2"] } },
       },
     },
     error: null,
@@ -44,7 +44,7 @@ test("live session populates officer_id and assigned_divisions, then caches to I
 
 test("malformed assigned_divisions claim (non-array) is coerced to empty list", async () => {
   mockGetSession.mockResolvedValue({
-    data: { session: { user: { id: "officer-1", user_metadata: { assigned_divisions: "DIV-1" } } } },
+    data: { session: { user: { id: "officer-1", app_metadata: { assigned_divisions: "DIV-1" } } } },
     error: null,
   });
 
@@ -147,7 +147,7 @@ test("a hung getSession() that never resolves falls back to cache via the timeou
 
 test("a putSessionValue cache-write failure does not affect the resolved state", async () => {
   mockGetSession.mockResolvedValue({
-    data: { session: { user: { id: "officer-1", user_metadata: { assigned_divisions: [] } } } },
+    data: { session: { user: { id: "officer-1", app_metadata: { assigned_divisions: [] } } } },
     error: null,
   });
   mockPutSessionValue.mockRejectedValue(new Error("quota exceeded"));
@@ -168,7 +168,7 @@ test("unmounting before getSession() resolves does not throw or warn about state
   const { unmount } = renderHook(() => useOfficerSession());
   unmount();
   resolveGetSession({
-    data: { session: { user: { id: "officer-1", user_metadata: {} } } },
+    data: { session: { user: { id: "officer-1", app_metadata: {} } } },
     error: null,
   });
   // Flush microtasks — if the hook doesn't guard against post-unmount state updates, React

@@ -11,6 +11,7 @@ import jwt
 import psycopg2
 from flask import Blueprint, current_app, jsonify, request
 
+from app.api.v1.middleware.auth import authz_role
 from app.infrastructure.audit import write_audit_log
 from app.infrastructure.ml import compensation
 
@@ -58,8 +59,10 @@ def submit_case():
     submitted_by_officer = body.get("submitted_by_officer") is True
     officer_id = None
     if submitted_by_officer:
-        metadata = claims.get("user_metadata", {})
-        if not isinstance(metadata, dict) or metadata.get("role") != "officer":
+        # app_metadata, not user_metadata — see middleware/auth.py. Reading the role from the
+        # client-writable field here would let any citizen self-flag as an officer and file
+        # officer-attributed cases.
+        if authz_role(claims) != "officer":
             return jsonify({"error": "forbidden"}), 403
         sub = claims.get("sub")
         body_officer_id = body.get("officer_id")
@@ -76,10 +79,9 @@ def submit_case():
     # here (officer/admin not using the officer-assisted flag) is not a citizen and leaves it NULL.
     citizen_id = None
     if not submitted_by_officer:
-        meta = claims.get("user_metadata", {})
-        role = meta.get("role") if isinstance(meta, dict) else None
+        role = authz_role(claims)
         sub = claims.get("sub")
-        if sub and role not in ("officer", "admin"):
+        if sub and role not in ("officer", "admin", "system_admin"):
             citizen_id = sub
 
     # Defensive type-coercion on attacker-controllable JSON.

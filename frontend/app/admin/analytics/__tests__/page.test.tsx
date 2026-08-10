@@ -73,7 +73,7 @@ function emptyResponse() {
 beforeEach(() => {
   mockReplace.mockReset();
   mockGetUser.mockReset().mockResolvedValue({
-    data: { user: { user_metadata: { role: "admin" } } },
+    data: { user: { app_metadata: { role: "admin" } } },
     error: null,
   });
   mockSignOut.mockReset().mockResolvedValue({ error: null });
@@ -84,7 +84,7 @@ beforeEach(() => {
 // --- role gate (Story 5.1 pattern, unchanged) -------------------------------------------
 
 test("a non-admin is signed out and redirected to /admin/login", async () => {
-  mockGetUser.mockResolvedValue({ data: { user: { user_metadata: { role: "officer" } } }, error: null });
+  mockGetUser.mockResolvedValue({ data: { user: { app_metadata: { role: "officer" } } }, error: null });
   render(<AdminAnalyticsPage />);
 
   await waitFor(() => expect(mockSignOut).toHaveBeenCalled());

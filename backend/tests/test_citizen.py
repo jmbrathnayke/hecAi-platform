@@ -17,7 +17,7 @@ SECRET = "test-jwt-secret-0123456789-abcdef-ghij"  # >=32 bytes for HS256
 
 def _token(sub="citizen-1", role=None):
     meta = {"role": role} if role is not None else {}
-    return jwt.encode({"sub": sub, "user_metadata": meta}, SECRET, algorithm="HS256")
+    return jwt.encode({"sub": sub, "app_metadata": meta}, SECRET, algorithm="HS256")
 
 
 def _case(canonical, citizen_id, status="Submitted", when=None):

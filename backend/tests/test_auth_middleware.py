@@ -12,7 +12,12 @@ from datetime import datetime, timedelta, timezone
 import jwt
 from flask import Flask, g, jsonify
 
-from app.api.v1.middleware.auth import require_admin, require_officer
+from app.api.v1.middleware.auth import (
+    require_admin,
+    require_citizen,
+    require_officer,
+    require_research,
+)
 
 SECRET = "test-jwt-secret-0123456789-abcdef-ghij"  # >=32 bytes for HS256
 
@@ -51,7 +56,7 @@ def test_invalid_token_returns_401():
 def test_expired_token_returns_401():
     claims = {
         "sub": "officer-1",
-        "user_metadata": {"role": "officer", "assigned_divisions": ["DIV-1"]},
+        "app_metadata": {"role": "officer", "assigned_divisions": ["DIV-1"]},
         "exp": datetime.now(timezone.utc) - timedelta(hours=1),
     }
     client = _make_app().test_client()
@@ -61,7 +66,7 @@ def test_expired_token_returns_401():
 
 
 def test_wrong_role_returns_403():
-    claims = {"sub": "citizen-1", "user_metadata": {"role": "citizen"}}
+    claims = {"sub": "citizen-1", "app_metadata": {"role": "citizen"}}
     client = _make_app().test_client()
     res = client.get("/protected", headers={"Authorization": f"Bearer {_token(claims)}"})
     assert res.status_code == 403
@@ -69,14 +74,14 @@ def test_wrong_role_returns_403():
 
 
 def test_missing_role_metadata_returns_403():
-    claims = {"sub": "officer-1"}  # no user_metadata at all
+    claims = {"sub": "officer-1"}  # no app_metadata at all
     client = _make_app().test_client()
     res = client.get("/protected", headers={"Authorization": f"Bearer {_token(claims)}"})
     assert res.status_code == 403
 
 
 def test_missing_server_secret_returns_500():
-    claims = {"sub": "officer-1", "user_metadata": {"role": "officer"}}
+    claims = {"sub": "officer-1", "app_metadata": {"role": "officer"}}
     client = _make_app(secret=None).test_client()
     res = client.get(
         "/protected", headers={"Authorization": f"Bearer {_token(claims, secret=SECRET)}"}
@@ -88,7 +93,7 @@ def test_missing_server_secret_returns_500():
 def test_valid_officer_token_exposes_g_context():
     claims = {
         "sub": "officer-42",
-        "user_metadata": {"role": "officer", "assigned_divisions": ["DIV-1", "DIV-2"]},
+        "app_metadata": {"role": "officer", "assigned_divisions": ["DIV-1", "DIV-2"]},
     }
     client = _make_app().test_client()
     res = client.get("/protected", headers={"Authorization": f"Bearer {_token(claims)}"})
@@ -101,7 +106,7 @@ def test_valid_officer_token_exposes_g_context():
 def test_non_list_assigned_divisions_coerced_to_empty_list():
     # Defensive: a malformed claim (e.g. a string instead of an array) must not crash
     # or leak into g.assigned_divisions as a non-list.
-    claims = {"sub": "officer-1", "user_metadata": {"role": "officer", "assigned_divisions": "DIV-1"}}
+    claims = {"sub": "officer-1", "app_metadata": {"role": "officer", "assigned_divisions": "DIV-1"}}
     client = _make_app().test_client()
     res = client.get("/protected", headers={"Authorization": f"Bearer {_token(claims)}"})
     assert res.status_code == 200
@@ -111,7 +116,7 @@ def test_non_list_assigned_divisions_coerced_to_empty_list():
 def test_non_string_elements_filtered_out_of_assigned_divisions():
     claims = {
         "sub": "officer-1",
-        "user_metadata": {"role": "officer", "assigned_divisions": ["DIV-1", 42, None, "DIV-2"]},
+        "app_metadata": {"role": "officer", "assigned_divisions": ["DIV-1", 42, None, "DIV-2"]},
     }
     client = _make_app().test_client()
     res = client.get("/protected", headers={"Authorization": f"Bearer {_token(claims)}"})
@@ -120,7 +125,7 @@ def test_non_string_elements_filtered_out_of_assigned_divisions():
 
 
 def test_missing_sub_claim_returns_401():
-    claims = {"user_metadata": {"role": "officer", "assigned_divisions": ["DIV-1"]}}  # no sub
+    claims = {"app_metadata": {"role": "officer", "assigned_divisions": ["DIV-1"]}}  # no sub
     client = _make_app().test_client()
     res = client.get("/protected", headers={"Authorization": f"Bearer {_token(claims)}"})
     assert res.status_code == 401
@@ -128,7 +133,7 @@ def test_missing_sub_claim_returns_401():
 
 
 def test_empty_sub_claim_returns_401():
-    claims = {"sub": "", "user_metadata": {"role": "officer"}}
+    claims = {"sub": "", "app_metadata": {"role": "officer"}}
     client = _make_app().test_client()
     res = client.get("/protected", headers={"Authorization": f"Bearer {_token(claims)}"})
     assert res.status_code == 401
@@ -139,7 +144,7 @@ def test_alg_none_token_is_rejected():
     # Classic alg-confusion attack: a token with header {"alg": "none"} and no signature,
     # claiming to be pre-verified. PyJWT must refuse this since "none" isn't in our
     # explicit `algorithms=["HS256"]` allow-list.
-    claims = {"sub": "officer-1", "user_metadata": {"role": "officer"}}
+    claims = {"sub": "officer-1", "app_metadata": {"role": "officer"}}
 
     def _b64url(data: bytes) -> str:
         return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
@@ -156,7 +161,7 @@ def test_alg_none_token_is_rejected():
 def test_wrong_algorithm_token_is_rejected():
     # A token signed with a different algorithm than our explicit allow-list (HS256 only)
     # must be rejected outright, not silently accepted under a mismatched verification path.
-    claims = {"sub": "officer-1", "user_metadata": {"role": "officer"}}
+    claims = {"sub": "officer-1", "app_metadata": {"role": "officer"}}
     mismatched_token = jwt.encode(claims, SECRET, algorithm="HS384")
     client = _make_app().test_client()
     res = client.get("/protected", headers={"Authorization": f"Bearer {mismatched_token}"})
@@ -201,7 +206,7 @@ def test_admin_invalid_token_returns_401():
 def test_admin_expired_token_returns_401():
     claims = {
         "sub": "admin-1",
-        "user_metadata": {"role": "admin", "district_id": "DIST-1"},
+        "app_metadata": {"role": "admin", "district_id": "DIST-1"},
         "exp": datetime.now(timezone.utc) - timedelta(hours=1),
     }
     client = _make_admin_app().test_client()
@@ -212,7 +217,7 @@ def test_admin_expired_token_returns_401():
 
 def test_officer_token_rejected_from_admin_route_403():
     # CRITICAL #1: an officer token must NOT grant admin access.
-    claims = {"sub": "officer-1", "user_metadata": {"role": "officer", "assigned_divisions": ["DIV-1"]}}
+    claims = {"sub": "officer-1", "app_metadata": {"role": "officer", "assigned_divisions": ["DIV-1"]}}
     client = _make_admin_app().test_client()
     res = client.get("/admin-protected", headers={"Authorization": f"Bearer {_token(claims)}"})
     assert res.status_code == 403
@@ -220,14 +225,14 @@ def test_officer_token_rejected_from_admin_route_403():
 
 
 def test_admin_missing_role_metadata_returns_403():
-    claims = {"sub": "admin-1"}  # no user_metadata at all
+    claims = {"sub": "admin-1"}  # no app_metadata at all
     client = _make_admin_app().test_client()
     res = client.get("/admin-protected", headers={"Authorization": f"Bearer {_token(claims)}"})
     assert res.status_code == 403
 
 
 def test_admin_missing_server_secret_returns_500():
-    claims = {"sub": "admin-1", "user_metadata": {"role": "admin"}}
+    claims = {"sub": "admin-1", "app_metadata": {"role": "admin"}}
     client = _make_admin_app(secret=None).test_client()
     res = client.get(
         "/admin-protected", headers={"Authorization": f"Bearer {_token(claims, secret=SECRET)}"}
@@ -237,7 +242,7 @@ def test_admin_missing_server_secret_returns_500():
 
 
 def test_valid_admin_token_exposes_g_context():
-    claims = {"sub": "admin-42", "user_metadata": {"role": "admin", "district_id": "DIST-7"}}
+    claims = {"sub": "admin-42", "app_metadata": {"role": "admin", "district_id": "DIST-7"}}
     client = _make_admin_app().test_client()
     res = client.get("/admin-protected", headers={"Authorization": f"Bearer {_token(claims)}"})
     assert res.status_code == 200
@@ -247,7 +252,7 @@ def test_valid_admin_token_exposes_g_context():
 
 
 def test_admin_missing_sub_claim_returns_401():
-    claims = {"user_metadata": {"role": "admin", "district_id": "DIST-1"}}  # no sub
+    claims = {"app_metadata": {"role": "admin", "district_id": "DIST-1"}}  # no sub
     client = _make_admin_app().test_client()
     res = client.get("/admin-protected", headers={"Authorization": f"Bearer {_token(claims)}"})
     assert res.status_code == 401
@@ -255,7 +260,7 @@ def test_admin_missing_sub_claim_returns_401():
 
 
 def test_admin_empty_sub_claim_returns_401():
-    claims = {"sub": "", "user_metadata": {"role": "admin"}}
+    claims = {"sub": "", "app_metadata": {"role": "admin"}}
     client = _make_admin_app().test_client()
     res = client.get("/admin-protected", headers={"Authorization": f"Bearer {_token(claims)}"})
     assert res.status_code == 401
@@ -264,7 +269,7 @@ def test_admin_empty_sub_claim_returns_401():
 
 def test_admin_alg_none_token_is_rejected():
     # Classic alg-confusion attack: header {"alg": "none"} with no signature must be refused.
-    claims = {"sub": "admin-1", "user_metadata": {"role": "admin"}}
+    claims = {"sub": "admin-1", "app_metadata": {"role": "admin"}}
 
     def _b64url(data: bytes) -> str:
         return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
@@ -281,7 +286,7 @@ def test_admin_alg_none_token_is_rejected():
 def test_admin_missing_district_id_is_allowed_with_none():
     # district_id is optional at the claim level (the DB CHECK enforces it, not the guard) —
     # an admin token without it still authenticates; g.district_id is simply None.
-    claims = {"sub": "admin-9", "user_metadata": {"role": "admin"}}
+    claims = {"sub": "admin-9", "app_metadata": {"role": "admin"}}
     client = _make_admin_app().test_client()
     res = client.get("/admin-protected", headers={"Authorization": f"Bearer {_token(claims)}"})
     assert res.status_code == 200
@@ -291,7 +296,7 @@ def test_admin_missing_district_id_is_allowed_with_none():
 def test_admin_non_string_district_id_is_coerced_to_none():
     # Defensive (code review 2026-07-09): a malformed claim (e.g. a list/number instead of a
     # string) must not flow unchecked into g.district_id.
-    claims = {"sub": "admin-9", "user_metadata": {"role": "admin", "district_id": ["DIST-1"]}}
+    claims = {"sub": "admin-9", "app_metadata": {"role": "admin", "district_id": ["DIST-1"]}}
     client = _make_admin_app().test_client()
     res = client.get("/admin-protected", headers={"Authorization": f"Bearer {_token(claims)}"})
     assert res.status_code == 200
@@ -302,9 +307,131 @@ def test_admin_wrong_algorithm_token_is_rejected():
     # Ports require_officer()'s test_wrong_algorithm_token_is_rejected for require_admin()
     # (code review 2026-07-09) — a token signed with a different algorithm than our explicit
     # allow-list (HS256 only) must be rejected outright.
-    claims = {"sub": "admin-1", "user_metadata": {"role": "admin"}}
+    claims = {"sub": "admin-1", "app_metadata": {"role": "admin"}}
     mismatched_token = jwt.encode(claims, SECRET, algorithm="HS384")
     client = _make_admin_app().test_client()
     res = client.get("/admin-protected", headers={"Authorization": f"Bearer {mismatched_token}"})
     assert res.status_code == 401
     assert res.get_json()["error"] == "invalid_token"
+
+
+# --- The self-escalation these guards were changed to close (2026-08-11) -------------------
+#
+# Everything above proves the guards read app_metadata correctly. None of it would fail if a
+# future refactor "helpfully" restored a user_metadata fallback -- and that fallback is the
+# whole vulnerability, because Supabase lets any authenticated client rewrite its own
+# user_metadata via auth.updateUser() and then signs the result. These tests fail if the
+# client-writable field is ever consulted again.
+
+def _make_research_app(secret=SECRET):
+    app = Flask(__name__)
+    app.config["TESTING"] = True
+    app.config["SUPABASE_JWT_SECRET"] = secret
+
+    @app.route("/research-protected")
+    @require_research()
+    def research_protected():
+        return jsonify({"researcher_id": g.researcher_id})
+
+    return app
+
+
+def _make_citizen_app(secret=SECRET):
+    app = Flask(__name__)
+    app.config["TESTING"] = True
+    app.config["SUPABASE_JWT_SECRET"] = secret
+
+    @app.route("/citizen-protected")
+    @require_citizen()
+    def citizen_protected():
+        return jsonify({"citizen_id": g.citizen_id})
+
+    return app
+
+
+def test_self_assigned_system_admin_in_user_metadata_cannot_reach_research():
+    """The exact attack: a citizen calls auth.updateUser({data: {role: "system_admin"}}),
+    Supabase signs it, and the token is cryptographically valid. It must still be refused."""
+    claims = {"sub": "citizen-1", "user_metadata": {"role": "system_admin"}}
+    client = _make_research_app().test_client()
+    res = client.get("/research-protected", headers={"Authorization": f"Bearer {_token(claims)}"})
+    assert res.status_code == 403
+    assert res.get_json()["error"] == "forbidden"
+
+
+def test_self_assigned_admin_in_user_metadata_cannot_reach_admin_routes():
+    claims = {"sub": "citizen-1", "user_metadata": {"role": "admin", "district_id": "DIST-1"}}
+    client = _make_admin_app().test_client()
+    res = client.get("/admin-protected", headers={"Authorization": f"Bearer {_token(claims)}"})
+    assert res.status_code == 403
+
+
+def test_self_assigned_officer_in_user_metadata_cannot_reach_officer_routes():
+    claims = {"sub": "citizen-1", "user_metadata": {"role": "officer",
+                                                    "assigned_divisions": ["DIV-1"]}}
+    client = _make_app().test_client()
+    res = client.get("/protected", headers={"Authorization": f"Bearer {_token(claims)}"})
+    assert res.status_code == 403
+
+
+def test_app_metadata_wins_when_user_metadata_disagrees():
+    """Both present and contradictory. The trusted side must decide, in the restrictive
+    direction — a real officer who forges user_metadata.role=admin stays an officer."""
+    claims = {
+        "sub": "officer-1",
+        "app_metadata": {"role": "officer"},
+        "user_metadata": {"role": "admin", "district_id": "DIST-1"},
+    }
+    client = _make_admin_app().test_client()
+    res = client.get("/admin-protected", headers={"Authorization": f"Bearer {_token(claims)}"})
+    assert res.status_code == 403
+
+
+def test_district_scope_cannot_be_widened_from_user_metadata():
+    """district_id decides WHICH district's cases an admin reads, so it is an authorization
+    input, not a label. A DIST-1 admin claiming DIST-9 in user_metadata must still see DIST-1."""
+    claims = {
+        "sub": "admin-1",
+        "app_metadata": {"role": "admin", "district_id": "DIST-1"},
+        "user_metadata": {"district_id": "DIST-9"},
+    }
+    client = _make_admin_app().test_client()
+    res = client.get("/admin-protected", headers={"Authorization": f"Bearer {_token(claims)}"})
+    assert res.status_code == 200
+    assert res.get_json()["district_id"] == "DIST-1"
+
+
+def test_officer_divisions_cannot_be_widened_from_user_metadata():
+    claims = {
+        "sub": "officer-1",
+        "app_metadata": {"role": "officer", "assigned_divisions": ["DIV-1"]},
+        "user_metadata": {"assigned_divisions": ["DIV-1", "DIV-2", "DIV-3"]},
+    }
+    client = _make_app().test_client()
+    res = client.get("/protected", headers={"Authorization": f"Bearer {_token(claims)}"})
+    assert res.status_code == 200
+    assert res.get_json()["assigned_divisions"] == ["DIV-1"]
+
+
+def test_staff_cannot_hide_their_role_to_be_treated_as_a_citizen():
+    """The mirror image of the escalation. require_citizen() rejects staff so a staff `sub`
+    never lands on citizen-owned rows; if it read the client-writable field, an officer could
+    blank their role and have their id attached as a citizen_id."""
+    claims = {
+        "sub": "officer-1",
+        "app_metadata": {"role": "officer"},
+        "user_metadata": {"role": "citizen"},
+    }
+    client = _make_citizen_app().test_client()
+    res = client.get("/citizen-protected", headers={"Authorization": f"Bearer {_token(claims)}"})
+    assert res.status_code == 403
+
+
+def test_a_genuine_citizen_still_passes_the_citizen_guard():
+    """The guard above must reject staff without rejecting everyone — a citizen legitimately
+    has no role claim at all."""
+    claims = {"sub": "citizen-1", "app_metadata": {}}
+    client = _make_citizen_app().test_client()
+    res = client.get("/citizen-protected", headers={"Authorization": f"Bearer {_token(claims)}"})
+    assert res.status_code == 200
+    assert res.get_json()["citizen_id"] == "citizen-1"

@@ -75,9 +75,9 @@ EXPECTED_KEYS = {
 
 
 def _token(sub="researcher-1", role="system_admin", exp_delta=None):
-    claims: dict[str, Any] = {"sub": sub, "user_metadata": {"role": role}}
+    claims: dict[str, Any] = {"sub": sub, "app_metadata": {"role": role}}
     if role is None:
-        claims["user_metadata"] = {}
+        claims["app_metadata"] = {}
     if exp_delta is not None:
         claims["exp"] = datetime.now(timezone.utc) + exp_delta
     return jwt.encode(claims, SECRET, algorithm="HS256")
@@ -327,7 +327,7 @@ def test_expired_token_401(client):
 
 def test_token_without_sub_401(client):
     token = jwt.encode(
-        {"user_metadata": {"role": "system_admin"}}, SECRET, algorithm="HS256"
+        {"app_metadata": {"role": "system_admin"}}, SECRET, algorithm="HS256"
     )
     res = client.get(
         "/api/v1/research/export", headers={"Authorization": f"Bearer {token}"}
