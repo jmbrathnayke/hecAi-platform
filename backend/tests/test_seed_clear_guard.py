@@ -34,7 +34,13 @@ class FakeCursor:
         s = " ".join(sql.split())
         p = params or ()
 
-        if s.startswith("SELECT id FROM cases WHERE seeded"):
+        if s.startswith("SELECT pg_advisory_xact_lock"):
+            self._rows = [(True,)]
+        elif s.startswith("SELECT event, actor_id, case_id FROM audit_log WHERE id = ANY"):
+            ids = set(p[0])
+            self._rows = [(r["event"], r["actor_id"], r["case_id"])
+                          for r in self._audit_sorted() if r["id"] in ids][:10]
+        elif s.startswith("SELECT id FROM cases WHERE seeded"):
             self._rows = [(c["id"],) for c in self.store["cases"] if c["seeded"]]
         elif s.startswith("SELECT count(*) FROM cases WHERE seeded"):
             self._rows = [(sum(1 for c in self.store["cases"] if c["seeded"]),)]
@@ -49,8 +55,10 @@ class FakeCursor:
             self._rows = [(r["id"],) for r in self._audit_sorted()
                           if r["actor_id"] == actor and r["case_id"] in case_ids]
         elif s.startswith("SELECT id FROM audit_log WHERE case_id IS NULL AND id >"):
+            min_id, allowed = p
             self._rows = [(r["id"],) for r in self._audit_sorted()
-                          if r["case_id"] is None and r["id"] > p[0]]
+                          if r["case_id"] is None and r["id"] > min_id
+                          and r["event"] in allowed]
         elif s.startswith("SELECT id FROM audit_log WHERE id >"):
             min_id, audit_ids = p
             self._rows = [(r["id"],) for r in self._audit_sorted()
@@ -210,15 +218,15 @@ def test_clear_is_a_noop_when_nothing_is_seeded():
 
 # --- orphan bookkeeping rows (the trap found during live verification) ---------------------
 
-def _with_orphan(store, orphan_id, actor="verify-researcher"):
-    """Append a case-less `research_exported_data` row, correctly chained onto the tail — what
-    a single call to GET /api/v1/research/export leaves behind."""
+def _with_orphan(store, orphan_id, actor="verify-researcher",
+                 event="research_exported_data"):
+    """Append a case-less audit row, correctly chained onto the tail — what a single call to
+    GET /api/v1/research/export (or an admin view, or a cap change) leaves behind."""
     tail = max(store["audit"], key=lambda r: r["id"])
     created = tail["created_at"] + timedelta(minutes=1)
     meta = {"row_count_at_audit": 50}
-    h = _compute_hash(tail["hash"], None, "research_exported_data", actor, meta,
-                      created.isoformat())
-    store["audit"].append({"id": orphan_id, "case_id": None, "event": "research_exported_data",
+    h = _compute_hash(tail["hash"], None, event, actor, meta, created.isoformat())
+    store["audit"].append({"id": orphan_id, "case_id": None, "event": event,
                            "actor_id": actor, "metadata": meta, "created_at": created,
                            "hash": h, "prev_hash": tail["hash"]})
     return store
@@ -257,6 +265,46 @@ def test_orphan_rows_predating_the_seed_are_left_alone():
 
     clear(cur, dry_run=False, include_orphans=True)
     assert [r["id"] for r in store["audit"]] == [0, 1]
+
+
+def test_a_config_change_is_never_swept_even_with_the_flag():
+    """`compensation_cap_updated` carries case_id IS NULL but is a genuine system configuration
+    change, not bookkeeping. The first version of the orphan sweep matched on `case_id IS NULL`
+    alone and would have deleted it — along with `admin_exported_cases`, an NFR-3.4 data-egress
+    record. Both are real FR-5.5 retention rows; the sweep is an allowlist for that reason."""
+    store = _with_orphan(_store([(1, SEED_ACTOR), (2, SEED_ACTOR)], [1, 2]), orphan_id=3,
+                         actor="real-admin", event="compensation_cap_updated")
+    cur = FakeCursor(store)
+    with pytest.raises(ChainGuardRefusal) as exc:
+        clear(cur, dry_run=False, include_orphans=True)
+
+    assert "compensation_cap_updated" in str(exc.value)
+    assert len(store["cases"]) == 2
+    assert any(r["event"] == "compensation_cap_updated" for r in store["audit"])
+
+
+def test_an_admin_data_export_is_never_swept_either():
+    store = _with_orphan(_store([(1, SEED_ACTOR)], [1]), orphan_id=2,
+                         actor="real-admin", event="admin_exported_cases")
+    cur = FakeCursor(store)
+    with pytest.raises(ChainGuardRefusal):
+        clear(cur, dry_run=False, include_orphans=True)
+    assert any(r["event"] == "admin_exported_cases" for r in store["audit"])
+
+
+def test_refusal_reports_the_chain_verdict_and_the_blocking_rows():
+    """AC6 asks for verify_chain before AND after on every path, refusal included. The first
+    version attached chain_after only to the success path and printed nothing on a refusal."""
+    store = _with_orphan(_store([(1, SEED_ACTOR)], [1]), orphan_id=2,
+                         actor="real-admin", event="compensation_cap_updated")
+    cur = FakeCursor(store)
+    with pytest.raises(ChainGuardRefusal) as exc:
+        clear(cur, dry_run=False, include_orphans=True)
+
+    report = exc.value.report
+    assert report["chain_before"] == (True, None)
+    assert report["chain_after"] == (True, None)   # nothing deleted, so unchanged
+    assert report["blocking_rows"][0]["event"] == "compensation_cap_updated"
 
 
 def test_a_real_case_audit_row_still_blocks_even_with_the_flag():

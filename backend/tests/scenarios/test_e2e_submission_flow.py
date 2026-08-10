@@ -22,10 +22,17 @@ from tests.scenarios.conftest import (
     make_token,
 )
 
-pytestmark = pytest.mark.skipif(
-    not os.getenv("HEC_SCENARIO_DB_URL"),
-    reason="scenario suite needs a real Postgres; set HEC_SCENARIO_DB_URL",
-)
+# Both marks, not just skipif. pytest.ini registers a `scenario` marker and the README documents
+# `-m "not scenario"` as the way to exclude this suite when a database IS available — but nothing
+# actually carried the marker, so that flag deselected zero tests and the full DB-mutating suite
+# ran anyway.
+pytestmark = [
+    pytest.mark.scenario,
+    pytest.mark.skipif(
+        not os.getenv("HEC_SCENARIO_DB_URL"),
+        reason="scenario suite needs a real Postgres; set HEC_SCENARIO_DB_URL",
+    ),
+]
 
 
 def _row(db, sql, params):
@@ -108,6 +115,16 @@ def test_scenario_intermittent_connectivity_is_idempotent(client, tokens, db, ne
         again = client.post("/api/v1/sync/batch", json=payload, headers=auth(tokens["officer"]))
         assert again.status_code == 200, f"cycle {cycle}: {again.get_json()}"
 
+        # Assert on the RESPONSE, not only on the database afterwards. A server that minted a
+        # fresh canonical_id on every retry — or claimed `inserted: true` while leaving the row
+        # alone — would have passed the earlier version of this test, which checked only the
+        # status code and then re-read the ids from Postgres.
+        for item in again.get_json()["results"]:
+            assert item["inserted"] is False, f"cycle {cycle}: retry reported a fresh insert"
+            assert item["canonical_id"] == canonical_first[item["offline_id"]], (
+                f"cycle {cycle}: canonical_id changed in the response"
+            )
+
     for oid in ids:
         count = _row(db, "SELECT count(*) FROM cases WHERE offline_id = %s", (oid,))[0]
         assert count == 1, f"{oid} duplicated after retries"
@@ -173,14 +190,27 @@ def test_scenario_ai_override_is_logged_and_exported(client, tokens, db, new_off
                       "FROM inference_log WHERE case_id = %s", (case_id,))
     assert logged == ("crop_damage", True, "property_damage")
 
+    canonical = _row(db, "SELECT canonical_id FROM cases WHERE offline_id = %s", (oid,))[0]
+
     export = client.get("/api/v1/research/export", headers=auth(tokens["researcher"]))
     assert export.status_code == 200, export.get_json()
     rows = export.get_json()
-    matching = [r for r in rows if r["case_canonical_id"] and r["was_overridden"]]
-    assert matching, "override row absent from the research export"
-    # NFR-3.3 still holds on a real payload, not just the fake-DB fixture.
-    assert "override_reason" not in rows[0]
-    assert "officer_id" not in rows[0]
+
+    # Filter to THIS case. The earlier version matched any row with was_overridden set, which
+    # against a seeded database (15 overridden rows) passed whether or not the row this test
+    # just created reached the export at all.
+    mine = [r for r in rows if r["case_canonical_id"] == canonical]
+    assert len(mine) == 1, f"expected exactly one export row for {canonical}, got {len(mine)}"
+    assert mine[0]["was_overridden"] is True
+    assert mine[0]["prediction"] == "crop_damage"
+    assert mine[0]["override_category"] == "property_damage"
+
+    # NFR-3.3 on the real payload — and on OUR row, which is the one carrying an override_reason
+    # in the database. Checking rows[0] instead would inspect an arbitrary seeded row that has
+    # no reason stored, so a leak on exactly this shape would go unseen.
+    for forbidden in ("override_reason", "officer_id", "citizen_id", "input_features",
+                      "gps_lat", "gps_lng"):
+        assert forbidden not in mine[0], f"{forbidden} leaked into the research export"
 
 
 # --- Scenario 6: admin approve -------------------------------------------------------------

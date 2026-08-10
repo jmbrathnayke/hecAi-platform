@@ -17,10 +17,17 @@ from scripts._seed_common import (
     SEED_MODEL_VERSION,
 )
 
-pytestmark = pytest.mark.skipif(
-    not os.getenv("HEC_SCENARIO_DB_URL"),
-    reason="scenario suite needs a real Postgres; set HEC_SCENARIO_DB_URL",
-)
+# Both marks, not just skipif. pytest.ini registers a `scenario` marker and the README documents
+# `-m "not scenario"` as the way to exclude this suite when a database IS available — but nothing
+# actually carried the marker, so that flag deselected zero tests and the full DB-mutating suite
+# ran anyway.
+pytestmark = [
+    pytest.mark.scenario,
+    pytest.mark.skipif(
+        not os.getenv("HEC_SCENARIO_DB_URL"),
+        reason="scenario suite needs a real Postgres; set HEC_SCENARIO_DB_URL",
+    ),
+]
 
 
 @pytest.fixture(scope="module")
@@ -63,13 +70,30 @@ def test_capped_flag_agrees_with_the_configured_caps(db, seeded):
     """Asserted against compensation_caps rather than hardcoded False: there are no caps today,
     but an admin can create them at runtime via PUT /admin/settings/compensation-caps, which
     would turn a hardcoded assertion into a spurious failure months from now."""
+    case_ids = [r[0] for r in seeded]
     caps = _scalar(db, "SELECT count(*) FROM compensation_caps")
-    capped = _scalar(db, "SELECT count(*) FROM compensation_estimates "
-                         "WHERE case_id = ANY(%s) AND capped", ([r[0] for r in seeded],))
     if caps == 0:
+        capped = _scalar(db, "SELECT count(*) FROM compensation_estimates "
+                             "WHERE case_id = ANY(%s) AND capped", (case_ids,))
         assert capped == 0
-    else:
-        assert capped >= 0
+        return
+    # With caps configured, `capped` must agree row-by-row with whether the raw estimate exceeded
+    # the cap for that district+damage_type. The earlier version asserted `capped >= 0` here — a
+    # count, so always true — which meant the branch that exists FOR the caps case asserted
+    # nothing at all the moment caps were created.
+    with db.cursor() as cur:
+        cur.execute(
+            """SELECT ce.capped, ce.raw_estimate_lkr, cc.cap_amount_lkr
+                 FROM compensation_estimates ce
+                 JOIN cases c ON c.id = ce.case_id
+                 LEFT JOIN compensation_caps cc
+                        ON cc.district = c.district AND cc.damage_type = 'property'
+                WHERE ce.case_id = ANY(%s)""",
+            (case_ids,),
+        )
+        for is_capped, raw, cap in cur.fetchall():
+            expected = cap is not None and raw > cap
+            assert is_capped == expected, f"capped={is_capped} but raw={raw} cap={cap}"
 
 
 def test_seeded_cases_cover_all_four_pilot_districts(seeded):
@@ -95,7 +119,11 @@ def test_override_rate_is_exactly_thirty_percent(db, seeded):
     overridden = _scalar(db, "SELECT count(*) FROM inference_log "
                              "WHERE case_id = ANY(%s) AND was_overridden", (case_ids,))
     assert total == len(case_ids), "expected exactly one inference row per seeded case"
-    assert round(overridden / total, 2) == OVERRIDE_RATE
+    # The plan draws exactly round(count * OVERRIDE_RATE) overrides, which is only exactly 0.30
+    # of the total when count is a multiple of 10 (Python rounds half to even, so count=15 gives
+    # 4/15 = 0.27 and count=35 gives 10/35 = 0.29). Asserting a hardcoded 0.30 would fail on a
+    # perfectly valid corpus seeded at a different --count. Derive the expectation instead.
+    assert overridden == round(total * OVERRIDE_RATE)
 
 
 def test_ground_truth_is_populated_so_a_confusion_matrix_is_computable(db, seeded):
@@ -116,7 +144,10 @@ def test_seeded_inference_rows_are_marked_as_synthetic(db, seeded):
     """The integrity control: synthetic rows must stay distinguishable from real ones in any
     export, so seeded metrics can never be mistaken for the dissertation's model numbers."""
     case_ids = [r[0] for r in seeded]
-    versions = _scalar(db, "SELECT count(DISTINCT model_version) FROM inference_log "
-                           "WHERE case_id = ANY(%s) AND model_version <> %s",
+    # IS DISTINCT FROM, not <>. With `<>`, a NULL model_version evaluates to NULL, the row is
+    # filtered out, the count is 0 and the test passes — so the one thing it must catch (an
+    # unmarked synthetic row) is exactly the thing it could not see.
+    versions = _scalar(db, "SELECT count(*) FROM inference_log "
+                           "WHERE case_id = ANY(%s) AND model_version IS DISTINCT FROM %s",
                        (case_ids, SEED_MODEL_VERSION))
     assert versions == 0
