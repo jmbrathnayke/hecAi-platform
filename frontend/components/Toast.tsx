@@ -23,7 +23,10 @@ export function Toast({ message, duration = 3000, onDismiss }: ToastProps) {
       role="status"
       aria-live="polite"
       data-testid="toast"
-      className="fixed bottom-design-6 left-1/2 z-[100] -translate-x-1/2 rounded-md bg-status-success px-design-5 py-design-3 text-label text-ink-on-dark shadow-lg animate-fade-in motion-reduce:animate-none"
+      // max-w + text-center keep a long Sinhala/Tamil message inside the viewport instead of
+      // overflowing horizontally off a 360px screen (the toast is translate-x centered, so an
+      // unconstrained width spills past BOTH edges).
+      className="fixed bottom-design-6 left-1/2 z-[100] max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded-md bg-status-success px-design-5 py-design-3 text-center text-label text-ink-on-dark shadow-lg animate-fade-in motion-reduce:animate-none"
     >
       {message}
     </div>

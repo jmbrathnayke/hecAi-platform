@@ -5,7 +5,7 @@
 // never blocks on the network (CRITICAL #3).
 import { useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
-import { useRouter } from "@/navigation";
+import { Link, useRouter } from "@/navigation";
 import { PoCCard } from "@/components/PoCCard";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import { getCase, updateDraft } from "@/lib/indexeddb";
@@ -157,8 +157,23 @@ export default function PoCPage() {
     );
   }
 
+  const reference = canonicalId ?? poc.offline_id;
+
   return (
-    <main className="mx-auto flex w-full max-w-md flex-col gap-design-6 bg-surface-base px-design-4 py-design-6 print:p-0">
+    <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-design-4 bg-surface-base px-design-4 py-design-5 print:p-0">
+      {/* Success zone (proof-of-claim.html) — confirms receipt before the card itself, so the
+          citizen sees "we have your report" without having to parse the receipt. */}
+      <div className="text-center print:hidden">
+        <span
+          className="inline-flex h-16 w-16 items-center justify-center rounded-full border-[3px] border-forest-mid bg-forest-pale text-[32px] text-forest"
+          aria-hidden="true"
+        >
+          ✓
+        </span>
+        <h1 className="mt-design-3 text-headline text-ink-primary">{t("successTitle")}</h1>
+        <p className="mt-design-1 text-label text-ink-secondary">{t("successBody")}</p>
+      </div>
+
       <PoCCard poc={poc} canonicalId={canonicalId} />
 
       {!isOnline && !canonicalId && (
@@ -167,12 +182,24 @@ export default function PoCPage() {
         </p>
       )}
 
-      <div className="flex gap-design-3 print:hidden">
+      {/* Reminder strip — tells the citizen what happens next and repeats the reference. */}
+      <aside className="flex items-start gap-design-2 rounded-md bg-forest-pale p-design-3 print:hidden">
+        <span className="shrink-0 text-[16px] leading-tight" aria-hidden="true">
+          💡
+        </span>
+        <p className="text-caption leading-relaxed text-forest">
+          {t("reminder", { ref: reference })}
+        </p>
+      </aside>
+
+      {/* Actions. Share is the mockup's amber primary; Print is the outline secondary. They
+          stack on narrow screens so two wrapped Sinhala/Tamil labels don't squeeze each other. */}
+      <div className="flex flex-col gap-design-2 print:hidden sm:flex-row sm:gap-design-3">
         {canShare ? (
           <button
             type="button"
             onClick={() => void handleShare()}
-            className="flex flex-1 min-h-primary-btn items-center justify-center rounded-md bg-forest px-design-4 text-label font-semibold text-ink-on-dark transition-opacity hover:opacity-90"
+            className="flex min-h-primary-btn flex-1 items-center justify-center rounded-lg bg-amber px-design-4 text-label font-bold text-ink-on-amber transition-opacity hover:opacity-90"
           >
             {t("share")}
           </button>
@@ -180,7 +207,7 @@ export default function PoCPage() {
           <button
             type="button"
             onClick={downloadPoCPng}
-            className="flex flex-1 min-h-primary-btn items-center justify-center rounded-md bg-forest px-design-4 text-label font-semibold text-ink-on-dark transition-opacity hover:opacity-90"
+            className="flex min-h-primary-btn flex-1 items-center justify-center rounded-lg bg-amber px-design-4 text-label font-bold text-ink-on-amber transition-opacity hover:opacity-90"
           >
             {t("download")}
           </button>
@@ -188,11 +215,20 @@ export default function PoCPage() {
         <button
           type="button"
           onClick={() => window.print()}
-          className="flex flex-1 min-h-primary-btn items-center justify-center rounded-md border border-forest px-design-4 text-label font-semibold text-forest transition-opacity hover:opacity-90"
+          className="flex min-h-primary-btn flex-1 items-center justify-center rounded-lg border-2 border-forest px-design-4 text-label font-semibold text-forest transition-opacity hover:opacity-90"
         >
           {t("print")}
         </button>
       </div>
+
+      {/* Terminal CTA — this screen is the end of the report flow and (per the mockup) carries
+          no tab bar, so it needs its own way back. */}
+      <Link
+        href="/"
+        className="flex min-h-touch-target items-center justify-center rounded-lg border border-border-default px-design-4 text-label font-medium text-ink-secondary print:hidden"
+      >
+        {t("done")}
+      </Link>
     </main>
   );
 }

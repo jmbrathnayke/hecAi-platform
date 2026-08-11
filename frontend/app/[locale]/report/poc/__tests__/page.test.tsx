@@ -10,6 +10,13 @@ const mockRouter = { replace };
 
 jest.mock("@/navigation", () => ({
   useRouter: () => mockRouter,
+  // The page now renders a "Done — Return Home" Link (the PoC screen is terminal and carries
+  // no tab bar), so the navigation mock has to provide Link as well as useRouter.
+  Link: ({ href, children, ...rest }: { href: string; children: React.ReactNode }) => (
+    <a href={href} {...rest}>
+      {children}
+    </a>
+  ),
 }));
 
 jest.mock("next-intl", () => ({

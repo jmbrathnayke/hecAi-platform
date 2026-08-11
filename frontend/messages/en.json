@@ -4,7 +4,18 @@
     "tagline": "Report human-elephant conflict incidents and track your compensation claims",
     "languageSelector": "Choose your language",
     "reportIncident": "Report Incident",
-    "checkStatus": "Check Claim Status"
+    "checkStatus": "Check Claim Status",
+    "brandSub": "Department of Wildlife Conservation",
+    "heroTitle": "Report farm damage",
+    "heroBody": "Register your claim and get a receipt instantly.",
+    "reportIncidentSub": "Takes about 5 minutes — works offline",
+    "checkStatusSub": "Look up a claim by its reference number",
+    "infoStrip": "You can submit a report without a network connection. A field officer can also register one on your behalf.",
+    "navAria": "Main navigation",
+    "navHome": "Home",
+    "navMyClaims": "My Claims",
+    "navStatus": "Status",
+    "languageShort": "Language"
   },
   "offline": {
     "banner": "You are offline. Reports will be saved and sent when you reconnect.",
@@ -75,7 +86,18 @@
     "share": "Share",
     "download": "Download",
     "print": "Print",
-    "footer": "Human-Elephant Conflict AI E-Governance Platform"
+    "footer": "Human-Elephant Conflict AI E-Governance Platform",
+    "successTitle": "Your report has been received",
+    "successBody": "Keep this receipt for your records.",
+    "brand": "Department of Wildlife Conservation",
+    "rowSubmitted": "Submitted",
+    "rowLocation": "Location",
+    "rowDamageType": "Damage Type",
+    "qrHint": "Scan this QR code to verify your claim or check its status at any DWC office.",
+    "screenshotHint": "Tap Share or take a screenshot to save this receipt.",
+    "reminder": "A DWC officer will contact you. You can check your claim's progress using {ref}.",
+    "done": "Done — Return Home",
+    "notRecorded": "Not recorded"
   },
   "status": {
     "title": "Check Claim Status",
@@ -154,7 +176,9 @@
       "classifyError": "Could not classify this photo. Please retake it and try again.",
       "accepted": "Assessment accepted.",
       "overrideError": "Could not save the override. Please try again.",
-      "overridden": "Override recorded."
+      "overridden": "Override recorded.",
+      "photosCaptured": "{count, plural, one {# photo classified} other {# photos classified}}",
+      "photoStripAria": "Photos classified in this case"
     },
     "submit": {
       "title": "Submit Report for Citizen",
@@ -212,7 +236,11 @@
       "confidence": "Confidence",
       "processedIn": "Processed on device in {ms} ms",
       "accept": "Accept",
-      "override": "Override"
+      "override": "Override",
+      "sectionLabel": "AI Classification",
+      "autoChip": "Auto",
+      "modelFooter": "Classified using {model} · on-device · {ms} ms",
+      "overrideHint": "If this classification is incorrect, tap Override to select the correct category."
     },
     "severity": {
       "None": "None",
@@ -263,7 +291,12 @@
       "errorNotConfirmed": "Sync couldn’t be confirmed. Try again or contact support.",
       "errorServer": "Server error. Try again in a moment.",
       "errorInProgress": "This report is already syncing."
-    }
+    },
+    "navAria": "Officer navigation",
+    "navDashboard": "Home",
+    "navNewReport": "New Report",
+    "navClassify": "Classify",
+    "navQueue": "Queue"
   },
   "admin": {
     "languageLabel": "Language",
@@ -425,6 +458,17 @@
       "menuAria": "Choose an export format",
       "timeout": "Export timed out. Try narrowing the filters.",
       "truncated": "Partial export — only the {count, number} most recent cases are included. Narrow the filters for a complete report."
+    },
+    "nav": {
+      "aria": "Admin navigation",
+      "brand": "HEC Admin",
+      "cases": "Cases",
+      "analytics": "Analytics",
+      "settings": "Compensation Caps",
+      "sectionMain": "Casework",
+      "sectionAdmin": "Administration",
+      "openMenu": "Open navigation menu",
+      "closeMenu": "Close navigation menu"
     }
   }
 }
