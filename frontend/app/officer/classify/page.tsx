@@ -54,6 +54,40 @@ export default function OfficerClassifyPage() {
   // Serializes captures: overlapping in-flight runs would interleave classIdsRef pushes and
   // concurrent draft writes (the button `disabled` only guards after the next React render).
   const inFlightRef = useRef(false);
+  // Object URLs for the photos classified in THIS session, for the mockup's photo strip. Held
+  // in a ref alongside state purely so the unmount cleanup can revoke them without needing
+  // `thumbnails` in the effect's dependency array (which would revoke on every capture).
+  const [thumbnails, setThumbnails] = useState<string[]>([]);
+  const thumbnailsRef = useRef<string[]>([]);
+
+  // The strip is decoration. createObjectURL failing (or being unavailable) must never cost the
+  // officer a classification they already waited for, so this swallows its own errors rather
+  // than letting them escape into handleCapture's catch and flip the screen to "error".
+  function addThumbnail(file: File) {
+    try {
+      const url = URL.createObjectURL(file);
+      thumbnailsRef.current = [...thumbnailsRef.current, url];
+      setThumbnails(thumbnailsRef.current);
+    } catch {
+      /* no thumbnail for this photo — the classification itself is unaffected */
+    }
+  }
+
+  // Ref-only (no setState) so the unmount cleanup can call it safely. Guarded for the same
+  // reason as addThumbnail: revoke is best-effort cleanup, never a failure path.
+  function revokeThumbnails() {
+    try {
+      thumbnailsRef.current.forEach((url) => URL.revokeObjectURL(url));
+    } catch {
+      /* nothing to revoke / API unavailable */
+    }
+    thumbnailsRef.current = [];
+  }
+
+  function clearThumbnails() {
+    revokeThumbnails();
+    setThumbnails([]);
+  }
 
   // Epic 2 retro lesson: guard state updates after unmount for in-flight async work.
   const mountedRef = useRef(true);
@@ -73,6 +107,9 @@ export default function OfficerClassifyPage() {
     }
     return () => {
       mountedRef.current = false;
+      // Revoke every object URL the strip created — without this each capture leaks a blob
+      // for the lifetime of the document.
+      revokeThumbnails();
     };
   }, []);
 
@@ -118,6 +155,7 @@ export default function OfficerClassifyPage() {
       classIdsRef.current = nextClassIds;
       if (!mountedRef.current) return;
 
+      addThumbnail(file);
       setResult(classification);
       setStatus("result");
     } catch {
@@ -174,6 +212,7 @@ export default function OfficerClassifyPage() {
   function handleStartNewCase() {
     clearDraftId();
     classIdsRef.current = [];
+    clearThumbnails();
     setResult(null);
     setDecision(null);
     setOverrideError(false);
@@ -182,7 +221,7 @@ export default function OfficerClassifyPage() {
   }
 
   return (
-    <main className="min-h-screen bg-surface-base px-design-4 py-design-6">
+    <main className="flex-1 bg-surface-base px-design-4 py-design-6">
       <div className="max-w-md mx-auto space-y-design-4">
         <div className="flex items-center justify-between gap-design-3">
           <h1 className="text-title text-ink-primary">{t("classify.title")}</h1>
@@ -226,6 +265,35 @@ export default function OfficerClassifyPage() {
           </p>
         )}
 
+        {/* Photo strip (mockup): the running set of photos classified for this case. The last
+            one is the subject of the result card below, so it carries the forest ring. */}
+        {thumbnails.length > 0 && (
+          <div>
+            <p className="text-caption font-medium text-ink-secondary">
+              {t("classify.photosCaptured", { count: thumbnails.length })}
+            </p>
+            <ul
+              aria-label={t("classify.photoStripAria")}
+              className="mt-design-2 flex gap-design-2 overflow-x-auto pb-design-1"
+            >
+              {thumbnails.map((url, i) => (
+                <li key={url} className="shrink-0">
+                  {/* Plain <img>: these are blob: object URLs, which next/image cannot
+                      optimise, and this screen must work fully offline anyway. */}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={url}
+                    alt=""
+                    className={`h-16 w-20 rounded-sm border-2 object-cover ${
+                      i === thumbnails.length - 1 ? "border-forest" : "border-border-default"
+                    }`}
+                  />
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {status === "result" && result && (
           <>
             <AIResultCard
@@ -233,6 +301,7 @@ export default function OfficerClassifyPage() {
               severity={result.severity}
               confidence={result.confidence}
               processingTimeMs={result.processingTimeMs}
+              modelVersion={result.modelVersion}
               onAccept={() => {
                 // Once an override is recorded, Accept must not flip the UI to "accepted"
                 // while the persisted draft still says overridden (contradictory record).

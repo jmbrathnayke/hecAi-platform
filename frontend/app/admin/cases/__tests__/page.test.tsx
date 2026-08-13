@@ -233,7 +233,14 @@ test("the KPI 'By Status' breakdown falls back to the raw status string for a no
     }),
   );
   render(<AdminCasesPage />);
-  expect(await screen.findByText("Archived: 1")).toBeInTheDocument();
+  // The breakdown renders as <dt>label</dt><dd>count</dd> rows (not one joined
+  // "Archived: 1" string) so the card stays readable in the mobile 2-col grid -- assert the
+  // raw fallback label and its count separately. The point of the test is unchanged: a
+  // non-canonical status shows its raw value, never next-intl's missing-message placeholder.
+  const term = await screen.findByText("Archived");
+  expect(term.tagName).toBe("DT");
+  expect(term.nextSibling).toHaveTextContent("1");
+  expect(screen.queryByText(/statusLabels\.Archived/)).not.toBeInTheDocument();
 });
 
 test("shows an error state with Retry when the fetch fails, not a blank page", async () => {

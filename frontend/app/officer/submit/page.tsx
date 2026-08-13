@@ -377,7 +377,7 @@ export default function OfficerSubmitPage() {
   };
 
   return (
-    <main className="min-h-screen bg-surface-base px-design-4 py-design-6">
+    <main className="flex-1 bg-surface-base px-design-4 py-design-6">
       <div className="max-w-md mx-auto space-y-design-4">
         <header className="space-y-design-1">
           <h1 className="text-title text-ink-primary">{t("submit.title")}</h1>
@@ -577,6 +577,7 @@ export default function OfficerSubmitPage() {
                   severity={result.severity}
                   confidence={result.confidence}
                   processingTimeMs={result.processingTimeMs}
+                  modelVersion={result.modelVersion}
                   onAccept={() => {
                     if (decision !== "overridden") setDecision("accepted");
                   }}

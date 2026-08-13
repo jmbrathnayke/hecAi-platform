@@ -18,6 +18,7 @@ const baseProps = {
   severity: "Severe" as const,
   confidence: 0.89,
   processingTimeMs: 412.7,
+  modelVersion: "mobilenetv2-v1",
   onAccept: () => {},
   onOverride: () => {},
 };

@@ -4,6 +4,7 @@ import { NextIntlClientProvider } from "next-intl";
 import { getMessages } from "next-intl/server";
 import { SWRegistrar } from "@/components/SWRegistrar";
 import { OfflineBanner } from "@/components/OfflineBanner";
+import { CitizenBottomNav } from "@/components/CitizenBottomNav";
 import { fontVariables } from "@/lib/fonts";
 import { routing } from "@/routing";
 import "../globals.css";
@@ -33,12 +34,22 @@ export default async function LocaleLayout({
   }
   const messages = await getMessages();
   return (
+    // `flex min-h-dvh flex-col` + a `flex-1` content wrapper is what lets CitizenBottomNav sit
+    // at the bottom of the viewport on short pages instead of floating directly under the
+    // content. min-h-dvh (not min-h-screen) so mobile browser chrome collapsing doesn't leave
+    // the bar hanging mid-screen.
     <html lang={locale} className={fontVariables}>
-      <body className="font-sans">
+      {/* suppressHydrationWarning is scoped to <body>'s OWN attributes (it does not cascade to
+          children, so genuine mismatches inside the app still surface). Browser extensions —
+          Grammarly injects data-gr-ext-installed / data-new-gr-c-s-check-loaded here — mutate
+          <body> before React hydrates, producing an unfixable warning that is not our bug and
+          would otherwise train everyone to ignore hydration warnings that ARE ours. */}
+      <body className="flex min-h-dvh flex-col font-sans" suppressHydrationWarning>
         <SWRegistrar />
         <NextIntlClientProvider messages={messages}>
           <OfflineBanner />
-          {children}
+          <div className="flex flex-1 flex-col">{children}</div>
+          <CitizenBottomNav />
         </NextIntlClientProvider>
       </body>
     </html>

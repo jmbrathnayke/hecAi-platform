@@ -7,7 +7,7 @@ import { LocaleButtonGroup, type LocaleCode } from "@/components/LocaleButtonGro
 // Citizen-portal (routed) language selector. Lives under app/[locale], so switching is a
 // locale-aware route replace. The button markup/list is shared with the non-routed officer/admin
 // selector via LocaleButtonGroup (Story 6.1).
-export function LanguageSelector() {
+export function LanguageSelector({ compact = false }: { compact?: boolean } = {}) {
   const router = useRouter();
   const pathname = usePathname();
   const current = useLocale();
@@ -30,5 +30,5 @@ export function LanguageSelector() {
     router.replace(`${pathname}${suffix}`, { locale });
   }
 
-  return <LocaleButtonGroup current={current} onSelect={switchLocale} />;
+  return <LocaleButtonGroup current={current} onSelect={switchLocale} compact={compact} />;
 }

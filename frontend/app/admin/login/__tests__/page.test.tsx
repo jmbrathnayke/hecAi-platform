@@ -14,13 +14,16 @@ jest.mock("next-intl", () => ({
 }));
 
 const mockPush = jest.fn();
+const mockSearchParams = new URLSearchParams();
 jest.mock("next/navigation", () => ({
   useRouter: () => ({ push: (...a: unknown[]) => mockPush(...a) }),
+  useSearchParams: () => mockSearchParams,
 }));
 
 const mockSignInWithOAuth = jest.fn();
 const mockSignInWithPassword = jest.fn();
 const mockSignOut = jest.fn();
+const mockIsAuthReachable = jest.fn();
 jest.mock("@/lib/supabase", () => ({
   createClient: () => ({
     auth: {
@@ -29,6 +32,7 @@ jest.mock("@/lib/supabase", () => ({
       signOut: (...a: unknown[]) => mockSignOut(...a),
     },
   }),
+  isAuthReachable: (...a: unknown[]) => mockIsAuthReachable(...a),
 }));
 
 // Convenience: a successful password sign-in returning a given role in app_metadata.
@@ -44,6 +48,9 @@ beforeEach(() => {
   mockSignInWithOAuth.mockReset().mockResolvedValue({ error: null });
   mockSignInWithPassword.mockReset().mockResolvedValue({ data: { user: null }, error: null });
   mockSignOut.mockReset().mockResolvedValue({ error: null });
+  // Reachable by default: these tests are about sign-in behaviour, not connectivity.
+  mockIsAuthReachable.mockReset().mockResolvedValue(true);
+  Array.from(mockSearchParams.keys()).forEach((k) => mockSearchParams.delete(k));
 });
 
 function fillAndSubmit(email = "admin@dwc.gov.lk", password = "hunter2") {
@@ -52,18 +59,19 @@ function fillAndSubmit(email = "admin@dwc.gov.lk", password = "hunter2") {
   fireEvent.click(screen.getByRole("button", { name: /login\.signIn/i }));
 }
 
-test("Google sign-in triggers signInWithOAuth with a Google provider and /admin/cases redirect", async () => {
+test("Google sign-in returns to the PKCE callback route, carrying /admin/cases as the destination", async () => {
+  // Regression: redirectTo pointed at /admin/cases directly, so the provider's `?code=` was never
+  // exchanged for session cookies and middleware bounced the admin back to /admin/login. `next`
+  // preserves the original destination, so the downstream role check on /admin/cases still runs.
   render(<AdminLoginPage />);
   fireEvent.click(screen.getByRole("button", { name: /login\.google/i }));
 
-  await waitFor(() =>
-    expect(mockSignInWithOAuth).toHaveBeenCalledWith(
-      expect.objectContaining({
-        provider: "google",
-        options: expect.objectContaining({ redirectTo: expect.stringContaining("/admin/cases") }),
-      }),
-    ),
-  );
+  await waitFor(() => expect(mockSignInWithOAuth).toHaveBeenCalled());
+  const redirectTo = mockSignInWithOAuth.mock.calls[0][0].options.redirectTo as string;
+  const url = new URL(redirectTo);
+  expect(url.pathname).toBe("/auth/callback");
+  expect(url.searchParams.get("next")).toBe("/admin/cases");
+  expect(mockSignInWithOAuth).toHaveBeenCalledWith(expect.objectContaining({ provider: "google" }));
 });
 
 test("Google sign-in error is shown to the user", async () => {
@@ -142,4 +150,35 @@ test("unmounting before signInWithPassword resolves does not throw or update sta
   resolveSignIn({ data: { user: { id: "u-1", app_metadata: { role: "admin" } } }, error: null });
   await new Promise((r) => setTimeout(r, 0));
   expect(mockPush).not.toHaveBeenCalled();
+});
+
+// --- Code review 2026-08-13 ----------------------------------------------------------------
+
+test("a suspected-unreachable auth service warns but still attempts the sign-in", async () => {
+  // The reachability preflight existed on officer login only, so the failure mode it documents --
+  // being handed to the browser's own "site can't be reached" page having seen nothing from the
+  // app -- was still fully live for every administrator. Advisory, not a gate: a cross-origin
+  // fetch cannot tell a real outage from a CORS rejection or an ad-blocker.
+  mockIsAuthReachable.mockResolvedValue(false);
+  render(<AdminLoginPage />);
+  fireEvent.click(screen.getByRole("button", { name: "login.google" }));
+
+  expect(await screen.findByRole("alert")).toHaveTextContent("login.networkError");
+  await waitFor(() => expect(mockSignInWithOAuth).toHaveBeenCalled());
+});
+
+test("a callback error in the query string is surfaced on arrival", async () => {
+  mockSearchParams.set("error", "access_denied");
+  render(<AdminLoginPage />);
+
+  expect(await screen.findByRole("alert")).toHaveTextContent("login.errorAccessDenied");
+});
+
+test("an unrecognized callback error code is not reflected back to the page", async () => {
+  mockSearchParams.set("error", "Session expired, call IT on 077-1234567");
+  render(<AdminLoginPage />);
+
+  const alert = await screen.findByRole("alert");
+  expect(alert).toHaveTextContent("login.errorProvider");
+  expect(alert).not.toHaveTextContent("077-1234567");
 });

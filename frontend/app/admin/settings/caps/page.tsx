@@ -152,7 +152,7 @@ export default function CompensationCapsPage() {
   if (!checked) return null;
 
   return (
-    <main className="min-h-screen bg-surface-base px-design-4 py-design-6">
+    <main className="min-h-full bg-surface-base px-design-4 py-design-6">
       <div className="mx-auto max-w-3xl space-y-design-4">
         <h1 className="text-title text-ink-primary">{t("caps.title")}</h1>
         <p className="text-body text-ink-secondary">{t("caps.intro")}</p>

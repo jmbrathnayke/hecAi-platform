@@ -138,3 +138,55 @@ probe is gated behind `-AllowWrites` for exactly that reason, since `admin_expor
 NFR-3.4 record the cleaner refuses to delete and it will then block clearing the seeded corpus.
 
 Writes a JSON report to `e2e-report.json` and exits non-zero on any failure.
+
+---
+
+# Staff authorization claims (auth hardening, 2026-08-13)
+
+The API guards trust `app_metadata` only — it is writable exclusively with the service-role key,
+which is precisely why the Supabase dashboard renders it read-only. Granting staff their claims
+therefore has to go through the Auth Admin API. Two scripts do related but **different** jobs, and
+running only one of them is the most common way to lock everyone out:
+
+| Script | What it does | When you need it |
+|---|---|---|
+| `migrate_auth_metadata.py` | **Copies** `role` / `district_id` / `assigned_divisions` that a user *already has* in `user_metadata` across to `app_metadata` | Accounts that predate the 2026-08-11 claim move |
+| `set_staff_claims.py` | **Originates** claims from the command line; never reads `user_metadata` | Anyone who never had claims in `user_metadata` — which is every Google-OAuth signup |
+
+A staff member who signed up through Google OAuth has nothing in `user_metadata`, so
+`migrate_auth_metadata.py` reports `0 users would be updated` and skips them. That message reads
+like "nothing to do" and is the trap: it usually means every account still needs
+`set_staff_claims.py`. **Verify per user, not per script** — after either one, confirm
+`app_metadata.role` is non-empty for every officer and admin.
+
+## Granting an officer their divisions
+
+```powershell
+$env:SUPABASE_URL = "https://<project>.supabase.co"
+$env:SUPABASE_SERVICE_ROLE_KEY = "<service role key>"   # NOT the anon key
+
+# Dry run first — prints before/after and writes nothing
+.\venv\Scripts\python.exe scripts\set_staff_claims.py --user <uuid> --role officer `
+    --divisions-from scripts\data\officer-app-metadata.json
+
+# Then apply
+.\venv\Scripts\python.exe scripts\set_staff_claims.py --user <uuid> --role officer `
+    --divisions-from scripts\data\officer-app-metadata.json --apply
+```
+
+`data/officer-app-metadata.json` holds the 32 Sinhala DS-division names for the Hambantota-area
+officer account. **These strings are load-bearing**: they must match `cases.ds_division_id`
+byte-for-byte or the officer's dashboard silently returns an empty list, and one of them
+(`ශ්‍රාවස්තිපුර`, index 27) contains a zero-width joiner `U+200D` that will not survive being
+retyped by hand. That is why the file is version-controlled rather than regenerated per-operator.
+To rebuild it for a different area:
+
+```sql
+SELECT DISTINCT ds_division_id FROM cases WHERE district = '<district>' ORDER BY 1;
+```
+
+## After running either script
+
+Claims are baked into a JWT when it is issued, so **the user must sign out and back in.** An
+already-issued token keeps its old (roleless) claims until it expires — up to an hour — and until
+then the change looks like it did nothing.

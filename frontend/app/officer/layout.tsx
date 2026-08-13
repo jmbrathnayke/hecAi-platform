@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { NextIntlClientProvider } from "next-intl";
 import "../globals.css";
 import { SyncStatusBar } from "@/components/SyncStatusBar";
+import { OfficerBottomNav } from "@/components/OfficerBottomNav";
 import { fontVariables } from "@/lib/fonts";
 import { resolveStaffLocale, loadMessages } from "@/lib/serverLocale";
 
@@ -21,11 +22,16 @@ export default async function OfficerLayout({ children }: { children: React.Reac
   const locale = await resolveStaffLocale();
   const messages = await loadMessages(locale);
   return (
+    // flex column + flex-1 content wrapper pins OfficerBottomNav to the bottom of short pages
+    // (same structure as the citizen layout).
     <html lang={locale} className={fontVariables}>
-      <body className="font-sans">
+      {/* suppressHydrationWarning: browser extensions (Grammarly et al.) mutate <body>'s
+          attributes before hydration. Scoped to this element only — see app/[locale]/layout.tsx. */}
+      <body className="flex min-h-dvh flex-col font-sans" suppressHydrationWarning>
         <NextIntlClientProvider locale={locale} messages={messages}>
           <SyncStatusBar />
-          {children}
+          <div className="flex flex-1 flex-col">{children}</div>
+          <OfficerBottomNav />
         </NextIntlClientProvider>
       </body>
     </html>

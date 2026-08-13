@@ -3,6 +3,7 @@ import { NextIntlClientProvider } from "next-intl";
 import "../globals.css";
 import { fontVariables } from "@/lib/fonts";
 import { resolveStaffLocale, loadMessages } from "@/lib/serverLocale";
+import { AdminShell } from "@/components/admin/AdminShell";
 
 // Admin routes are a separate top-level tree from app/[locale] (no locale route prefix),
 // mirroring the officer tree. Next.js requires each top-level branch under app/ to reach its own
@@ -23,9 +24,11 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const messages = await loadMessages(locale);
   return (
     <html lang={locale} className={fontVariables}>
-      <body className="font-sans">
+      {/* suppressHydrationWarning: browser extensions (Grammarly et al.) mutate <body>'s
+          attributes before hydration. Scoped to this element only — see app/[locale]/layout.tsx. */}
+      <body className="font-sans" suppressHydrationWarning>
         <NextIntlClientProvider locale={locale} messages={messages}>
-          {children}
+          <AdminShell>{children}</AdminShell>
         </NextIntlClientProvider>
       </body>
     </html>
