@@ -86,7 +86,7 @@ export default function OfficerDashboardPage() {
   }, [statusFilter, reloadNonce]);
 
   return (
-    <main className="min-h-screen bg-surface-base px-design-4 py-design-6">
+    <main className="flex-1 bg-surface-base px-design-4 py-design-6">
       <div className="mx-auto max-w-2xl space-y-design-4">
         <header className="space-y-design-1">
           <div className="flex items-center justify-between gap-design-2">

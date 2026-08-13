@@ -62,10 +62,14 @@ export function FilterBar({ value, onApply, onClear }: FilterBarProps) {
       key={JSON.stringify(value)}
       id={formId}
       onSubmit={handleSubmit}
+      // Mobile: every field is w-full so the five controls stack one-per-row instead of
+      // wrapping ragged (native `type="date"` inputs carry a ~150px intrinsic minimum on iOS,
+      // which made the ragged wrap worse). From `sm` up they revert to intrinsic width and the
+      // original single-row flex-wrap layout is unchanged.
       className="flex flex-wrap items-end gap-design-3"
       aria-label={t("filter.formAria")}
     >
-      <div className="flex flex-col gap-design-1">
+      <div className="flex w-full flex-col gap-design-1 sm:w-auto">
         <label htmlFor="filter-status" className="text-label font-medium text-ink-secondary">
           {t("filter.status")}
         </label>
@@ -73,7 +77,7 @@ export function FilterBar({ value, onApply, onClear }: FilterBarProps) {
           id="filter-status"
           name="status"
           defaultValue={value.status}
-          className="min-h-touch-target rounded-md border border-border-default bg-surface-raised px-design-3 text-body text-ink-primary"
+          className="min-h-touch-target w-full rounded-md border border-border-default bg-surface-raised px-design-3 text-body text-ink-primary sm:w-auto"
         >
           <option value="">{t("filter.allStatuses")}</option>
           {STATUS_VALUES.map((s) => (
@@ -84,7 +88,7 @@ export function FilterBar({ value, onApply, onClear }: FilterBarProps) {
         </select>
       </div>
 
-      <div className="flex flex-col gap-design-1">
+      <div className="flex w-full flex-col gap-design-1 sm:w-auto">
         <label htmlFor="filter-from" className="text-label font-medium text-ink-secondary">
           {t("filter.from")}
         </label>
@@ -93,11 +97,11 @@ export function FilterBar({ value, onApply, onClear }: FilterBarProps) {
           name="from"
           type="date"
           defaultValue={value.from}
-          className="min-h-touch-target rounded-md border border-border-default bg-surface-raised px-design-3 text-body text-ink-primary"
+          className="min-h-touch-target w-full rounded-md border border-border-default bg-surface-raised px-design-3 text-body text-ink-primary sm:w-auto"
         />
       </div>
 
-      <div className="flex flex-col gap-design-1">
+      <div className="flex w-full flex-col gap-design-1 sm:w-auto">
         <label htmlFor="filter-to" className="text-label font-medium text-ink-secondary">
           {t("filter.to")}
         </label>
@@ -106,11 +110,11 @@ export function FilterBar({ value, onApply, onClear }: FilterBarProps) {
           name="to"
           type="date"
           defaultValue={value.to}
-          className="min-h-touch-target rounded-md border border-border-default bg-surface-raised px-design-3 text-body text-ink-primary"
+          className="min-h-touch-target w-full rounded-md border border-border-default bg-surface-raised px-design-3 text-body text-ink-primary sm:w-auto"
         />
       </div>
 
-      <div className="flex flex-col gap-design-1">
+      <div className="flex w-full flex-col gap-design-1 sm:w-auto">
         <label htmlFor="filter-type" className="text-label font-medium text-ink-secondary">
           {t("filter.damageType")}
         </label>
@@ -118,7 +122,7 @@ export function FilterBar({ value, onApply, onClear }: FilterBarProps) {
           id="filter-type"
           name="type"
           defaultValue={value.type}
-          className="min-h-touch-target rounded-md border border-border-default bg-surface-raised px-design-3 text-body text-ink-primary"
+          className="min-h-touch-target w-full rounded-md border border-border-default bg-surface-raised px-design-3 text-body text-ink-primary sm:w-auto"
         >
           <option value="">{t("filter.allTypes")}</option>
           {DAMAGE_TYPE_OPTIONS.map((opt) => (
@@ -129,7 +133,7 @@ export function FilterBar({ value, onApply, onClear }: FilterBarProps) {
         </select>
       </div>
 
-      <div className="flex flex-col gap-design-1">
+      <div className="flex w-full flex-col gap-design-1 sm:w-auto">
         <label htmlFor="filter-division" className="text-label font-medium text-ink-secondary">
           {t("filter.dsDivision")}
         </label>
@@ -139,14 +143,14 @@ export function FilterBar({ value, onApply, onClear }: FilterBarProps) {
           type="text"
           defaultValue={value.division}
           placeholder={t("filter.divisionPlaceholder")}
-          className="min-h-touch-target rounded-md border border-border-default bg-surface-raised px-design-3 text-body text-ink-primary"
+          className="min-h-touch-target w-full rounded-md border border-border-default bg-surface-raised px-design-3 text-body text-ink-primary sm:w-auto"
         />
       </div>
 
-      <div className="flex gap-design-2">
+      <div className="flex w-full gap-design-2 sm:w-auto">
         <button
           type="submit"
-          className="min-h-touch-target rounded-md bg-forest px-design-4 text-label font-semibold text-ink-on-dark"
+          className="min-h-touch-target flex-1 rounded-md bg-forest px-design-4 text-label font-semibold text-ink-on-dark sm:flex-none"
         >
           {t("filter.apply")}
         </button>

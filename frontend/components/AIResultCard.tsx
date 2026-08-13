@@ -14,6 +14,7 @@ export interface AIResultCardProps {
   severity: Severity;
   confidence: number; // 0..1
   processingTimeMs: number;
+  modelVersion: string;
   onAccept: () => void;
   onOverride: () => void;
 }
@@ -23,6 +24,7 @@ export function AIResultCard({
   severity,
   confidence,
   processingTimeMs,
+  modelVersion,
   onAccept,
   onOverride,
 }: AIResultCardProps) {
@@ -39,6 +41,17 @@ export function AIResultCard({
       aria-label={t("aiResult.cardLabel")}
       className="border-l-4 border-forest bg-surface-raised rounded-md p-design-4 space-y-design-4"
     >
+      {/* Section label + "Auto" chip (mockup): marks the result as machine-produced, which is
+          what the Override affordance below is a response to. */}
+      <div className="flex items-center gap-design-2">
+        <span className="text-label font-semibold text-ink-primary">
+          {t("aiResult.sectionLabel")}
+        </span>
+        <span className="rounded-pill bg-forest-pale px-design-2 py-0.5 text-caption font-semibold text-forest">
+          {t("aiResult.autoChip")}
+        </span>
+      </div>
+
       <div className="flex items-start justify-between gap-design-3">
         <h2 className="text-headline text-ink-primary">{t(`aiResult.${classId}`)}</h2>
         <span className="bg-amber-pale text-amber text-caption font-semibold rounded-pill px-design-3 py-design-1">
@@ -63,22 +76,34 @@ export function AIResultCard({
         </div>
       </div>
 
+      {/* Provenance footer (mockup): which model produced this, that it ran on-device, and how
+          long it took. The officer needs the model version to make sense of a disputed result. */}
       <p className="text-caption text-ink-secondary">
-        {t("aiResult.processedIn", { ms: Math.round(processingTimeMs) })}
+        {t("aiResult.modelFooter", { model: modelVersion, ms: Math.round(processingTimeMs) })}
       </p>
 
-      <div className="flex gap-design-3">
+      {/* Override hint (mockup): tells the officer the result is contestable BEFORE they reach
+          for Accept, rather than leaving Override to be discovered. */}
+      <p className="flex items-start gap-design-2 rounded-md bg-amber-pale p-design-3 text-caption leading-relaxed text-amber">
+        <span aria-hidden="true">⚠️</span>
+        {t("aiResult.overrideHint")}
+      </p>
+
+      {/* flex-wrap + basis: on a 360px screen two wrapped Sinhala/Tamil CTA labels would
+          otherwise compress each other below a readable width; they wrap to their own rows
+          instead. */}
+      <div className="flex flex-wrap gap-design-3">
         <button
           type="button"
           onClick={onAccept}
-          className="flex-1 min-h-touch-target bg-amber text-ink-on-amber text-label font-semibold rounded-md"
+          className="min-h-touch-target flex-1 basis-[140px] bg-amber text-ink-on-amber text-label font-semibold rounded-md"
         >
           {t("aiResult.accept")}
         </button>
         <button
           type="button"
           onClick={onOverride}
-          className="flex-1 min-h-touch-target border border-forest text-forest text-label font-semibold rounded-md"
+          className="min-h-touch-target flex-1 basis-[140px] border border-forest text-forest text-label font-semibold rounded-md"
         >
           {t("aiResult.override")}
         </button>

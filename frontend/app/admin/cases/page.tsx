@@ -21,7 +21,6 @@ import { AdminKpiCards } from "@/components/admin/AdminKpiCards";
 import { CaseDetailPanel } from "@/components/admin/CaseDetailPanel";
 import { ExportButton } from "@/components/admin/ExportButton";
 import { LanguageSelectorCookie } from "@/components/LanguageSelectorCookie";
-import Link from "next/link";
 
 type LoadState = "loading" | "error" | "ready";
 const PAGE_SIZE = 20;
@@ -233,14 +232,17 @@ function AdminCasesPageContent() {
   );
 
   return (
-    <main className="min-h-screen bg-surface-base px-design-4 py-design-6">
-      <div className="mx-auto max-w-6xl space-y-design-4">
+    <main className="min-h-full bg-surface-base px-design-4 py-design-6">
+      {/* max-w-7xl, not max-w-6xl: AdminShell's 240px sidebar now eats into the viewport, and at
+          6xl the case table's list pane was narrow enough that two of its six columns sat off
+          the edge of an inner scroll container with no visual cue. */}
+      <div className="mx-auto max-w-7xl space-y-design-4">
         <header className="flex flex-wrap items-start justify-between gap-design-2">
           <div>
             <h1 className="text-title text-ink-primary">{t("cases.title")}</h1>
-            <Link href="/admin/analytics" className="text-label text-civic underline">
-              {t("analytics.title")}
-            </Link>
+            {/* The inline Analytics link that used to sit here is gone -- AdminShell's sidebar
+                (and its mobile destination row) is now the single navigation surface, so a
+                second, differently-styled entry point to the same page is redundant. */}
           </div>
           <div className="flex flex-col gap-design-1">
             <span className="text-caption text-ink-secondary">{t("languageLabel")}</span>
@@ -285,17 +287,26 @@ function AdminCasesPageContent() {
           <p className="text-body text-ink-secondary">{t("cases.empty")}</p>
         )}
 
+        {/* Mockup proportions: the case list takes the remaining width and the detail pane is a
+            fixed ~520px rail, rather than a 40/60 split that starved the six-column table (two
+            of its columns sat off the edge of the inner scroll container with no visual cue).
+            Below lg they stack, list first. */}
         {data && data.items.length > 0 && (
-          <div className="flex flex-col gap-design-4 lg:flex-row">
-            <div className="overflow-x-auto lg:w-[40%]">
-              <CaseListTable
-                cases={data.items}
-                onSort={handleSort}
-                sortCol={sortCol}
-                sortDir={sortDir}
-                onSelect={setSelectedOfflineId}
-                selectedOfflineId={selectedOfflineId}
-              />
+          <div className="flex flex-col gap-design-4 lg:flex-row lg:items-start">
+            <div className="min-w-0 lg:flex-1">
+              {/* Card wrapper (mockup): the table is a rounded, bordered surface and the
+                  horizontal scroll happens INSIDE it, so the scrollbar belongs to the card
+                  rather than to the page column. */}
+              <div className="overflow-x-auto rounded-md border border-border-default bg-surface-raised">
+                <CaseListTable
+                  cases={data.items}
+                  onSort={handleSort}
+                  sortCol={sortCol}
+                  sortDir={sortDir}
+                  onSelect={setSelectedOfflineId}
+                  selectedOfflineId={selectedOfflineId}
+                />
+              </div>
 
               {totalPages > 1 && (
                 <nav
@@ -328,7 +339,7 @@ function AdminCasesPageContent() {
             {/* Right pane: case detail (Story 5.4). Single mount point (code review fix) --
                 lg:w-[60%] makes it sit beside the list on desktop and full-width, stacked
                 below the list, on mobile (flex-col parent); no separate mobile-only copy. */}
-            <div className="lg:w-[60%]">{selectedDetailContent}</div>
+            <div className="lg:w-[520px] lg:shrink-0">{selectedDetailContent}</div>
           </div>
         )}
       </div>

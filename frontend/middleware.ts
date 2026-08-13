@@ -28,6 +28,18 @@ export default async function middleware(request: NextRequest) {
   // the login page's own role check, matching the officer precedent exactly (don't add a
   // role-checking branch officer's middleware doesn't have).
   const lowerPath = path.toLowerCase();
+
+  // OAuth PKCE callback — a Route Handler, not a page, and it must reach its handler untouched.
+  // It cannot be session-gated (creating the session is its entire job, so gating it would be a
+  // permanent redirect loop), and it must skip intlMiddleware, which would 307 it to
+  // /si/auth/callback and drop the ?code in the process.
+  // Matched with the trailing-slash form too, like every other route family in this file: an
+  // exact-only comparison let /auth/callback/ fall through to intlMiddleware and get 307'd to
+  // /si/auth/callback/, dropping the ?code — precisely the failure this bypass prevents.
+  if (lowerPath === "/auth/callback" || lowerPath.startsWith("/auth/callback/")) {
+    return NextResponse.next();
+  }
+
   const isAdminRoute = lowerPath === "/admin" || lowerPath.startsWith("/admin/");
   const isAdminLogin = lowerPath === "/admin/login" || lowerPath.startsWith("/admin/login/");
   if (isAdminRoute && !isAdminLogin) {

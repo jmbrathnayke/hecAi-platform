@@ -76,9 +76,14 @@ export function CaseListTable({
       : status;
 
   return (
-    <table className="w-full border-collapse text-body">
+    // min-w-[640px] is what makes the parent's `overflow-x-auto` actually engage on mobile.
+    // With `w-full` alone the table can never exceed its container, so the scroll container was
+    // inert and 6 columns squeezed to ~55px each on a 360px screen (dates and status pills
+    // wrapping to three lines). Now the table keeps legible column widths and scrolls sideways.
+    <table className="w-full min-w-[640px] border-collapse text-body">
       <thead>
-        <tr className="border-b border-border-default text-left text-label font-medium text-ink-secondary">
+        {/* Mockup header row: tinted band, uppercase micro-caps. */}
+        <tr className="border-b border-border-default bg-surface-base text-left text-caption font-bold uppercase tracking-wide text-ink-secondary">
           {COLUMNS.map(({ sortKey, labelKey }) => {
             const label = t(`table.${labelKey}`);
             return (
@@ -87,7 +92,7 @@ export function CaseListTable({
                   <button
                     type="button"
                     onClick={() => onSort(sortKey)}
-                    className="flex items-center gap-design-1 font-medium"
+                    className="flex items-center gap-design-1 font-bold uppercase tracking-wide hover:text-forest"
                     aria-label={t("table.sortAria", { column: label })}
                   >
                     {label}
@@ -126,11 +131,18 @@ export function CaseListTable({
                   select();
                 }
               }}
-              className={`cursor-pointer border-b border-border-default ${
-                selected ? "bg-forest-pale" : "hover:bg-surface-tint"
+              // border-l-[3px] on both branches (transparent when unselected) so selecting a
+              // row does not shift its cells sideways by 3px.
+              className={`cursor-pointer border-b border-border-default border-l-[3px] last:border-b-0 ${
+                selected
+                  ? "border-l-forest bg-forest-pale"
+                  : "border-l-transparent hover:bg-surface-tint"
               }`}
             >
-              <td className="px-design-3 py-design-2 font-medium text-ink-primary">
+              {/* whitespace-nowrap: "HEC-2026-0041" was breaking at every hyphen into a
+                  three-line stack whenever the column got tight. The reference is the row's
+                  identity — it must stay on one line and let the table scroll instead. */}
+              <td className="whitespace-nowrap px-design-3 py-design-2 font-medium text-ink-primary">
                 {c.canonical_id ?? "—"}
               </td>
               <td className="px-design-3 py-design-2 text-ink-secondary">

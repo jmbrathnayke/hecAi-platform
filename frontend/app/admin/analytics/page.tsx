@@ -117,7 +117,7 @@ export default function AdminAnalyticsPage() {
   if (!checked) return null;
 
   return (
-    <main className="min-h-screen bg-surface-base px-design-4 py-design-6">
+    <main className="min-h-full bg-surface-base px-design-4 py-design-6">
       <div className="mx-auto max-w-6xl space-y-design-4">
         <header className="flex flex-wrap items-start justify-between gap-design-2">
           <div>

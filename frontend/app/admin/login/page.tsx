@@ -8,16 +8,30 @@
 // role check prevent role confusion). Supabase-returned auth errors are shown verbatim (provider
 // copy, not ours to translate); only our own error strings are localized.
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { createClient } from "@/lib/supabase";
+import { createClient, isAuthReachable } from "@/lib/supabase";
+import { callbackErrorKey } from "@/lib/authErrors";
 
 type SupabaseClient = ReturnType<typeof createClient>;
 
+// useSearchParams() requires a Suspense boundary (Next.js App Router) or the build fails with a
+// static-bailout error — same treatment as admin/cases (Story 5.3). The fallback is null: the only
+// thing searchParams contributes here is a post-redirect error banner, so there is nothing
+// meaningful to render while suspended.
 export default function AdminLoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <AdminLoginPageContent />
+    </Suspense>
+  );
+}
+
+function AdminLoginPageContent() {
   const router = useRouter();
   const t = useTranslations("admin");
+  const searchParams = useSearchParams();
   // Lazy-init: createClient() must NOT run during SSR prerender (env vars may be absent in CI).
   // The ref starts null and is populated on first access, which only happens in browser event
   // handlers — never during the server render pass.
@@ -41,16 +55,38 @@ export default function AdminLoginPage() {
     };
   }, []);
 
+  // Surface a failed OAuth round-trip. app/auth/callback/route.ts bounces failures back here with
+  // ?error=<code>; without this the admin sees a blank login form and no explanation at all.
+  useEffect(() => {
+    const key = callbackErrorKey(searchParams.get("error"));
+    if (key) setError(t(key));
+  }, [searchParams, t]);
+
   async function handleGoogleSignIn() {
     setError(null);
     setSubmitting(true);
     try {
+      // Advisory preflight, matching officer login (code review 2026-08-13). This page previously
+      // had no preflight at all, so the failure mode the officer page documents — being handed to
+      // the browser's own "site can't be reached" page having seen nothing from the app — was
+      // still fully live for every administrator. It warns and continues rather than blocking:
+      // a cross-origin fetch cannot tell a genuine outage from a CORS rejection or an ad-blocker.
+      if (!(await isAuthReachable()) && mountedRef.current) {
+        setError(t("login.networkError"));
+      }
       const { error: signInError } = await getSupabase().auth.signInWithOAuth({
         provider: "google",
         // Role verification for the OAuth path happens downstream (the /admin/cases page via
         // useAdminSession / backend require_admin()) — the redirect flow doesn't return the user
         // synchronously the way signInWithPassword does, so we can't check the role here.
-        options: { redirectTo: `${window.location.origin}/admin/cases` },
+        //
+        // Must return to /auth/callback, NOT straight to /admin/cases: the provider comes back
+        // with a PKCE `?code=` that only a server-side exchangeCodeForSession() can turn into
+        // session cookies. `next` still carries the admin to /admin/cases, so the downstream
+        // role check above is unchanged.
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent("/admin/cases")}`,
+        },
       });
       if (!mountedRef.current) return;
       if (signInError) {

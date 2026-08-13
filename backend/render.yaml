@@ -9,13 +9,29 @@ services:
     healthCheckPath: /api/v1/health
     autoDeploy: true
     envVars:
+      # Matches .github/workflows/backend-ci.yml. Pinned to the version CI actually proves green
+      # rather than to the newest release: production previously ran 3.14.0 while every test ran
+      # on 3.12, so nothing had ever exercised this stack on the version being deployed. 3.12 is
+      # also where PR #35 landed the numpy/scikit-learn wheel fix — moving off it reopens that.
+      # If you raise this, raise the CI matrix in the same commit.
       - key: PYTHON_VERSION
-        value: "3.14.0"
+        value: "3.12"
       - key: FLASK_ENV
         value: production
       - key: DATABASE_URL
         sync: false
+      # Supabase issues ES256 JWTs; the auth guards derive the project's JWKS endpoint from this
+      # to verify them. WITHOUT IT THEY FALL BACK TO THE LEGACY HS256 SECRET AND EVERY
+      # AUTHENTICATED REQUEST 401s. Not a secret — it is the same project URL the browser
+      # bundle already ships as NEXT_PUBLIC_SUPABASE_URL — so it is set inline rather than
+      # through the dashboard.
+      - key: SUPABASE_URL
+        value: https://tshaqbutrmrmruuedpel.supabase.co
+      # Legacy HS256 fallback, kept for self-hosted/older projects. Ignored while SUPABASE_URL
+      # is set (see app/api/v1/middleware/auth.py — the two modes are never merged).
       - key: SUPABASE_JWT_SECRET
         sync: false
-      - key: BLOB_READ_WRITE_TOKEN
-        sync: false
+      # BLOB_READ_WRITE_TOKEN removed 2026-08-13: declared here and in .env.example but read by
+      # no code in either tier (no photo-upload pipeline exists server-side — see Story 5.4's
+      # PhotoGallery placeholder). Declaring it asked the operator to source a credential the
+      # deploy checklist simultaneously told them to omit. Re-add it with the pipeline, not before.
