@@ -4,16 +4,30 @@
 // provider (Story 6.1) — lives outside app/[locale] so its URL stays unprefixed. Supabase
 // auth error messages are passed through verbatim (they are provider-owned, not app copy).
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { createClient } from "@/lib/supabase";
+import { createClient, isAuthReachable } from "@/lib/supabase";
+import { callbackErrorKey } from "@/lib/authErrors";
 
 type SupabaseClient = ReturnType<typeof createClient>;
 
+// useSearchParams() requires a Suspense boundary (Next.js App Router) or the build fails with a
+// static-bailout error — same treatment as admin/cases (Story 5.3). The fallback is null: the only
+// thing searchParams contributes here is a post-redirect error banner, so there is nothing
+// meaningful to render while suspended.
 export default function OfficerLoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <OfficerLoginPageContent />
+    </Suspense>
+  );
+}
+
+function OfficerLoginPageContent() {
   const t = useTranslations("officer");
   const router = useRouter();
+  const searchParams = useSearchParams();
   // Lazy-init: createClient() must NOT run during SSR prerender (env vars may be absent in CI).
   // The ref starts null and is populated on first access, which only happens in browser event
   // handlers — never during the server render pass.
@@ -38,13 +52,37 @@ export default function OfficerLoginPage() {
     };
   }, []);
 
+  // Surface a failed OAuth round-trip. app/auth/callback/route.ts bounces failures back here with
+  // ?error=<code>; without this the user sees a blank login form and no explanation at all.
+  useEffect(() => {
+    const key = callbackErrorKey(searchParams.get("error"));
+    if (key) setError(t(key));
+  }, [searchParams, t]);
+
   async function handleGoogleSignIn() {
     setError(null);
     setSubmitting(true);
     try {
+      // Advisory preflight: signInWithOAuth() never reports an unreachable Auth host (it only
+      // builds a URL and redirects), so without this the officer would be handed to the browser's
+      // own "site can't be reached" page having seen nothing from the app.
+      //
+      // It WARNS and continues rather than blocking (code review 2026-08-13): a cross-origin
+      // fetch cannot distinguish a genuine outage from a CORS rejection or an ad-blocker, so
+      // treating a false result as authoritative would lock officers out of a healthy Supabase.
+      // If the host really is down the redirect fails anyway — with the warning already shown.
+      if (!(await isAuthReachable()) && mountedRef.current) {
+        setError(t("login.networkError"));
+      }
       const { error: signInError } = await getSupabase().auth.signInWithOAuth({
         provider: "google",
-        options: { redirectTo: `${window.location.origin}/officer/dashboard` },
+        // Must return to /auth/callback, NOT straight to the dashboard: the provider comes back
+        // with a PKCE `?code=` that only a server-side exchangeCodeForSession() can turn into
+        // session cookies. Redirecting to the protected page directly meant middleware saw no
+        // session and bounced the officer back here with the code discarded.
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent("/officer/dashboard")}`,
+        },
       });
       if (!mountedRef.current) return;
       if (signInError) {

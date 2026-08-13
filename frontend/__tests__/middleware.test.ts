@@ -62,6 +62,29 @@ test("/officer/login itself is not protected (no redirect loop)", async () => {
   expect(mockGetUser).not.toHaveBeenCalled();
 });
 
+// OAuth PKCE callback. Two ways middleware could break it: session-gating it (a permanent loop,
+// since creating the session is its job) or handing it to intlMiddleware (which would 307 it to
+// /si/auth/callback and drop the ?code the exchange needs).
+test("/auth/callback reaches its handler ungated and unlocalized", async () => {
+  const req = new NextRequest(new URL("http://localhost/auth/callback?code=abc-123"));
+  const res = await middleware(req);
+  expect(res.status).toBe(200);
+  expect(res.headers.get("location")).toBeNull();
+  expect(mockGetUser).not.toHaveBeenCalled();
+  expect(innerIntlMiddleware()).not.toHaveBeenCalled();
+});
+
+test("/auth/callback/ (trailing slash) is bypassed too, so the ?code is not 307'd away", async () => {
+  // The bypass was an exact match while every other route family in middleware.ts matches both
+  // the bare and the slash-suffixed form. The near-miss fell through to intlMiddleware and got
+  // redirected to /si/auth/callback/, dropping the code (code review 2026-08-13).
+  const req = new NextRequest(new URL("http://localhost/auth/callback/?code=abc-123"));
+  const res = await middleware(req);
+  expect(res.status).toBe(200);
+  expect(res.headers.get("location")).toBeNull();
+  expect(innerIntlMiddleware()).not.toHaveBeenCalled();
+});
+
 test("/officerx (boundary, not an officer route) is not treated as protected", async () => {
   const req = new NextRequest(new URL("http://localhost/officerx"));
   await middleware(req);

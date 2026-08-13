@@ -7,19 +7,14 @@ rather than creating a duplicate (CRITICAL #6) — race-safe via INSERT ... ON C
 """
 from datetime import datetime, timezone
 
-import jwt
 import psycopg2
 from flask import Blueprint, current_app, jsonify, request
 
-from app.api.v1.middleware.auth import authz_role
+from app.api.v1.middleware.auth import authenticated_claims, authz_role
 from app.infrastructure.audit import write_audit_log
 from app.infrastructure.ml import compensation
 
 cases_bp = Blueprint("cases", __name__)
-
-
-def _verify_jwt(token: str, secret: str) -> dict:
-    return jwt.decode(token, secret, algorithms=["HS256"], options={"verify_aud": False})
 
 
 def _get_connection():
@@ -29,18 +24,20 @@ def _get_connection():
 
 @cases_bp.route("/cases/submit", methods=["POST"])
 def submit_case():
-    secret = current_app.config.get("SUPABASE_JWT_SECRET")
-    if not secret:
-        # Server misconfiguration — not a client auth problem.
-        return jsonify({"error": "server_misconfigured"}), 500
-
-    auth = request.headers.get("Authorization", "")
-    if not auth.startswith("Bearer "):
-        return jsonify({"error": "missing_token"}), 401
-    try:
-        claims = _verify_jwt(auth.split(" ", 1)[1], secret)
-    except jwt.PyJWTError:
-        return jsonify({"error": "invalid_token"}), 401
+    # Verification is delegated to the shared middleware (code review 2026-08-13).
+    #
+    # This route used to carry its OWN private copy of the auth front half — a local
+    # `_verify_jwt()` hard-coded to `algorithms=["HS256"]` against SUPABASE_JWT_SECRET, plus its
+    # own missing-secret 500. When the guards moved to ES256-via-JWKS, this copy was left behind:
+    # a real Supabase token reaching the only case-submission endpoint in the platform raised
+    # InvalidAlgorithmError and 401'd every citizen and officer-assisted submission. Worse, once
+    # the now-legacy shared secret is dropped from the deployment (render.yaml calls it a
+    # fallback that is ignored while SUPABASE_URL is set) the same route 500s before it even
+    # reads the token. The whole suite stayed green throughout because its fixtures mint HS256
+    # tokens against a secret-only config. One decode path, one error contract, no drift.
+    claims, error = authenticated_claims()
+    if error:
+        return error
 
     body = request.get_json(silent=True) or {}
     offline_id = body.get("offline_id")

@@ -165,7 +165,11 @@
       "emailPlaceholder": "DWC email address",
       "passwordPlaceholder": "Password",
       "signIn": "Sign In",
-      "networkError": "Could not reach the sign-in service. Check your connection and try again."
+      "networkError": "Could not reach the sign-in service. Check your connection and try again.",
+      "errorAccessDenied": "Sign-in was cancelled. Please try again.",
+      "errorMissingCode": "That sign-in link is incomplete. Please start again from this page.",
+      "errorExchangeFailed": "Your sign-in link has expired or was already used. Please try again.",
+      "errorProvider": "Sign-in failed. Please try again."
     },
     "classify": {
       "title": "Damage Classification",
@@ -308,7 +312,11 @@
       "passwordPlaceholder": "Password",
       "signIn": "Sign In",
       "networkError": "Could not reach the sign-in service. Check your connection and try again.",
-      "accessDenied": "Access denied. Admin account required."
+      "accessDenied": "Access denied. Admin account required.",
+      "errorAccessDenied": "Sign-in was cancelled. Please try again.",
+      "errorMissingCode": "That sign-in link is incomplete. Please start again from this page.",
+      "errorExchangeFailed": "Your sign-in link has expired or was already used. Please try again.",
+      "errorProvider": "Sign-in failed. Please try again."
     },
     "cases": {
       "title": "Admin — Case List",

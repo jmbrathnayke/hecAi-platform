@@ -2,7 +2,7 @@
 frontend/.env.local
 frontend/.env.*.local
 backend/.env
-backend/.env.*.local
+backend/.env.example
 
 # Node
 frontend/node_modules/
