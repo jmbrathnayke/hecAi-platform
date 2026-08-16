@@ -184,6 +184,35 @@
       "photosCaptured": "{count, plural, one {# photo classified} other {# photos classified}}",
       "photoStripAria": "Photos classified in this case"
     },
+    "camera": {
+      "viewfinderLabel": "Camera viewfinder",
+      "starting": "Starting camera…",
+      "badgeChecking": "Checking…",
+      "badgeGood": "Good lighting",
+      "badgeBlurry": "Hold steady",
+      "badgeExposure": "Adjust lighting",
+      "shutter": "Take photo",
+      "gallery": "Choose from gallery",
+      "back": "Back",
+      "recentAria": "Recent captures",
+      "retry": "Retry",
+      "deniedTitle": "Camera access is blocked",
+      "deniedBody": "Allow camera access for this site in your browser or device settings, then tap Retry. You can also choose a photo from the gallery.",
+      "unavailableTitle": "No camera available",
+      "unavailableBody": "This device has no usable camera. Choose a photo from the gallery instead.",
+      "failedTitle": "Camera could not start",
+      "failedBody": "Something stopped the camera from opening. Tap Retry, or choose a photo from the gallery.",
+      "captureError": "Could not save that shot. Please try again.",
+      "instruction": "Take at least 1 photo of the damage.",
+      "count": "{count} of {max} photos taken",
+      "maxReached": "Photo limit reached ({max})."
+    },
+    "fieldNotes": {
+      "label": "Field notes (optional)",
+      "placeholder": "e.g. Approx 1.5 acres of paddy affected, east section of field.",
+      "count": "{count}/{max}",
+      "saveError": "Note not saved yet — it will retry as you type."
+    },
     "submit": {
       "title": "Submit Report for Citizen",
       "step1": "Step 1 of 5 — Citizen Identity",
@@ -220,11 +249,13 @@
       "reviewOverridden": " (overridden)",
       "reviewLocation": "Location",
       "reviewOfficer": "Assisting officer",
+      "reviewNotes": "Field notes",
       "submitError": "Could not complete the submission. Please try again.",
       "submitting": "Submitting…",
       "submit": "Submit report"
     },
     "submitPoc": {
+      "title": "Proof of Claim issued",
       "detailsLabel": "Officer-assisted submission details",
       "citizenNic": "Citizen NIC",
       "submittedByOfficer": "Submitted by officer",

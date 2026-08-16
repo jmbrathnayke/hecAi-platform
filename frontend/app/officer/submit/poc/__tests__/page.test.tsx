@@ -95,6 +95,18 @@ beforeEach(() => {
 });
 
 describe("OfficerPoCPage", () => {
+  it("gives the receipt a heading — it had none at any level before", async () => {
+    // The card's aria-label names a region, not a heading, so a screen-reader user landing here
+    // had nothing to navigate by. The citizen receipt has had an <h1> since Story 2.4; this page
+    // is deliberately chrome-free (no top bar / step rail) but still owes a heading.
+    mockGetCase.mockResolvedValue({ offline_id: "draft-1", officer_id: "officer-42" });
+    mockBuildPoC.mockResolvedValue(pocRecord());
+
+    render(<OfficerPoCPage />);
+
+    expect(await screen.findByRole("heading", { level: 1 })).toHaveTextContent("submitPoc.title");
+  });
+
   it("masks the citizen NIC to its last 4 chars, shows the officer badge, and QRs the offline_id (AC6)", async () => {
     sessionStorage.setItem(OFFICER_POC_NIC_KEY, "678V");
     mockGetCase.mockResolvedValue({ offline_id: "draft-1", officer_id: "officer-42" });

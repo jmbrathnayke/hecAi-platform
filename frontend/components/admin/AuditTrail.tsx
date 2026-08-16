@@ -56,7 +56,8 @@ export function AuditTrail({ trail }: AuditTrailProps) {
   return (
     <div className="space-y-design-3">
       <div className="flex items-center justify-between">
-        <h3 className="text-heading-3 text-ink-primary">{t("audit.heading")}</h3>
+        {/* was `text-heading-3` — undefined token; see AIResultPanel. DESIGN.md § Typography. */}
+        <h3 className="text-headline text-ink-primary">{t("audit.heading")}</h3>
         <button
           type="button"
           onClick={handleVerify}

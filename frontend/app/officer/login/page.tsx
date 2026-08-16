@@ -132,31 +132,47 @@ function OfficerLoginPageContent() {
           {t("login.google")}
         </button>
 
-        <div className="relative text-center text-ink-disabled text-label">
-          <span className="bg-surface-raised px-design-2">{t("login.or")}</span>
+        {/* The rule was previously a bare `relative` with nothing to position against, so the
+            "or" floated with no divider either side of it. */}
+        <div className="flex items-center gap-design-3 text-label text-ink-disabled">
+          <span className="h-px flex-1 bg-border-default" aria-hidden="true" />
+          <span>{t("login.or")}</span>
+          <span className="h-px flex-1 bg-border-default" aria-hidden="true" />
         </div>
 
         <form onSubmit={handleEmailSignIn} className="space-y-design-3">
+          {/* Placeholders were carrying the whole labelling burden — they vanish on focus and are
+              not reliably announced. The visible design is unchanged; the names now exist. */}
+          <label htmlFor="officer-email" className="sr-only">
+            {t("login.emailPlaceholder")}
+          </label>
           <input
+            id="officer-email"
             type="email"
+            autoComplete="username"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder={t("login.emailPlaceholder")}
             required
-            className="w-full border border-border-default rounded-md px-design-3 py-design-2 text-body"
+            className="min-h-touch-target w-full rounded-md border border-border-default px-design-3 py-design-2 text-body"
           />
+          <label htmlFor="officer-password" className="sr-only">
+            {t("login.passwordPlaceholder")}
+          </label>
           <input
+            id="officer-password"
             type="password"
+            autoComplete="current-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder={t("login.passwordPlaceholder")}
             required
-            className="w-full border border-border-default rounded-md px-design-3 py-design-2 text-body"
+            className="min-h-touch-target w-full rounded-md border border-border-default px-design-3 py-design-2 text-body"
           />
           <button
             type="submit"
             disabled={submitting}
-            className="w-full min-h-touch-target bg-amber text-ink-on-amber text-label font-semibold rounded-md disabled:opacity-60"
+            className="w-full min-h-primary-btn bg-amber text-ink-on-amber text-headline font-semibold rounded-md disabled:opacity-60"
           >
             {t("login.signIn")}
           </button>

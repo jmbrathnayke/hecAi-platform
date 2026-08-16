@@ -33,7 +33,8 @@ export function CompensationPanel({ compensation }: CompensationPanelProps) {
 
   return (
     <div className="rounded-md border border-border-default bg-surface-raised p-design-4 space-y-design-3">
-      <h3 className="text-heading-3 text-ink-primary">{t("compensation.heading")}</h3>
+      {/* was `text-heading-3` — undefined token; see AIResultPanel. DESIGN.md § Typography. */}
+      <h3 className="text-headline text-ink-primary">{t("compensation.heading")}</h3>
       <p className="text-label font-semibold text-amber">{t("compensation.aiRecommendation")}</p>
 
       <div>
