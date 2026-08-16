@@ -50,7 +50,13 @@ def evaluate(model, images, y_true, class_names) -> dict:
     from sklearn.metrics import (accuracy_score, classification_report, confusion_matrix,
                                  f1_score)
     y_pred = np.argmax(model.predict(images, batch_size=16, verbose=0), axis=1)
-    report = classification_report(y_true, y_pred, target_names=class_names,
+    # labels= is not optional. Without it sklearn infers the label set from the data, so a class
+    # absent from this split makes target_names the wrong length (ValueError on scikit-learn
+    # 1.9.0) and, worse, silently returns a 2x2 confusion_matrix for a 3-class problem -- which
+    # would be serialized straight into RER-2's evidence under a 3-class heading. It also keeps
+    # the matrices for the two models strictly comparable, which is the whole point of this file.
+    _labels = list(range(len(class_names)))
+    report = classification_report(y_true, y_pred, labels=_labels, target_names=class_names,
                                    output_dict=True, zero_division=0)
     return {
         "accuracy": float(accuracy_score(y_true, y_pred)),
@@ -64,7 +70,7 @@ def evaluate(model, images, y_true, class_names) -> dict:
             }
             for c in class_names
         },
-        "confusion_matrix": confusion_matrix(y_true, y_pred).tolist(),
+        "confusion_matrix": confusion_matrix(y_true, y_pred, labels=_labels).tolist(),
     }
 
 
@@ -144,7 +150,10 @@ def main() -> None:
         "models": models,
     }
     path = ensure_results_dir() / "classification_benchmark.json"
-    path.write_text(json.dumps(out, indent=2), encoding="utf-8")
+    # allow_nan=False: json.dumps writes a bare NaN token, which is invalid JSON that Python
+    # round-trips happily and every other parser rejects. These files are dissertation evidence,
+    # so a degenerate run must fail here rather than commit an unparseable artifact.
+    path.write_text(json.dumps(out, indent=2, allow_nan=False), encoding="utf-8")
 
     print(f"Wrote {path}")
     for name, m in models.items():

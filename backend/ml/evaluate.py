@@ -60,7 +60,9 @@ def evaluate_compensation() -> dict:
         "features": meta.get("features", FEATURES),
     }
     path = ensure_results_dir() / "compensation_metrics.json"
-    path.write_text(json.dumps(metrics, indent=2), encoding="utf-8")
+    # allow_nan=False -- see the note in evaluate_classification(). r2_score returns nan on a
+    # zero-variance holdout, which is exactly the degenerate case that must not reach the file.
+    path.write_text(json.dumps(metrics, indent=2, allow_nan=False), encoding="utf-8")
     print(f"Wrote {path}")
     print(f"  MAE={metrics['mae']:,.0f}  RMSE={metrics['rmse']:,.0f}  R2={metrics['r2']:.3f}  "
           f"n_test={metrics['n_test']}")
@@ -110,7 +112,12 @@ def evaluate_classification() -> dict | None:
     # than erroring, so this scaling is load-bearing.
     y_pred = np.argmax(model.predict(images / 255.0, batch_size=16, verbose=0), axis=1)
 
-    report = classification_report(y_true, y_pred, target_names=class_names,
+    # labels= is not optional. Without it sklearn infers the label set from the data, so a class
+    # absent from this split makes target_names the wrong length (ValueError on scikit-learn
+    # 1.9.0) and, worse, silently returns a 2x2 confusion_matrix for a 3-class problem -- which
+    # would be serialized straight into RER-2's evidence under a 3-class heading.
+    _labels = list(range(len(class_names)))
+    report = classification_report(y_true, y_pred, labels=_labels, target_names=class_names,
                                    output_dict=True, zero_division=0)
     metrics = {
         "model": "mobilenetv2",
@@ -130,11 +137,14 @@ def evaluate_classification() -> dict | None:
             }
             for c in class_names
         },
-        "confusion_matrix": confusion_matrix(y_true, y_pred).tolist(),
+        "confusion_matrix": confusion_matrix(y_true, y_pred, labels=_labels).tolist(),
         "confusion_matrix_axes": {"rows": "true", "cols": "predicted", "order": class_names},
     }
     path = ensure_results_dir() / "classification_metrics.json"
-    path.write_text(json.dumps(metrics, indent=2), encoding="utf-8")
+    # allow_nan=False: json.dumps writes a bare NaN token, which is invalid JSON that Python
+    # round-trips happily and every other parser rejects. These files are dissertation evidence,
+    # so a degenerate run must fail here rather than commit an unparseable artifact.
+    path.write_text(json.dumps(metrics, indent=2, allow_nan=False), encoding="utf-8")
     print(f"Wrote {path}")
     print(f"  accuracy={metrics['accuracy']:.3f}  macroF1={metrics['macro_f1']:.3f}  "
           f"n_val={metrics['n_val']}")

@@ -53,6 +53,25 @@ PII_FIELDS = (
 # on legitimate output. Those are covered by the exact-key assertion instead.
 PII_SUBSTRINGS = tuple(f for f in PII_FIELDS if f not in ("nic", "mobile"))
 
+# Sentinel PII *values* planted on the source records. The field-name scans above only catch PII
+# that arrives under a recognisable key; a value smuggled out under an innocuous name (or via a
+# widened _row_to_dict) would pass every assertion in this file without these.
+#
+# SCOPE, stated honestly: FakeCursor._joined() assembles its tuple from a fixed 15-column list,
+# so these sentinels can only reach the body if something downstream of the SQL starts passing
+# them through. That is a real regression class -- widening _row_to_dict, or adding a column to
+# the fake to match a widened SELECT -- and it is what this guards. It does NOT prove the live
+# SQL omits these columns; no fake-DB test structurally can. live_verify_research_export.py is
+# the check that proves that, against real Postgres, with the same OFFICER-SECRET-123 sentinel.
+PII_VALUES = (
+    "OFFICER-SECRET-123",
+    "199012345678",
+    "0771234567",
+    "Nimal Perera confirmed it was a fence",
+    "6.9271",
+    "79.8612",
+)
+
 # The complete, intended key set (AC1). Asserting equality — not just absence of known-bad names
 # — is what catches a PII column added to the SELECT under a name nobody thought to blocklist.
 EXPECTED_KEYS = {
@@ -102,6 +121,13 @@ def _case(
         "damage_category": damage_category,
         "approved_amount": approved_amount,
         "ds_division_id": ds_division_id,
+        # Real PII columns that exist on `cases` (migrations 002/004) and must never be exported.
+        # Carried on the fixture so test_no_pii_values_anywhere_in_body has something to detect.
+        "citizen_nic_plain": "199012345678",
+        "citizen_mobile_plain": "0771234567",
+        "submitter_identity_hash": "sha256:deadbeef",
+        "gps_lat": "6.9271",
+        "gps_lng": "79.8612",
     }
 
 
@@ -128,6 +154,12 @@ def _inference(
         "override_category": override_category,
         "ground_truth": ground_truth,
         "created_at": created_at or datetime(2026, 7, 8, 10, 0, 0, tzinfo=timezone.utc),
+        # The two columns a naive column-name review misses. input_features is JSONB that
+        # literally contains officer_id (see inference.py's write path); override_reason is
+        # officer-typed free text and here contains a citizen's name, which is the realistic
+        # worst case. Both are excluded from _RESEARCH_SELECT by design.
+        "input_features": {"offline_id": "x", "officer_id": "OFFICER-SECRET-123"},
+        "override_reason": "Nimal Perera confirmed it was a fence",
     }
 
 
@@ -475,11 +507,26 @@ def test_payload_keys_are_exactly_the_declared_contract(client):
 
 
 def test_no_pii_substrings_anywhere_in_body(client):
-    """Values too, not only keys — catches PII smuggled inside a nested/serialized value."""
+    """Field NAMES, anywhere in the body — catches a PII key nested inside a serialized value."""
     body = client.get("/api/v1/research/export", headers=_auth()).get_data(as_text=True)
     lowered = body.lower()
     for field in PII_SUBSTRINGS:
         assert field not in lowered, f"PII field {field!r} leaked into research export"
+
+
+def test_no_pii_values_anywhere_in_body(client):
+    """PII *values*, not field names — the case the two scans above structurally cannot catch.
+
+    The fixtures carry a real NIC, a mobile number, GPS coordinates, an officer id inside
+    `input_features` JSONB, and a citizen's name inside free-text `override_reason`. None may
+    surface under any key, including an innocuous one.
+
+    See PII_VALUES for what this does and does not prove: it guards the serialization layer
+    (a widened _row_to_dict, a column added to the fake), not the SQL itself.
+    """
+    body = client.get("/api/v1/research/export", headers=_auth()).get_data(as_text=True)
+    for value in PII_VALUES:
+        assert value not in body, f"PII value {value!r} leaked into research export"
 
 
 # --- audit --------------------------------------------------------------------------------

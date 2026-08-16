@@ -53,6 +53,40 @@ the compute is awake — this is the check that caught a real defect in Story 7.
 backend/venv/Scripts/python.exe backend/ml/live_verify_research_export.py
 ```
 
+**Three defects were fixed in this script by the 2026-08-16 code review** — it had never been
+run end to end, so none of them had surfaced. Worth knowing before you trust its output:
+
+- It resolved its import path from the **cwd**, not from the file, so the invocation documented
+  immediately above raised `ModuleNotFoundError`. Now anchored to `Path(__file__)`.
+- It read the export with a fixed `LIMIT 1000` against an **ascending** query, so the rows it
+  had just planted (highest ids) fell outside the window once `inference_log` grew past 1000.
+  That failed dangerously rather than loudly: `mine` came back empty and the PII check greps
+  `repr(mine)`, so every PII assertion would have printed `present=False` and **passed without
+  inspecting a single row**. It now sizes the limit from the live count and aborts explicitly if
+  the planted rows are not found.
+- It printed Sinhala district names before the PII check, and Windows stdout defaults to cp1252
+  — on a redirected run it died with `UnicodeEncodeError` at check L and never reached the PII
+  block at all. Now reconfigures stdout to UTF-8 first.
+
+## Export cap semantics — the truncated export keeps the OLDEST rows
+
+`/api/v1/research/export` caps at `RESEARCH_MAX_ROWS = 50_000` and orders `ORDER BY il.id`
+**ascending**, so once `inference_log` outgrows the cap the export returns the *earliest* 50k
+inference rows, not the most recent. This is deliberate and is the opposite of `/admin/export`
+(`admin.py`, DESC), which shows an admin the latest activity.
+
+The reason is reproducibility: a research corpus that returns the same rows on every run is
+citable, whereas a DESC cap silently changes the dataset underneath a published figure every
+time a new inference lands. Ratified 2026-08-16.
+
+Two consequences to respect when quoting numbers from a capped export:
+
+- **Recent model behaviour is invisible at the cap.** If you need current-period metrics after
+  the corpus exceeds 50k rows, filter server-side rather than raising the cap.
+- **Check the headers, not the row count.** `X-HEC-Truncated` is derived from the delivered
+  payload; `X-HEC-Row-Count` is what you actually received. The audit row's `matched_count`
+  records how many rows existed at authorisation time and can legitimately differ from both.
+
 ## Data locations
 
 Datasets and Keras checkpoints are **not** in this repo (473 images; a 95 MB ResNet-50
