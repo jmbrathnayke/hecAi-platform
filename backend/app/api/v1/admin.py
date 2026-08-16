@@ -106,8 +106,18 @@ def _build_conditions(district, args):
     if to_date is _INVALID:
         return None, None
     if to_date is not None:
-        conditions.append("c.submitted_at <= %s")
-        params.append(to_date)
+        # Exclusive end-of-day upper bound, NOT `<= to_date`. `c.submitted_at` is TIMESTAMPTZ and
+        # `to_date` is a bare `date`, which Postgres casts to midnight (00:00:00) -- so `<=` drops
+        # every case submitted later on the end date itself. `?to=<today>` is the most common range
+        # an admin selects, and it silently returned nothing from today.
+        #
+        # Story 7.1's code review fixed exactly this bug, but only inside get_analytics(), which
+        # computes its own `to_date_exclusive` (see below). The shared builder never got the fix,
+        # so list_cases AND /admin/export both still carried it -- the export being a research
+        # data path, not just a UI one. Fixed here so every consumer of _build_conditions inherits
+        # the correct boundary by construction.
+        conditions.append("c.submitted_at < %s")
+        params.append(to_date + timedelta(days=1))
     damage_type = args.get("type")
     if damage_type:
         conditions.append("c.damage_category = %s")
@@ -175,7 +185,15 @@ def list_cases():
                               LEFT JOIN LATERAL (
                                 SELECT confidence FROM inference_log
                                  WHERE case_id = c.id
-                                 ORDER BY created_at DESC
+                                 -- `id DESC` is a required tiebreaker, not decoration: now() is
+                                 -- transaction-stable, so an AI classification and the officer
+                                 -- override that corrects it -- written in the SAME transaction --
+                                 -- share a created_at, and "latest" is otherwise arbitrary. Story
+                                 -- 7.2 added this to its own LATERAL for exactly this reason; the
+                                 -- pre-existing queries never got it and could report a stale
+                                 -- confidence/override flag. inference_log is append-only, so a
+                                 -- higher id is always the later write.
+                                 ORDER BY created_at DESC, id DESC
                                  LIMIT 1
                               ) il ON true
                              WHERE {where}
@@ -334,7 +352,12 @@ def _load_case_detail(cur, offline_id, district, known_row=None, known_comp_row=
                   was_overridden, override_reason, override_category,
                   input_features, created_at
              FROM inference_log WHERE case_id = %s
-            ORDER BY created_at DESC LIMIT 1""",
+            -- `id DESC` tiebreaker -- see list_cases's LATERAL. Not named in the original
+            -- deferred-work entry (which cited only list_cases and get_analytics) but carries
+            -- the identical defect: this is the row an admin reads on the case-detail panel to
+            -- decide an appeal, so showing the superseded prediction instead of the officer's
+            -- override is the most consequential place for it to be wrong.
+            ORDER BY created_at DESC, id DESC LIMIT 1""",
         (case_id,),
     )
     ai_row = cur.fetchone()
@@ -1054,7 +1077,11 @@ def get_analytics():
                              JOIN LATERAL (
                                SELECT confidence, input_features FROM inference_log
                                 WHERE case_id = c.id
-                                ORDER BY created_at DESC LIMIT 1
+                                -- `id DESC` tiebreaker -- see list_cases's LATERAL above. This
+                                -- one feeds the AI-confidence and override-rate figures, so a
+                                -- nondeterministic "latest" here moves a number the dissertation
+                                -- reports (NFR-6.3), not just a cell in the UI.
+                                ORDER BY created_at DESC, id DESC LIMIT 1
                              ) il ON true
                             WHERE c.district = %s
                               AND c.submitted_at >= %s AND c.submitted_at < %s""",
@@ -1070,7 +1097,8 @@ def get_analytics():
                              FROM cases c
                              JOIN LATERAL (
                                SELECT was_overridden FROM inference_log
-                                WHERE case_id = c.id ORDER BY created_at DESC LIMIT 1
+                                -- `id DESC` tiebreaker -- see list_cases's LATERAL above.
+                                WHERE case_id = c.id ORDER BY created_at DESC, id DESC LIMIT 1
                              ) il ON true
                             WHERE c.district = %s
                               AND c.submitted_at >= %s AND c.submitted_at < %s""",
@@ -1083,7 +1111,8 @@ def get_analytics():
                              FROM cases c
                              JOIN LATERAL (
                                SELECT was_overridden FROM inference_log
-                                WHERE case_id = c.id ORDER BY created_at DESC LIMIT 1
+                                -- `id DESC` tiebreaker -- see list_cases's LATERAL above.
+                                WHERE case_id = c.id ORDER BY created_at DESC, id DESC LIMIT 1
                              ) il ON true
                             WHERE c.district = %s
                               AND c.submitted_at >= %s AND c.submitted_at < %s""",

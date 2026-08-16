@@ -400,7 +400,8 @@
       "thisMonth": "Cases This Month",
       "byStatus": "By Status",
       "totalApproved": "Total Approved (LKR)",
-      "avgProcessing": "Avg Processing (Days)"
+      "avgProcessing": "Avg Processing (Days)",
+      "scopeNote": "District-wide totals — not affected by the filters below."
     },
     "detail": {
       "loading": "Loading case…",
