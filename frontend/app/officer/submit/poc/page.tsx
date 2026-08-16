@@ -135,6 +135,16 @@ export default function OfficerPoCPage() {
 
   return (
     <main className="mx-auto flex w-full max-w-md flex-col gap-design-6 bg-surface-base px-design-4 py-design-6">
+      {/* This screen deliberately carries no OfficerTopBar / step rail — it is a terminal receipt
+          the officer holds out for the citizen to read, and app chrome would compete with it. It
+          still needs a heading, though: every other officer route gained an <h1> with the top bar,
+          and the CITIZEN receipt has had one since Story 2.4 (report/poc: `poc.successTitle`).
+          Without this the page had no heading at ANY level — PoCCard's reference number is a
+          styled <p>, and its `aria-label` names a region, which is not a heading. */}
+      <h1 className="text-center text-headline text-ink-primary print:hidden">
+        {t("submitPoc.title")}
+      </h1>
+
       <PoCCard poc={poc} canonicalId={canonicalId} />
 
       <section

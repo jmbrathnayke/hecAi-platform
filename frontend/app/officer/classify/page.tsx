@@ -15,9 +15,17 @@ import { saveClassification, saveOverride, getCase } from "@/lib/indexeddb";
 import { getDraftId, getOrCreateDraftId, clearDraftId } from "@/lib/draft";
 import { AIResultCard } from "@/components/AIResultCard";
 import { OverrideForm } from "@/components/OverrideForm";
+import { OfficerTopBar } from "@/components/OfficerTopBar";
+import { CameraCapture } from "@/components/CameraCapture";
+import { PhotoStrip } from "@/components/PhotoStrip";
+import { FieldNotes } from "@/components/FieldNotes";
 
 type Status = "idle" | "classifying" | "result" | "error";
 type Decision = "accepted" | "override" | "overridden" | null;
+
+// Mockup: "2 of 10 photos taken". Matches the citizen photo step's cap (MAX_PHOTOS in
+// app/[locale]/report/photos) so a case can never carry more photos when an officer builds it.
+const MAX_PHOTOS = 10;
 
 // Reverse of deriveCaseCategory: reconstruct an equivalent per-photo class set from a persisted
 // case-level rollup. Lets us re-hydrate the accumulator after a reload so the rollup stays
@@ -37,7 +45,6 @@ function classIdsFromCaseCategory(category: unknown): ClassId[] {
 
 export default function OfficerClassifyPage() {
   const t = useTranslations("officer");
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const [status, setStatus] = useState<Status>("idle");
   const [result, setResult] = useState<ClassificationResult | null>(null);
   const [qualityWarning, setQualityWarning] = useState(false);
@@ -59,6 +66,10 @@ export default function OfficerClassifyPage() {
   // `thumbnails` in the effect's dependency array (which would revoke on every capture).
   const [thumbnails, setThumbnails] = useState<string[]>([]);
   const thumbnailsRef = useRef<string[]>([]);
+  // Remount key for FieldNotes. That component owns its text in local state (so typing is not
+  // routed through this page on every keystroke), which means "Start new case" has to discard
+  // the instance outright — otherwise the previous case's note would greet the next citizen.
+  const [notesKey, setNotesKey] = useState(0);
 
   // The strip is decoration. createObjectURL failing (or being unavailable) must never cost the
   // officer a classification they already waited for, so this swallows its own errors rather
@@ -113,11 +124,13 @@ export default function OfficerClassifyPage() {
     };
   }, []);
 
-  async function handleCapture(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = ""; // allow re-selecting the same file
-    if (!file) return;
+  // Receives a still from the in-app shutter or a file from the gallery fallback — both arrive
+  // as a File, so the pipeline below is identical for either route.
+  async function handleCapture(file: File) {
     if (inFlightRef.current) return; // ignore overlapping captures — one classification at a time
+    // Hard cap (mockup's "N of 10"): silently ignore rather than error — the camera's shutter
+    // and gallery button are already disabled at the cap, so reaching here means a race.
+    if (thumbnailsRef.current.length >= MAX_PHOTOS) return;
     inFlightRef.current = true;
 
     setStatus("classifying");
@@ -213,6 +226,7 @@ export default function OfficerClassifyPage() {
     clearDraftId();
     classIdsRef.current = [];
     clearThumbnails();
+    setNotesKey((n) => n + 1);
     setResult(null);
     setDecision(null);
     setOverrideError(false);
@@ -220,123 +234,116 @@ export default function OfficerClassifyPage() {
     setStatus("idle");
   }
 
-  return (
-    <main className="flex-1 bg-surface-base px-design-4 py-design-6">
-      <div className="max-w-md mx-auto space-y-design-4">
-        <div className="flex items-center justify-between gap-design-3">
-          <h1 className="text-title text-ink-primary">{t("classify.title")}</h1>
-          <button
-            type="button"
-            onClick={handleStartNewCase}
-            className="min-h-touch-target text-label font-semibold text-forest underline"
-          >
-            {t("classify.startNewCase")}
-          </button>
-        </div>
+  const atMax = thumbnails.length >= MAX_PHOTOS;
 
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          capture="environment"
-          className="hidden"
-          data-testid="classify-file-input"
-          onChange={(e) => void handleCapture(e)}
+  return (
+    // No horizontal padding on <main>: the top bar, the camera viewport and the instruction
+    // strip are full-bleed in the mockup. Only the scrolling panel below them is inset.
+    <main className="flex-1 bg-surface-base">
+      <div className="mx-auto w-full max-w-md">
+        <OfficerTopBar
+          label={t("classify.title")}
+          action={
+            <button
+              type="button"
+              onClick={handleStartNewCase}
+              className="min-h-touch-target shrink-0 text-label font-semibold text-forest underline"
+            >
+              {t("classify.startNewCase")}
+            </button>
+          }
         />
 
-        <button
-          type="button"
-          onClick={() => fileInputRef.current?.click()}
+        <CameraCapture
+          onCapture={(file) => void handleCapture(file)}
           disabled={status === "classifying"}
-          className="w-full min-h-primary-btn bg-forest text-ink-on-dark text-headline font-semibold rounded-md disabled:opacity-60"
-        >
-          {status === "classifying" ? t("classify.analyzing") : t("classify.capture")}
-        </button>
+          busyLabel={t("classify.analyzing")}
+          atMax={atMax}
+          thumbnails={thumbnails}
+          fileInputTestId="classify-file-input"
+        />
 
-        {qualityWarning && (
-          <p role="alert" className="text-caption text-status-warning">
-            {t("classify.qualityWarning")}
+        {/* Instruction strip (mockup): what to shoot, and how many are banked so far. */}
+        <div className="border-b border-border-default bg-surface-raised px-design-5 py-design-3 text-center">
+          <p className="text-label text-ink-secondary">
+            <span aria-hidden="true">📸 </span>
+            {atMax ? t("camera.maxReached", { max: MAX_PHOTOS }) : t("camera.instruction")}
           </p>
-        )}
-
-        {status === "error" && (
-          <p role="alert" className="text-caption text-status-error">
-            {t("classify.classifyError")}
+          <p className="text-caption text-ink-disabled">
+            {t("camera.count", { count: thumbnails.length, max: MAX_PHOTOS })}
           </p>
-        )}
+        </div>
 
-        {/* Photo strip (mockup): the running set of photos classified for this case. The last
-            one is the subject of the result card below, so it carries the forest ring. */}
-        {thumbnails.length > 0 && (
-          <div>
-            <p className="text-caption font-medium text-ink-secondary">
-              {t("classify.photosCaptured", { count: thumbnails.length })}
+        <div className="space-y-design-4 px-design-4 py-design-4">
+          {qualityWarning && (
+            <p role="alert" className="text-caption text-status-warning">
+              {t("classify.qualityWarning")}
             </p>
-            <ul
-              aria-label={t("classify.photoStripAria")}
-              className="mt-design-2 flex gap-design-2 overflow-x-auto pb-design-1"
-            >
-              {thumbnails.map((url, i) => (
-                <li key={url} className="shrink-0">
-                  {/* Plain <img>: these are blob: object URLs, which next/image cannot
-                      optimise, and this screen must work fully offline anyway. */}
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={url}
-                    alt=""
-                    className={`h-16 w-20 rounded-sm border-2 object-cover ${
-                      i === thumbnails.length - 1 ? "border-forest" : "border-border-default"
-                    }`}
-                  />
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
+          )}
 
-        {status === "result" && result && (
-          <>
-            <AIResultCard
-              classId={result.classId}
-              severity={result.severity}
-              confidence={result.confidence}
-              processingTimeMs={result.processingTimeMs}
-              modelVersion={result.modelVersion}
-              onAccept={() => {
-                // Once an override is recorded, Accept must not flip the UI to "accepted"
-                // while the persisted draft still says overridden (contradictory record).
-                if (decision !== "overridden") setDecision("accepted");
-              }}
-              onOverride={() => {
-                setOverrideError(false);
-                setDecision("override");
-              }}
-            />
-            {decision === "accepted" && (
-              <p className="text-label text-status-success">{t("classify.accepted")}</p>
-            )}
-            {decision === "override" && (
-              <>
-                <OverrideForm
-                  currentCategory={result.classId}
-                  onConfirm={(category, reason) => void handleOverrideConfirm(category, reason)}
-                  onCancel={() => {
-                    setOverrideError(false);
-                    setDecision(null);
-                  }}
-                />
-                {overrideError && (
-                  <p role="alert" className="text-caption text-status-error">
-                    {t("classify.overrideError")}
-                  </p>
-                )}
-              </>
-            )}
-            {decision === "overridden" && (
-              <p className="text-label text-status-success">{t("classify.overridden")}</p>
-            )}
-          </>
-        )}
+          {status === "error" && (
+            <p role="alert" className="text-caption text-status-error">
+              {t("classify.classifyError")}
+            </p>
+          )}
+
+          {/* The running set of photos classified for this case. The last one is the subject of
+              the result card below, so PhotoStrip rings it in forest. */}
+          <PhotoStrip
+            thumbnails={thumbnails}
+            countLabel={t("classify.photosCaptured", { count: thumbnails.length })}
+            ariaLabel={t("classify.photoStripAria")}
+          />
+
+          {status === "result" && result && (
+            <>
+              <AIResultCard
+                classId={result.classId}
+                severity={result.severity}
+                confidence={result.confidence}
+                processingTimeMs={result.processingTimeMs}
+                modelVersion={result.modelVersion}
+                onAccept={() => {
+                  // Once an override is recorded, Accept must not flip the UI to "accepted"
+                  // while the persisted draft still says overridden (contradictory record).
+                  if (decision !== "overridden") setDecision("accepted");
+                }}
+                onOverride={() => {
+                  setOverrideError(false);
+                  setDecision("override");
+                }}
+              />
+              {decision === "accepted" && (
+                <p className="text-label text-status-success">{t("classify.accepted")}</p>
+              )}
+              {decision === "override" && (
+                <>
+                  <OverrideForm
+                    currentCategory={result.classId}
+                    onConfirm={(category, reason) => void handleOverrideConfirm(category, reason)}
+                    onCancel={() => {
+                      setOverrideError(false);
+                      setDecision(null);
+                    }}
+                  />
+                  {overrideError && (
+                    <p role="alert" className="text-caption text-status-error">
+                      {t("classify.overrideError")}
+                    </p>
+                  )}
+                </>
+              )}
+              {decision === "overridden" && (
+                <p className="text-label text-status-success">{t("classify.overridden")}</p>
+              )}
+
+              {/* Mockup places the note between the result card and the CTAs. Keyed on the draft
+                  generation so "Start new case" gives the next citizen an empty box rather than
+                  the previous officer note (the component holds its text in local state). */}
+              <FieldNotes key={notesKey} />
+            </>
+          )}
+        </div>
       </div>
     </main>
   );

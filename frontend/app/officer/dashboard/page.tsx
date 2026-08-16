@@ -10,6 +10,7 @@ import { useOfficerSession } from "@/hooks/useOfficerSession";
 import { KNOWN_STATUSES } from "@/lib/status";
 import { ModelLoadStatus } from "@/components/ModelLoadStatus";
 import { LanguageSelectorCookie } from "@/components/LanguageSelectorCookie";
+import { OfficerTopBar } from "@/components/OfficerTopBar";
 
 // Reuse the canonical case-status labels (status.statusLabels) rather than duplicating them
 // under `officer` — the keys drop the space ("Under Review" -> "UnderReview"), matching the
@@ -86,15 +87,20 @@ export default function OfficerDashboardPage() {
   }, [statusFilter, reloadNonce]);
 
   return (
-    <main className="flex-1 bg-surface-base px-design-4 py-design-6">
-      <div className="mx-auto max-w-2xl space-y-design-4">
+    // Full-bleed top bar (officer-camera.html chrome), padded panel beneath — the same shape as
+    // /officer/submit and /officer/classify so the four officer routes read as one app.
+    <main className="flex-1 bg-surface-base">
+      <OfficerTopBar
+        label={t("dashboard.title")}
+        action={
+          <Link href="/officer/sync" className="shrink-0 text-label font-semibold text-forest">
+            {t("dashboard.syncQueueLink")}
+          </Link>
+        }
+      />
+
+      <div className="mx-auto max-w-2xl space-y-design-4 px-design-4 py-design-5">
         <header className="space-y-design-1">
-          <div className="flex items-center justify-between gap-design-2">
-            <h1 className="text-title text-ink-primary">{t("dashboard.title")}</h1>
-            <Link href="/officer/sync" className="text-label font-semibold text-forest">
-              {t("dashboard.syncQueueLink")}
-            </Link>
-          </div>
           {officer_id && (
             <p className="text-caption text-ink-secondary">
               {assigned_divisions.length > 0
@@ -111,7 +117,9 @@ export default function OfficerDashboardPage() {
         <ModelLoadStatus />
 
         <section className="space-y-design-3">
-          <h2 className="text-heading text-ink-primary">{t("dashboard.yourCases")}</h2>
+          {/* was `text-heading`, which is not in the type scale (display/title/headline/body/
+              label/caption) and so rendered at the inherited size. */}
+          <h2 className="text-headline text-ink-primary">{t("dashboard.yourCases")}</h2>
 
           {/* Status filter chips */}
           <div className="flex flex-wrap gap-design-2" role="group" aria-label={t("dashboard.filterGroupLabel")}>
@@ -203,7 +211,10 @@ function FilterChip({
       aria-pressed={active}
       className={`min-h-touch-target rounded-full px-design-3 text-caption font-medium ${
         active
-          ? "bg-forest text-ink-on-forest"
+          // `text-ink-on-forest` was never a token, so the active chip inherited ink-primary
+          // (#1A2E1A) on forest (#2D6A4F) — 2.3:1, well under AA, on 12px caption text that is
+          // read in sunlight. ink-on-dark (white) is the token for text on a forest fill: 6.4:1.
+          ? "bg-forest text-ink-on-dark"
           : "border border-border-default text-ink-secondary"
       }`}
     >
