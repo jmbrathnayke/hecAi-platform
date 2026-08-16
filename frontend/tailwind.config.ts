@@ -37,6 +37,10 @@ const config: Config = {
         "status-success": "#40916C",
         "status-warning": "#E9C46A",
         "status-error": "#D62828",
+        // Error tint. Referenced by ModelLoadStatus, SyncQueueItem and the sync-queue load-error
+        // panel since Epic 4, but never defined here — so those surfaces were silently rendering
+        // on a transparent background. Chosen so status-error text on it clears 4.5:1 (≈4.6).
+        "status-error-pale": "#FEF2F2",
         "status-pending": "#1565C0",
         "status-processed": "#2D6A4F",
       },

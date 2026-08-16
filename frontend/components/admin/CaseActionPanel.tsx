@@ -128,7 +128,8 @@ export function CaseActionPanel({
 
   return (
     <div className="space-y-design-3">
-      <h3 className="text-heading-3 text-ink-primary">{t("action.heading")}</h3>
+      {/* was `text-heading-3` — undefined token; see AIResultPanel. DESIGN.md § Typography. */}
+      <h3 className="text-headline text-ink-primary">{t("action.heading")}</h3>
 
       {status === "Approved" ? (
         <button
