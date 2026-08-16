@@ -23,6 +23,8 @@ jest.mock("@/lib/indexeddb", () => ({
   saveClassification: jest.fn().mockResolvedValue(undefined),
   saveOverride: jest.fn().mockResolvedValue(undefined),
   getCase: jest.fn().mockResolvedValue(undefined),
+  // FieldNotes (rendered under the result card) writes the note straight to the draft.
+  updateDraft: jest.fn().mockResolvedValue(undefined),
 }));
 jest.mock("@/lib/draft", () => ({
   getOrCreateDraftId: jest.fn(() => "draft-1"),
@@ -42,6 +44,24 @@ function selectPhoto() {
   const file = new File(["x"], "damage.jpg", { type: "image/jpeg" });
   fireEvent.change(input, { target: { files: [file] } });
 }
+
+// The mockup's photo strip / counter are driven by object URLs, and jsdom implements neither
+// createObjectURL nor revokeObjectURL. addThumbnail() swallows the resulting TypeError by design
+// (a missing thumbnail must never cost a classification), which would make every strip assertion
+// below pass vacuously — so stub both, and record the revokes to prove the blobs are released.
+let objectUrlSeq = 0;
+const revokedUrls: string[] = [];
+
+beforeEach(() => {
+  objectUrlSeq = 0;
+  revokedUrls.length = 0;
+  (URL as unknown as { createObjectURL: unknown }).createObjectURL = jest.fn(
+    () => `blob:photo-${++objectUrlSeq}`,
+  );
+  (URL as unknown as { revokeObjectURL: unknown }).revokeObjectURL = jest.fn((url: string) => {
+    revokedUrls.push(url);
+  });
+});
 
 beforeEach(() => {
   mockAssess.mockReset().mockResolvedValue({ blurry: false, poorExposure: false });
@@ -348,5 +368,100 @@ describe("OfficerClassifyPage", () => {
     expect(screen.queryByTestId("override-form")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "aiResult.accept" })).toBeInTheDocument();
     expect(mockSaveOverride).not.toHaveBeenCalled();
+  });
+});
+
+// officer-camera.html: step bar, in-app camera, "N of 10 photos taken", photo strip, field notes.
+describe("OfficerClassifyPage — camera screen chrome", () => {
+  it("titles the screen in the top bar and keeps the 'Start new case' action, with no step rail", () => {
+    render(<OfficerClassifyPage />);
+
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("classify.title");
+    // Classify is a standalone screen, not a step in the officer-assisted wizard — the bar
+    // carries the action instead of dots.
+    const bar = screen.getByTestId("officer-top-bar");
+    expect(bar.querySelectorAll("[data-state]")).toHaveLength(0);
+    expect(screen.getByRole("button", { name: "classify.startNewCase" })).toBeInTheDocument();
+  });
+
+  it("falls back to the gallery picker where there is no camera, keeping the page's own test id", async () => {
+    // jsdom exposes no navigator.mediaDevices — the same path as an insecure origin or an old
+    // webview. The capture route must still exist rather than the screen becoming a dead end.
+    render(<OfficerClassifyPage />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("camera-capture")).toHaveAttribute("data-state", "unavailable"),
+    );
+    expect(screen.getByTestId("classify-file-input")).toBeInTheDocument();
+  });
+
+  it("shows the photo strip and running count only once a photo has been classified", async () => {
+    render(<OfficerClassifyPage />);
+
+    expect(screen.queryByTestId("photo-strip")).not.toBeInTheDocument();
+    expect(screen.getByText("camera.count 0 10")).toBeInTheDocument();
+    expect(screen.getByText("camera.instruction")).toBeInTheDocument();
+
+    selectPhoto();
+    await screen.findByTestId("ai-result-card");
+
+    expect(screen.getByTestId("photo-strip")).toBeInTheDocument();
+    expect(screen.getByText("classify.photosCaptured 1")).toBeInTheDocument();
+    expect(screen.getByText("camera.count 1 10")).toBeInTheDocument();
+  });
+
+  it("stops accepting photos at the 10-photo cap and says so", async () => {
+    render(<OfficerClassifyPage />);
+
+    for (let i = 1; i <= 10; i++) {
+      selectPhoto();
+      // Waiting on the rendered counter (not just the classify mock) also proves the previous
+      // capture released the in-flight lock before the next one is fired.
+      await screen.findByText(`camera.count ${i} 10`);
+    }
+    expect(mockClassify).toHaveBeenCalledTimes(10);
+    expect(screen.getByText("camera.maxReached 10")).toBeInTheDocument();
+
+    // An 11th capture (a race past the disabled shutter) is dropped, not classified.
+    selectPhoto();
+    await act(async () => {});
+    expect(mockClassify).toHaveBeenCalledTimes(10);
+    expect(screen.getByText("camera.count 10 10")).toBeInTheDocument();
+  });
+
+  it("offers the field-notes box only once there is a result to annotate", async () => {
+    render(<OfficerClassifyPage />);
+    expect(screen.queryByTestId("field-notes")).not.toBeInTheDocument();
+
+    selectPhoto();
+    await screen.findByTestId("ai-result-card");
+
+    expect(screen.getByTestId("field-notes")).toBeInTheDocument();
+  });
+
+  it("'Start new case' empties the strip, revokes its blobs, and clears the previous field note", async () => {
+    render(<OfficerClassifyPage />);
+    selectPhoto();
+    await screen.findByTestId("ai-result-card");
+
+    fireEvent.change(screen.getByTestId("field-notes"), {
+      target: { value: "Approx 1.5 acres of paddy affected, east section of field." },
+    });
+    expect(screen.getByTestId("field-notes")).toHaveValue(
+      "Approx 1.5 acres of paddy affected, east section of field.",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "classify.startNewCase" }));
+
+    expect(screen.queryByTestId("photo-strip")).not.toBeInTheDocument();
+    expect(screen.getByText("camera.count 0 10")).toBeInTheDocument();
+    // Every URL the strip minted is released — otherwise each case leaks a blob for the
+    // lifetime of the document, and officers keep this page open all day.
+    expect(revokedUrls).toEqual(["blob:photo-1"]);
+
+    // The next citizen must not be greeted by the previous citizen's note.
+    selectPhoto();
+    await screen.findByTestId("ai-result-card");
+    expect(screen.getByTestId("field-notes")).toHaveValue("");
   });
 });

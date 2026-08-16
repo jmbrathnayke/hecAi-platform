@@ -143,6 +143,44 @@ beforeEach(() => {
   } catch {}
 });
 
+// The mockup's photo strip / counter are driven by object URLs, and jsdom implements neither
+// createObjectURL nor revokeObjectURL. addThumbnail() swallows the resulting TypeError by design,
+// which would make the strip assertions below pass vacuously — so stub both.
+let objectUrlSeq = 0;
+beforeEach(() => {
+  objectUrlSeq = 0;
+  (URL as unknown as { createObjectURL: unknown }).createObjectURL = jest.fn(
+    () => `blob:photo-${++objectUrlSeq}`,
+  );
+  (URL as unknown as { revokeObjectURL: unknown }).revokeObjectURL = jest.fn();
+});
+
+// Drives the flow from the identity step through to the classify step, stopping with the camera
+// (and its gallery fallback input) on screen.
+async function walkToClassify() {
+  render(<OfficerSubmitPage />);
+  await act(async () => {});
+
+  fireEvent.change(screen.getByLabelText(/submit.citizenNic/i), { target: { value: "200012345678" } });
+  fireEvent.change(screen.getByLabelText(/submit.citizenMobile/i), { target: { value: "0712345678" } });
+  fireEvent.click(screen.getByRole("button", { name: "submit.continue" }));
+
+  await screen.findByText(/submit.gpsDetected/i);
+  fireEvent.click(screen.getByRole("button", { name: "submit.continue" }));
+
+  await screen.findByRole("radiogroup", { name: /submit.damageCategoryGroup/i });
+  fireEvent.click(screen.getByRole("radio", { name: /step3.crop/i }));
+  fireEvent.click(screen.getByRole("button", { name: "submit.continue" }));
+
+  return screen.findByTestId("submit-file-input");
+}
+
+function capturePhoto(input: HTMLElement) {
+  fireEvent.change(input, {
+    target: { files: [new File(["x"], "damage.jpg", { type: "image/jpeg" })] },
+  });
+}
+
 // Drives the flow from the identity step through to the review step.
 async function walkToReview() {
   render(<OfficerSubmitPage />);
@@ -347,5 +385,112 @@ describe("OfficerSubmitPage", () => {
 
     // never persists submitted_by_officer=true with a null officer_id
     expect(mockUpdateDraft).not.toHaveBeenCalled();
+  });
+});
+
+// officer-camera.html: step bar with dots, in-app camera, "N of 10 photos taken", photo strip,
+// field notes carried into the review summary.
+describe("OfficerSubmitPage — camera screen chrome", () => {
+  it("shows the mockup's 5-dot step rail and advances it with the officer", async () => {
+    render(<OfficerSubmitPage />);
+    await act(async () => {});
+
+    const bar = screen.getByTestId("officer-top-bar");
+    const dotStates = () =>
+      Array.from(bar.querySelectorAll("[data-state]")).map((el) => el.getAttribute("data-state"));
+
+    // The heading carries the progress in words; the dots only mirror it (they are aria-hidden).
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("submit.step1");
+    expect(dotStates()).toEqual(["active", "upcoming", "upcoming", "upcoming", "upcoming"]);
+
+    fireEvent.change(screen.getByLabelText(/submit.citizenNic/i), { target: { value: "200012345678" } });
+    fireEvent.change(screen.getByLabelText(/submit.citizenMobile/i), { target: { value: "0712345678" } });
+    fireEvent.click(screen.getByRole("button", { name: "submit.continue" }));
+
+    await screen.findByText(/submit.gpsDetected/i);
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("submit.step2");
+    expect(dotStates()).toEqual(["done", "active", "upcoming", "upcoming", "upcoming"]);
+
+    fireEvent.click(screen.getByRole("button", { name: "submit.continue" }));
+    await screen.findByRole("radiogroup", { name: /submit.damageCategoryGroup/i });
+    expect(dotStates()).toEqual(["done", "done", "active", "upcoming", "upcoming"]);
+  });
+
+  it("puts the camera and the photo counter on the classify step, and a way back to damage", async () => {
+    await walkToClassify();
+
+    expect(screen.getByTestId("camera-capture")).toBeInTheDocument();
+    expect(screen.getByText("camera.count 0 10")).toBeInTheDocument();
+    expect(screen.queryByTestId("photo-strip")).not.toBeInTheDocument();
+
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("submit.step4");
+
+    // The camera is full-bleed and this step has no Continue/Back of its own, so the camera's
+    // back affordance is the only route to the damage step — and it must survive jsdom's
+    // missing mediaDevices, i.e. any device where the camera never comes up.
+    fireEvent.click(screen.getByRole("button", { name: "camera.back" }));
+    expect(await screen.findByRole("radiogroup", { name: /submit.damageCategoryGroup/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("submit.step3");
+  });
+
+  it("banks each capture into the photo strip and the running count", async () => {
+    const input = await walkToClassify();
+
+    capturePhoto(input);
+    await screen.findByTestId("ai-result-card");
+
+    expect(screen.getByTestId("photo-strip")).toBeInTheDocument();
+    expect(screen.getByText("classify.photosCaptured 1")).toBeInTheDocument();
+    expect(screen.getByText("camera.count 1 10")).toBeInTheDocument();
+  });
+
+  it("carries a saved field note into the review summary", async () => {
+    const note = "Approx 1.5 acres of paddy affected, east section of field.";
+    const input = await walkToClassify();
+    capturePhoto(input);
+    await screen.findByTestId("ai-result-card");
+
+    fireEvent.change(screen.getByTestId("field-notes"), { target: { value: note } });
+    // The review step mirrors only what actually landed in the draft, so wait for the debounced
+    // write rather than for the keystroke.
+    await waitFor(
+      () => expect(mockUpdateDraft).toHaveBeenCalledWith("draft-1", { field_notes: note }),
+      { timeout: 2000 },
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "aiResult.accept" }));
+    fireEvent.click(await screen.findByRole("button", { name: /submit.reviewAndSubmit/i }));
+
+    expect(await screen.findByText("submit.reviewNotes")).toBeInTheDocument();
+    expect(screen.getByText(note)).toBeInTheDocument();
+  });
+
+  it("omits the notes row entirely when the officer wrote none", async () => {
+    await walkToReview();
+    expect(screen.queryByText("submit.reviewNotes")).not.toBeInTheDocument();
+  });
+
+  it("does not send the field note to the server — it is draft-local for now", async () => {
+    const note = "east section, standing water";
+    const input = await walkToClassify();
+    capturePhoto(input);
+    await screen.findByTestId("ai-result-card");
+
+    fireEvent.change(screen.getByTestId("field-notes"), { target: { value: note } });
+    await waitFor(
+      () => expect(mockUpdateDraft).toHaveBeenCalledWith("draft-1", { field_notes: note }),
+      { timeout: 2000 },
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "aiResult.accept" }));
+    fireEvent.click(await screen.findByRole("button", { name: /submit.reviewAndSubmit/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /submit.submit/i }));
+
+    await waitFor(() => expect(mockSubmit).toHaveBeenCalledTimes(1));
+    // buildCasePayload is an explicit allowlist and has no field_notes member; this pins that
+    // fact so the gap is noticed if a payload field is ever added without a backend column.
+    const [record] = mockSubmit.mock.calls[0];
+    expect(record).not.toHaveProperty("field_notes");
+    expect(JSON.stringify(record)).not.toContain(note);
   });
 });
