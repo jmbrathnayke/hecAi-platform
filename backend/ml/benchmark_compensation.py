@@ -138,8 +138,18 @@ def main() -> None:
     fit_two_stage(clf, reg, Xr_tr, yr_tr)
     models["two_stage_rf_random_split"] = metrics(
         yr_te, predict_two_stage(clf, reg, Xr_te), df_te)
+    # This entry is the ONE model here not scored on the time-based holdout, so it carries its
+    # own split label and n. Without them a reader pairs these metrics with the file-level
+    # "split" and n_test=359 above -- but they were computed on a different, larger sample
+    # (20% of all rows, drawn across every year). The contrast is the point; mislabelling it
+    # would turn a deliberate disclosure into an accidental overclaim.
+    models["two_stage_rf_random_split"]["split"] = (
+        f"random 80/20, random_state={RANDOM_STATE} -- NOT the time split; reported for contrast "
+        f"as the optimistic figure")
+    models["two_stage_rf_random_split"]["n_test"] = int(len(df_te))
 
     out = {
+        # Applies to every model above EXCEPT two_stage_rf_random_split, which carries its own.
         "split": "time-based: train 2010-2019, test 2020-2021",
         "n_train": int(len(train)),
         "n_test": int(len(test)),
@@ -150,7 +160,10 @@ def main() -> None:
         "models": models,
     }
     path = ensure_results_dir() / "compensation_benchmark.json"
-    path.write_text(json.dumps(out, indent=2), encoding="utf-8")
+    # allow_nan=False: json.dumps writes a bare NaN token, which is invalid JSON that Python
+    # round-trips happily and every other parser rejects. r2_score returns nan on a zero-variance
+    # holdout -- exactly the degenerate case that must not reach dissertation evidence.
+    path.write_text(json.dumps(out, indent=2, allow_nan=False), encoding="utf-8")
 
     print(f"Wrote {path}")
     for name, m in models.items():

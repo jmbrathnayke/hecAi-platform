@@ -38,3 +38,47 @@ jobs:
 
       - name: Run tests
         run: pytest -v
+
+      # render.yaml's startCommand is never executed until a deploy, so a typo in it fails in
+      # production or nowhere. It cannot be checked on a dev machine either: gunicorn imports
+      # fcntl and will not load on Windows, which is what this project develops on. CI is the
+      # only place with the deploy's actual OS and Python, so the check lives here.
+      #
+      # This validates that every flag parses and that the named worker class genuinely imports
+      # (gthread pulls in a different module tree from the default sync worker). It deliberately
+      # does NOT load the WSGI app -- that would need DATABASE_URL and the Supabase config, which
+      # CI has no business holding.
+      - name: Validate render.yaml gunicorn start command
+        run: |
+          python - <<'PY'
+          import re, shlex, sys
+          from gunicorn.config import Config
+
+          text = open("render.yaml", encoding="utf-8").read()
+          m = re.search(r"^\s*startCommand:\s*(.+)$", text, re.M)
+          if not m:
+              sys.exit("render.yaml has no startCommand")
+          args = shlex.split(m.group(1).strip())
+          print("startCommand:", " ".join(args))
+          if args[0] != "gunicorn":
+              sys.exit(f"expected gunicorn, got {args[0]!r}")
+
+          cfg = Config()
+          parser = cfg.parser()
+          # Drop argv[0] ("gunicorn"); the app spec is a positional gunicorn's parser accepts.
+          opts = parser.parse_args(args[1:])
+          for key, value in vars(opts).items():
+              if value is not None and key in cfg.settings:
+                  cfg.set(key, value)
+
+          # Property access resolves and IMPORTS the worker class -- the assertion that matters.
+          print("worker_class ->", cfg.worker_class)
+          print("workers =", cfg.workers, " threads =", cfg.threads, " timeout =", cfg.timeout)
+          if cfg.workers > 1 and "gthread" not in str(cfg.worker_class).lower():
+              sys.exit(
+                  "Multiple sync workers each load their own copy of rf_compensation_v2.joblib; "
+                  "on the free plan's 512 MB that is the likeliest OOM. Use gthread threads, or "
+                  "update this check with the reasoning that replaces it."
+              )
+          print("OK")
+          PY

@@ -1,0 +1,106 @@
+{
+  "tfjs_version": "4.22.0",
+  "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/149.0.7827.55 Safari/537.36",
+  "hardware_concurrency": 4,
+  "config": {
+    "warmup": 5,
+    "iterations": 30,
+    "budgetMs": 120000,
+    "backends": [
+      "webgl",
+      "cpu"
+    ],
+    "models": [
+      {
+        "key": "mobilenetv2",
+        "url": "/models/mobilenetv2/model.json",
+        "inputScale": 1,
+        "format": "graph"
+      },
+      {
+        "key": "resnet50",
+        "url": "/models/resnet50/model.json",
+        "inputScale": 255,
+        "format": "graph"
+      }
+    ]
+  },
+  "results": {
+    "mobilenetv2": {
+      "webgl": {
+        "backend": "webgl",
+        "load_ms": 559.4,
+        "cold_start_ms": 9395.1,
+        "inference": {
+          "n": 30,
+          "min_ms": 705.1,
+          "median_ms": 751.5,
+          "mean_ms": 750.77,
+          "p95_ms": 798.8,
+          "max_ms": 809.9,
+          "stdev_ms": 22.51
+        },
+        "hit_time_budget": false
+      },
+      "cpu": {
+        "backend": "cpu",
+        "load_ms": 634.1,
+        "cold_start_ms": 4186.8,
+        "inference": {
+          "n": 30,
+          "min_ms": 2540.2,
+          "median_ms": 3870.9,
+          "mean_ms": 3750.66,
+          "p95_ms": 4863.4,
+          "max_ms": 5117.3,
+          "stdev_ms": 681.59
+        },
+        "hit_time_budget": false
+      }
+    },
+    "resnet50": {
+      "webgl": {
+        "backend": "webgl",
+        "load_ms": 7692.9,
+        "cold_start_ms": 14930.1,
+        "inference": {
+          "n": 16,
+          "min_ms": 6810.2,
+          "median_ms": 7831.7,
+          "mean_ms": 7616.91,
+          "p95_ms": 8148.8,
+          "max_ms": 8148.8,
+          "stdev_ms": 421.83
+        },
+        "hit_time_budget": true
+      },
+      "cpu": {
+        "backend": "cpu",
+        "load_ms": 4055.9,
+        "cold_start_ms": 27670.8,
+        "inference": {
+          "n": 4,
+          "min_ms": 29666.5,
+          "median_ms": 32136.9,
+          "mean_ms": 33109.25,
+          "p95_ms": 40571.6,
+          "max_ms": 40571.6,
+          "stdev_ms": 4409.38
+        },
+        "hit_time_budget": true
+      }
+    }
+  },
+  "measured_at": "2026-08-17T07:15:18.827Z",
+  "platform": "win32 x64, node v22.22.3",
+  "model_bytes": {
+    "mobilenetv2": 9016203,
+    "resnet50": 94077203
+  },
+  "caveats": [
+    "Headless Chromium with SwiftShader: the 'webgl' rows are SOFTWARE-rendered, not GPU timings. On a device with a real GPU the webgl figures would improve; the cpu rows would not.",
+    "Desktop hardware, not a field device. These are relative-architecture figures, not a claim about what a mid-range Android phone achieves.",
+    "Steady-state forward pass only. lib/mobilenet.ts::classifyImage additionally decodes and resizes the photo, so its reported processingTimeMs is larger by design.",
+    "Synthetic input tensor. Latency is data-independent for these architectures, but no claim about accuracy can be drawn from this file -- see classification_benchmark.json."
+  ]
+}

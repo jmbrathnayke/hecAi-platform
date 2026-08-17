@@ -94,20 +94,31 @@ export function AdminKpiCards({ kpis, loading }: AdminKpiCardsProps) {
   );
 
   return (
-    <div className="grid grid-cols-2 gap-design-3 md:grid-cols-4">
-      <KpiCard label={t("kpi.thisMonth")} value={kpis.this_month} />
-      {/* col-span-2 on mobile: this card holds up to 5 label/count rows, so it gets the full
-          row width rather than half of a 360px screen. Back to a normal 1-of-4 cell at md. */}
-      <KpiCard
-        label={t("kpi.byStatus")}
-        value={<StatusBreakdownValue entries={statusBreakdown} />}
-        className="col-span-2 md:col-span-1"
-      />
-      <KpiCard label={t("kpi.totalApproved")} value={formatLkr(kpis.total_approved_lkr)} />
-      <KpiCard
-        label={t("kpi.avgProcessing")}
-        value={kpis.avg_processing_days != null ? kpis.avg_processing_days : "—"}
-      />
-    </div>
+    <>
+      {/* These four figures are district-wide and deliberately ignore the case list's active
+          filters (see admin.py's separate KPI queries). That is a design decision, but without
+          saying so the page reads as broken: an admin narrows the list, watches every KPI sit
+          still, and reasonably concludes the dashboard is stale. One line of copy is cheaper
+          than the misread — and cheaper than making the KPIs filter-aware, which would change
+          what FR-7.1 reports. */}
+      <p className="mb-design-2 text-label text-ink-secondary" data-testid="kpi-scope-note">
+        {t("kpi.scopeNote")}
+      </p>
+      <div className="grid grid-cols-2 gap-design-3 md:grid-cols-4">
+        <KpiCard label={t("kpi.thisMonth")} value={kpis.this_month} />
+        {/* col-span-2 on mobile: this card holds up to 5 label/count rows, so it gets the full
+            row width rather than half of a 360px screen. Back to a normal 1-of-4 cell at md. */}
+        <KpiCard
+          label={t("kpi.byStatus")}
+          value={<StatusBreakdownValue entries={statusBreakdown} />}
+          className="col-span-2 md:col-span-1"
+        />
+        <KpiCard label={t("kpi.totalApproved")} value={formatLkr(kpis.total_approved_lkr)} />
+        <KpiCard
+          label={t("kpi.avgProcessing")}
+          value={kpis.avg_processing_days != null ? kpis.avg_processing_days : "—"}
+        />
+      </div>
+    </>
   );
 }

@@ -7,7 +7,7 @@
 // once resolved, later calls return the same instance immediately; concurrent calls while
 // loading share the same in-flight promise instead of triggering duplicate loads.
 
-import type { LayersModel, Tensor } from "@tensorflow/tfjs";
+import type { GraphModel, Tensor } from "@tensorflow/tfjs";
 // Story 3.3: statically imported (NOT fetched at runtime) so they are bundled into the
 // precached JS chunks and therefore available offline. class_names.json is the model's
 // output-class order; severity_mapping.json is the confidence-band rule the training
@@ -43,10 +43,10 @@ export class ModelNotAvailableError extends Error {
   }
 }
 
-let modelInstance: LayersModel | null = null;
-let loadPromise: Promise<LayersModel> | null = null;
+let modelInstance: GraphModel | null = null;
+let loadPromise: Promise<GraphModel> | null = null;
 
-export function loadModel(): Promise<LayersModel> {
+export function loadModel(): Promise<GraphModel> {
   if (modelInstance) return Promise.resolve(modelInstance);
   if (loadPromise) return loadPromise;
 
@@ -54,7 +54,16 @@ export function loadModel(): Promise<LayersModel> {
     try {
       const tf = await import("@tensorflow/tfjs");
       await tf.ready();
-      const model = await tf.loadLayersModel(MODEL_URL);
+      // loadGraphModel, NOT loadLayersModel. The model is exported from Keras 3, and
+      // tfjs-layers 4.22.0 cannot deserialize a Keras 3 layers model at all: InputLayer is
+      // emitted with `batch_shape` where tfjs expects `batch_input_shape`, and `inbound_nodes`
+      // is an object where tfjs expects an array. Loading the old layers export threw
+      // "An InputLayer should be passed either a `batchInputShape` or an `inputShape`" for
+      // every user, on every device -- and no test caught it because the tests mock
+      // @tensorflow/tfjs wholesale and never touch a real weight file. The graph-model export
+      // is the supported Keras 3 path; scripts/tfjs-bench/verify-model.mjs asserts it
+      // reproduces the Keras probabilities (argmax 8/8, max |Δp| 2e-6).
+      const model = await tf.loadGraphModel(MODEL_URL);
       modelInstance = model;
       return model;
     } catch (err) {
@@ -152,7 +161,11 @@ export async function classifyImage(blob: Blob): Promise<ClassificationResult> {
   // keeps the returned prediction tensor, which we read then dispose ourselves.
   const output = tf.tidy(() => {
     const input = tf.browser.fromPixels(imageData).toFloat().div(255).expandDims(0);
-    return model.predict(input) as Tensor;
+    // GraphModel.predict is typed Tensor | Tensor[] | NamedTensorMap — this model has a single
+    // output, but the old `as Tensor` cast would have turned a multi-output export into an
+    // `output.data is not a function` crash rather than a clear message.
+    const result = model.predict(input);
+    return (Array.isArray(result) ? result[0] : result) as Tensor;
   });
   let probs: ArrayLike<number>;
   try {

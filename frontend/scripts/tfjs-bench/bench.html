@@ -1,0 +1,127 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>TF.js browser latency harness (RER-6)</title>
+<pre id="log">starting…</pre>
+<script src="/vendor/tf.min.js"></script>
+<script>
+  // Browser-side half of the RER-6 latency harness. Driven by run-bench.mjs, which reads
+  // window.__BENCH_RESULT__ when window.__BENCH_DONE__ flips true.
+  //
+  // WHY A REAL BROWSER. RER-6 asks for "browser inference latency". The Python/TensorFlow CPU
+  // timings previously published measure a different runtime, a different kernel library and a
+  // different numeric path -- they are not a proxy for what a field officer's device does.
+
+  // console.log as well as the DOM: run-bench.mjs forwards page console messages to the
+  // terminal, and this job takes ~10 minutes. Without it the driver prints one line at startup
+  // and nothing again until the end, which is indistinguishable from a hang.
+  const log = (m) => {
+    document.getElementById("log").textContent += "\n" + m;
+    console.log(m);
+  };
+
+  // Median and p95 rather than mean alone: TF.js latency is right-skewed (GC pauses, texture
+  // uploads), so the mean of a short run is dragged by outliers the user rarely sees.
+  function summarize(xs) {
+    const s = [...xs].sort((a, b) => a - b);
+    const q = (p) => s[Math.min(s.length - 1, Math.floor(p * s.length))];
+    const mean = s.reduce((a, b) => a + b, 0) / s.length;
+    return {
+      n: s.length,
+      min_ms: +s[0].toFixed(2),
+      median_ms: +q(0.5).toFixed(2),
+      mean_ms: +mean.toFixed(2),
+      p95_ms: +q(0.95).toFixed(2),
+      max_ms: +s[s.length - 1].toFixed(2),
+      stdev_ms: +Math.sqrt(s.reduce((a, b) => a + (b - mean) ** 2, 0) / s.length).toFixed(2),
+    };
+  }
+
+  async function benchModel({ key, url, inputScale, format }, backend, cfg) {
+    await tf.setBackend(backend);
+    await tf.ready();
+    if (tf.getBackend() !== backend) {
+      return { skipped: `backend '${backend}' unavailable (got '${tf.getBackend()}')` };
+    }
+
+    const t0 = performance.now();
+    // Both models are GRAPH models: tfjs-layers 4.22.0 cannot deserialize a Keras 3 layers
+    // export at all (see lib/mobilenet.ts). Benchmarking them in the same format is also what
+    // makes the comparison fair -- graph models are op-optimized, so a graph-vs-layers race
+    // would measure the export format as much as the architecture.
+    const model = format === "layers"
+      ? await tf.loadLayersModel(url)
+      : await tf.loadGraphModel(url);
+    const loadMs = performance.now() - t0;
+
+    // A fixed synthetic input. Latency does not depend on pixel VALUES, but it does depend on
+    // dtype and range, so each model gets what its own graph expects: MobileNetV2 was exported
+    // with the Rescaling layer removed and takes [0,1]; ResNet-50 keeps preprocess_input inside
+    // the graph (train_resnet50.py:73-75) and takes raw [0,255].
+    const input = tf.tidy(() =>
+      tf.randomUniform([1, 224, 224, 3], 0, inputScale, "float32"));
+
+    // The first inference compiles shaders / allocates kernels and is 10-100x the steady state.
+    // It is reported separately (cold_start_ms) and never mixed into the distribution -- folding
+    // it in would be the single easiest way to publish a wrong latency number here.
+    const c0 = performance.now();
+    await (model.predict(input)).data();
+    const coldMs = performance.now() - c0;
+
+    for (let i = 0; i < cfg.warmup; i++) {
+      const out = model.predict(input);
+      await out.data();
+      out.dispose();
+    }
+
+    // Budgeted loop: ResNet-50 on the CPU backend is seconds per inference, and a fixed
+    // iteration count would either take an hour there or be too few samples on MobileNetV2.
+    const samples = [];
+    const deadline = performance.now() + cfg.budgetMs;
+    while (samples.length < cfg.iterations && performance.now() < deadline) {
+      const s = performance.now();
+      const out = model.predict(input);
+      await out.data();   // forces the GPU round-trip; without it webgl "predict" times nothing
+      out.dispose();
+      samples.push(performance.now() - s);
+    }
+
+    input.dispose();
+    model.dispose();
+    return {
+      backend: tf.getBackend(),
+      load_ms: +loadMs.toFixed(2),
+      cold_start_ms: +coldMs.toFixed(2),
+      inference: summarize(samples),
+      hit_time_budget: samples.length < cfg.iterations,
+    };
+  }
+
+  (async () => {
+    const cfg = window.__BENCH_CONFIG__;
+    const out = {
+      tfjs_version: tf.version.tfjs,
+      user_agent: navigator.userAgent,
+      hardware_concurrency: navigator.hardwareConcurrency ?? null,
+      config: cfg,
+      results: {},
+    };
+    for (const model of cfg.models) {
+      out.results[model.key] = {};
+      for (const backend of cfg.backends) {
+        log(`${model.key} @ ${backend} …`);
+        try {
+          out.results[model.key][backend] = await benchModel(model, backend, cfg);
+        } catch (err) {
+          out.results[model.key][backend] = { error: String(err && err.message || err) };
+        }
+        log(`  ${JSON.stringify(out.results[model.key][backend])}`);
+      }
+    }
+    window.__BENCH_RESULT__ = out;
+    window.__BENCH_DONE__ = true;
+    log("DONE");
+  })().catch((err) => {
+    window.__BENCH_RESULT__ = { fatal: String(err && err.stack || err) };
+    window.__BENCH_DONE__ = true;
+  });
+</script>

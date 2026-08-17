@@ -36,6 +36,16 @@ def create_app(config=None):
     app.config["DATABASE_URL"] = os.getenv("DATABASE_URL")
     app.config["SUPABASE_JWT_SECRET"] = os.getenv("SUPABASE_JWT_SECRET")
 
+    # Request body cap. Nothing set one before, anywhere: sync.py's MAX_BATCH_SIZE = 50 caps the
+    # number of ITEMS in a batch but not their size, and cases.py's single submit had no cap at
+    # all, so one oversized body could exhaust the dyno's memory before any view code ran.
+    #
+    # 2 MB is deliberately generous for what actually ships today: every payload is small JSON,
+    # because there is no photo-upload pipeline server-side (see deferred-work.md) -- a 50-item
+    # sync batch measures in kilobytes. Raise this WITH the photo pipeline, not before, and
+    # revisit it then rather than inheriting a number chosen for text.
+    app.config["MAX_CONTENT_LENGTH"] = int(os.getenv("MAX_CONTENT_LENGTH_BYTES", 2 * 1024 * 1024))
+
     # Supabase now signs JWTs with a rotating ES256 key published at the project's JWKS endpoint;
     # SUPABASE_JWT_SECRET is the legacy HS256 mode it replaces. When a JWKS URL is present the
     # auth guards verify against it and ignore the shared secret entirely (see

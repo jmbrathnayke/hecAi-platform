@@ -3,12 +3,25 @@
 Read-only proof + a ROLLED-BACK write test. Nothing is committed.
 """
 import os, sys
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath("__file__")), "app"))
+from pathlib import Path
+
+# Anchor everything to THIS file, never the cwd. The original wrote abspath("__file__") -- the
+# dunder as a string literal, a notebook copy-paste artifact -- which resolved against whatever
+# directory you happened to be standing in, so the README's documented invocation from the repo
+# root raised ModuleNotFoundError. Same reason .env is resolved here rather than passed as ".env".
+_BACKEND = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_BACKEND))
+
 import psycopg2
 from dotenv import load_dotenv
-load_dotenv(".env")
+load_dotenv(_BACKEND / ".env")
 
-sys.path.insert(0, ".")
+# Sinhala district/division names are printed below (check L). Windows consoles default to
+# cp1252, which cannot encode them: on a redirected run the script died with UnicodeEncodeError
+# at check L -- BEFORE the PII check -- and exited 1. Reconfigure before any print.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+
 from app.api.v1.research import _RESEARCH_SELECT, _RESEARCH_COUNT, _row_to_dict
 
 import socket as _s, re as _re
@@ -70,12 +83,32 @@ try:
                        VALUES (%s, 125000.00, 130000.00, true, '{}'::jsonb,
                                'rf_compensation_v2')""", (case_a,))
 
-        cur.execute(_RESEARCH_SELECT, (1000,))
+        # _RESEARCH_SELECT is "ORDER BY il.id LIMIT %s" -- ASCENDING. The rows just planted carry
+        # the HIGHEST ids, so a fixed LIMIT 1000 drops them the moment inference_log outgrows the
+        # window. That failed silently in the worst possible way: `mine` came back empty, the
+        # b_rows[0] lookups below raised IndexError, and -- if they had not -- the PII check greps
+        # repr(mine), so every PII assertion would have reported present=False and PASSED without
+        # inspecting a single row. Size the limit from the live count so the real query is
+        # exercised unmodified and every planted row is inside the window. (Fine at dev scale;
+        # this script is a schema proof, not a load test.)
+        cur.execute(_RESEARCH_COUNT)
+        total = cur.fetchone()[0]
+        cur.execute(_RESEARCH_SELECT, (total,))
         got = [_row_to_dict(r) for r in cur.fetchall()]
         mine = [g for g in got if g["case_canonical_id"] in ("HEC-TEST-7301", "HEC-TEST-7302")]
 
         a_rows = [g for g in mine if g["case_canonical_id"] == "HEC-TEST-7301"]
         b_rows = [g for g in mine if g["case_canonical_id"] == "HEC-TEST-7302"]
+
+        # Fail loudly rather than vacuously. Everything below -- the fan-out count, the null
+        # checks, and above all the PII grep -- is only meaningful if the planted rows are
+        # actually here. An empty `mine` must never read as "all checks passed".
+        if len(a_rows) != 2 or len(b_rows) != 1:
+            raise SystemExit(
+                f"Planted rows not found in export window (a={len(a_rows)} expected 2, "
+                f"b={len(b_rows)} expected 1, total joined rows={total}). "
+                f"Every check below would have passed vacuously -- aborting."
+            )
         print("\nC. fan-out preserved (2 inference rows -> 2 export rows):", len(a_rows) == 2, f"(got {len(a_rows)})")
         print("D. confidences kept distinct (no LATERAL collapse):",
               sorted(x["confidence"] for x in a_rows))

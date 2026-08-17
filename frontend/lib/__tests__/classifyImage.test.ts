@@ -25,7 +25,7 @@ jest.mock("@tensorflow/tfjs", () => {
   };
   return {
     ready: jest.fn().mockResolvedValue(undefined),
-    loadLayersModel: jest.fn().mockResolvedValue({
+    loadGraphModel: jest.fn().mockResolvedValue({
       predict: () => ({
         data: () =>
           mockState.dataRejects

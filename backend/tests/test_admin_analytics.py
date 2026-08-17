@@ -44,9 +44,16 @@ def _case(id_, district, status="Submitted", submitted_at=None, updated_at=None,
     }
 
 
-def _inference(case_id, confidence=0.9, was_overridden=False, processing_ms=None, created_at=None):
+def _inference(case_id, confidence=0.9, was_overridden=False, processing_ms=None, created_at=None,
+               id_=None):
     return {
         "case_id": case_id,
+        # `id` matters: inference_log is append-only and BIGSERIAL, so a higher id is always the
+        # later write even when two rows share a created_at (now() is transaction-stable, so an
+        # AI classification and the officer override written in one transaction do share one).
+        # Defaults to None; _latest_inference falls back to insertion order, which models the
+        # same thing for fixtures that don't care.
+        "id": id_,
         "confidence": confidence,
         "was_overridden": was_overridden,
         "input_features": {"ai_processing_time_ms": processing_ms} if processing_ms is not None else {},
@@ -69,11 +76,34 @@ class FakeCursor:
     def _district_cases(self, district):
         return [c for c in self.store["cases"] if c["district"] == district]
 
-    def _latest_inference(self, case_id):
-        rows = [r for r in self.store["inference_log"] if r["case_id"] == case_id]
-        if not rows:
+    def _latest_inference(self, case_id, sql=""):
+        """Resolve the "latest" inference row the way the SQL under test actually asks for it.
+
+        This harness READS THE SQL rather than always applying the correct ordering -- the same
+        technique test_research_export.py's _joined() uses. If it unconditionally sorted by
+        (created_at, id), a regression test for the missing tiebreaker would be asserting a
+        property of this file rather than of admin.py, and would pass whether or not the fix
+        was present. Verified: removing `, id DESC` from admin.py turns
+        test_override_rate_uses_id_tiebreaker_for_same_timestamp_rows red.
+
+        Without the tiebreaker, Postgres may return either row that ties on created_at; insertion
+        order is the most plausible model of that, so the unfixed branch takes the FIRST match.
+        """
+        indexed = [
+            (i, r) for i, r in enumerate(self.store["inference_log"]) if r["case_id"] == case_id
+        ]
+        if not indexed:
             return None
-        return sorted(rows, key=lambda r: r["created_at"], reverse=True)[0]
+        # Match the ORDER BY clause itself, not a bare "id DESC" -- admin.py's queries carry an
+        # explanatory SQL comment containing that phrase, so the looser check matched the COMMENT
+        # and the regression test passed even with the tiebreaker removed. Caught by mutation
+        # testing on 2026-08-17; it is the exact "test that can only pass" trap this project has
+        # hit three times.
+        if "created_at DESC, id DESC" in sql:
+            return max(indexed, key=lambda t: (t[1]["created_at"], t[1]["id"] or t[0]))[1]
+        # Unfixed ordering: created_at alone, ties broken arbitrarily (first row wins).
+        newest = max(r["created_at"] for _i, r in indexed)
+        return next(r for _i, r in indexed if r["created_at"] == newest)
 
     def execute(self, sql: str, params: tuple[Any, ...] = ()):
         # Every upper bound below is EXCLUSIVE (a `date`, compared with `<`, against the
@@ -113,7 +143,7 @@ class FakeCursor:
             for c in self._district_cases(district):
                 if not (c["submitted_at"] and from_d <= c["submitted_at"].date() < until_exclusive):
                     continue
-                il = self._latest_inference(c["id"])
+                il = self._latest_inference(c["id"], sql)
                 if il:
                     out.append((il["confidence"], il["input_features"]))
             self._rows = out
@@ -123,7 +153,7 @@ class FakeCursor:
             for c in self._district_cases(district):
                 if not (c["submitted_at"] and start <= c["submitted_at"].date() < end):
                     continue
-                il = self._latest_inference(c["id"])
+                il = self._latest_inference(c["id"], sql)
                 if il:
                     out.append((il["was_overridden"],))
             self._rows = out
@@ -425,6 +455,40 @@ def test_override_rate_trend_this_vs_last_month(client, store):
     res = client.get("/api/v1/admin/analytics?to=2026-07-15", headers=_auth())
     trend = res.get_json()["ai_metrics"]["override_rate_trend"]
     assert trend == {"this_month_pct": 100.0, "last_month_pct": 0.0, "direction": "up"}
+
+
+def test_override_rate_uses_id_tiebreaker_for_same_timestamp_rows(client, store):
+    """Two inference rows sharing a created_at must resolve to the higher id. Regression for A3.
+
+    This is not a contrived tie. `now()` is transaction-stable in Postgres, so an AI
+    classification and the officer override that corrects it -- written in the SAME transaction,
+    which is exactly how inference.py's override path works -- carry an identical created_at.
+    Ordering on created_at alone then picks arbitrarily between "the AI said crop damage" and
+    "the officer corrected it to property damage".
+
+    That matters beyond the UI: this query feeds the override rate, and NFR-6.3's override rate
+    is a figure the dissertation reports. Story 7.2 added `ORDER BY created_at DESC, id DESC` to
+    its own LATERAL for precisely this reason; list_cases, get_analytics and the case-detail
+    query never got it.
+
+    MUTATION-VERIFIED 2026-08-17: removing `, id DESC` from admin.py's override-rate LATERALs
+    turns this red. The harness reads the SQL (see _latest_inference) so the assertion is about
+    admin.py, not about this file.
+    """
+    same_instant = datetime(2026, 7, 5, 10, 0, 0)
+    store["inference_log"] = [
+        # id=1: the AI's original call, NOT overridden. Listed first so insertion order and the
+        # correct answer disagree -- without the tiebreaker this row wins and the rate reads 0%.
+        _inference(1, was_overridden=False, created_at=same_instant, id_=1),
+        # id=2: the officer's override, written in the same transaction. This is the truth.
+        _inference(1, was_overridden=True, created_at=same_instant, id_=2),
+    ]
+    res = client.get("/api/v1/admin/analytics?to=2026-07-15", headers=_auth())
+    trend = res.get_json()["ai_metrics"]["override_rate_trend"]
+    assert trend["this_month_pct"] == 100.0, (
+        "the superseded AI row won the tie -- the id tiebreaker is missing from the "
+        "override-rate LATERAL, and the reported override rate is wrong"
+    )
 
 
 def test_override_rate_trend_no_data_when_neither_month_has_samples(client):

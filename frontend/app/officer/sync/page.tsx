@@ -10,6 +10,7 @@ import { getLastSyncedAt, getQueuedItems, retryItem } from "@/lib/syncQueue";
 import type { SyncQueueItem } from "@/lib/indexeddb";
 import { SyncQueueItemCard } from "@/components/SyncQueueItem";
 import { Toast } from "@/components/Toast";
+import { OfficerTopBar } from "@/components/OfficerTopBar";
 
 const POLL_MS = 5_000;
 
@@ -106,10 +107,10 @@ export default function SyncQueuePage() {
   }
 
   return (
-    <main className="flex-1 bg-surface-base px-design-4 py-design-6">
-      <div className="mx-auto max-w-2xl space-y-design-4">
-        <h1 className="text-title text-ink-primary">{t("syncPage.title")}</h1>
+    <main className="flex-1 bg-surface-base">
+      <OfficerTopBar label={t("syncPage.title")} />
 
+      <div className="mx-auto max-w-2xl space-y-design-4 px-design-4 py-design-5">
         {loadError ? (
           <div
             role="alert"
@@ -118,11 +119,13 @@ export default function SyncQueuePage() {
             {t("syncPage.loadError")}
           </div>
         ) : items.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-design-12 gap-design-3" role="status">
+          // was py-design-12 / text-heading — neither exists in the theme (spacing tops out at
+          // design-8; the type scale has no `heading`), so both were no-ops.
+          <div className="flex flex-col items-center justify-center gap-design-3 py-design-8" role="status">
             <span className="text-4xl" aria-hidden="true">
               ✓
             </span>
-            <p className="text-heading text-forest">{t("syncPage.allSynced")}</p>
+            <p className="text-headline text-forest">{t("syncPage.allSynced")}</p>
             {lastSynced !== null && (
               <p className="text-label text-ink-disabled">
                 {t("syncPage.lastSync", { time: new Date(lastSynced).toLocaleTimeString(locale) })}

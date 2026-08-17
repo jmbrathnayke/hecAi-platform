@@ -212,6 +212,24 @@ test("shows a KPI skeleton while loading, then real KPI values once fetched", as
   expect(screen.getByText(/Rs\. 150,000/)).toBeInTheDocument();
 });
 
+// A8 (deferred-work triage, 2026-08-17). The KPIs are district-wide and deliberately ignore the
+// case list's filters — admin.py runs separate KPI queries, and a test already locks that in. The
+// gap was that nothing SAID so, which reads as a broken dashboard: narrow the list, watch every
+// number sit still. This asserts the scope note is present once real KPIs render, so a future
+// tidy-up can't silently drop the only thing explaining the behaviour.
+test("labels the KPI row as district-wide so the ignored filters don't read as a bug", async () => {
+  mockAdmin();
+  mockFetchAdminCases.mockResolvedValue(
+    makeResponse({ kpis: { this_month: 5, by_status: { Submitted: 3 }, total_approved_lkr: 0, avg_processing_days: null } }),
+  );
+  render(<AdminCasesPage />);
+  // findBy, not waitFor(queryBy → absent): the page mounts asynchronously, so an absence
+  // assertion passes instantly against an empty DOM and proves nothing.
+  const note = await screen.findByTestId("kpi-scope-note");
+  expect(note).toHaveTextContent("kpi.scopeNote");
+  expect(screen.queryByTestId("kpi-skeleton")).not.toBeInTheDocument();
+});
+
 // Code review fix (Story 6.3): `cases.status` has no DB-level CHECK constraint, so a status
 // outside the 5 canonical STATUS_VALUES must still render as itself, not next-intl's
 // missing-message placeholder ("statusLabels.<key>").

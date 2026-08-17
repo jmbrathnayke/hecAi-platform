@@ -30,12 +30,21 @@ import { OverrideForm } from "@/components/OverrideForm";
 import { DamageCard } from "@/components/DamageCard";
 import { OFFICER_POC_NIC_KEY, clearOfficerPocMask } from "@/lib/officerPoc";
 import { DistrictPicker, type DistrictSelection } from "@/components/DistrictPicker";
+import { OfficerTopBar } from "@/components/OfficerTopBar";
+import { CameraCapture } from "@/components/CameraCapture";
+import { PhotoStrip } from "@/components/PhotoStrip";
+import { FieldNotes } from "@/components/FieldNotes";
 import type { LatLng } from "@/components/MapPinPicker";
 
 const MapPinPicker = dynamic(() => import("@/components/MapPinPicker"), { ssr: false });
 const SRI_LANKA_CENTER: LatLng = { lat: 7.8731, lng: 80.7718 };
 
-type Step = "identity" | "location" | "damage" | "classify" | "review";
+// Mockup: "2 of 10 photos taken". Same cap as the citizen photo step and /officer/classify.
+const MAX_PHOTOS = 10;
+
+const STEP_ORDER = ["identity", "location", "damage", "classify", "review"] as const;
+
+type Step = (typeof STEP_ORDER)[number];
 type ClassifyStatus = "idle" | "classifying" | "result" | "error";
 type Decision = "accepted" | "override" | "overridden" | null;
 
@@ -96,12 +105,33 @@ export default function OfficerSubmitPage() {
 
   const [saving, setSaving] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // Mirror of the persisted field note, so the review step can show it back. FieldNotes owns
+  // the editing state and the debounced write; this only receives what actually landed.
+  const [fieldNotes, setFieldNotes] = useState("");
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  // Object URLs for the photos captured in THIS session, for the mockup's photo strip and the
+  // camera's recent-capture row. Mirrored into a ref so the unmount cleanup can revoke them
+  // without listing `thumbnails` as an effect dependency (which would revoke on every capture).
+  const [thumbnails, setThumbnails] = useState<string[]>([]);
+  const thumbnailsRef = useRef<string[]>([]);
+
   const classIdsRef = useRef<ClassId[]>([]);
   const inFlightRef = useRef(false);
   const overrideSavingRef = useRef(false);
   const mountedRef = useRef(true);
+
+  // The strip is decoration. createObjectURL failing (or being unavailable) must never cost the
+  // officer a classification they already waited for, so this swallows its own errors rather
+  // than letting them escape into handleCapture's catch and flip the step to "error".
+  function addThumbnail(file: File) {
+    try {
+      const url = URL.createObjectURL(file);
+      thumbnailsRef.current = [...thumbnailsRef.current, url];
+      setThumbnails(thumbnailsRef.current);
+    } catch {
+      /* no thumbnail for this photo — the classification itself is unaffected */
+    }
+  }
 
   useEffect(() => {
     mountedRef.current = true;
@@ -149,6 +179,14 @@ export default function OfficerSubmitPage() {
     })();
     return () => {
       mountedRef.current = false;
+      // Revoke every object URL the strip created — without this each capture leaks a blob for
+      // the lifetime of the document.
+      try {
+        thumbnailsRef.current.forEach((url) => URL.revokeObjectURL(url));
+      } catch {
+        /* nothing to revoke / API unavailable */
+      }
+      thumbnailsRef.current = [];
     };
   }, []);
 
@@ -250,11 +288,13 @@ export default function OfficerSubmitPage() {
   }
 
   // ---- Classify (3.3) ----------------------------------------------------
-  async function handleCapture(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
+  // Receives a still from the in-app shutter or a file from the gallery fallback — both arrive
+  // as a File, so the pipeline below is identical for either route.
+  async function handleCapture(file: File) {
     if (inFlightRef.current) return;
+    // Hard cap (mockup's "N of 10"): the shutter and gallery button are already disabled at the
+    // cap, so reaching here means a race — drop it silently rather than erroring.
+    if (thumbnailsRef.current.length >= MAX_PHOTOS) return;
     inFlightRef.current = true;
 
     setClassifyStatus("classifying");
@@ -287,6 +327,7 @@ export default function OfficerSubmitPage() {
       classIdsRef.current = nextClassIds;
       if (!mountedRef.current) return;
 
+      addThumbnail(file);
       setResult(classification);
       setClassifyStatus("result");
     } catch {
@@ -377,15 +418,47 @@ export default function OfficerSubmitPage() {
   };
 
   return (
-    <main className="flex-1 bg-surface-base px-design-4 py-design-6">
-      <div className="max-w-md mx-auto space-y-design-4">
-        <header className="space-y-design-1">
-          <h1 className="text-title text-ink-primary">{t("submit.title")}</h1>
-          <p className="text-caption text-ink-secondary">{stepTitles[step]}</p>
-        </header>
+    // No horizontal padding on <main>: the top bar and (on the classify step) the camera
+    // viewport are full-bleed in the mockup. Only the form panel below them is inset.
+    <main className="flex-1 bg-surface-base">
+      <div className="mx-auto w-full max-w-md">
+        {/* Mockup's step bar: the label carries the progress in words, the dots mirror it. */}
+        <OfficerTopBar
+          label={stepTitles[step]}
+          totalSteps={STEP_ORDER.length}
+          currentStep={STEP_ORDER.indexOf(step)}
+        />
 
-        {step === "identity" && (
-          <form
+        {/* Camera is full-bleed and sits directly under the step bar, as in the mockup — so it
+            renders outside the padded panel that holds every other step's controls. */}
+        {step === "classify" && (
+          <>
+            <CameraCapture
+              onCapture={(file) => void handleCapture(file)}
+              disabled={classifyStatus === "classifying"}
+              busyLabel={t("classify.analyzing")}
+              atMax={thumbnails.length >= MAX_PHOTOS}
+              thumbnails={thumbnails}
+              onBack={() => setStep("damage")}
+              fileInputTestId="submit-file-input"
+            />
+            <div className="border-b border-border-default bg-surface-raised px-design-5 py-design-3 text-center">
+              <p className="text-label text-ink-secondary">
+                <span aria-hidden="true">📸 </span>
+                {thumbnails.length >= MAX_PHOTOS
+                  ? t("camera.maxReached", { max: MAX_PHOTOS })
+                  : t("camera.instruction")}
+              </p>
+              <p className="text-caption text-ink-disabled">
+                {t("camera.count", { count: thumbnails.length, max: MAX_PHOTOS })}
+              </p>
+            </div>
+          </>
+        )}
+
+        <div className="space-y-design-4 px-design-4 py-design-5">
+          {step === "identity" && (
+            <form
             className="space-y-design-4"
             onSubmit={(e) => {
               e.preventDefault();
@@ -541,24 +614,6 @@ export default function OfficerSubmitPage() {
 
         {step === "classify" && (
           <div className="space-y-design-4">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              capture="environment"
-              className="hidden"
-              data-testid="submit-file-input"
-              onChange={(e) => void handleCapture(e)}
-            />
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={classifyStatus === "classifying"}
-              className="w-full min-h-primary-btn bg-forest text-ink-on-dark text-headline font-semibold rounded-md disabled:opacity-60"
-            >
-              {classifyStatus === "classifying" ? t("classify.analyzing") : t("classify.capture")}
-            </button>
-
             {qualityWarning && (
               <p role="alert" className="text-caption text-status-warning">
                 {t("classify.qualityWarning")}
@@ -569,6 +624,13 @@ export default function OfficerSubmitPage() {
                 {t("classify.classifyError")}
               </p>
             )}
+
+            {/* Mockup screen 2: the photos banked so far, with the current subject ringed. */}
+            <PhotoStrip
+              thumbnails={thumbnails}
+              countLabel={t("classify.photosCaptured", { count: thumbnails.length })}
+              ariaLabel={t("classify.photoStripAria")}
+            />
 
             {classifyStatus === "result" && result && (
               <>
@@ -610,6 +672,10 @@ export default function OfficerSubmitPage() {
                   <p className="text-label text-status-success">{t("classify.overridden")}</p>
                 )}
 
+                {/* Mockup places the note between the result card and the forward CTA. Mirrored
+                    into `fieldNotes` so the review step can show what will be kept with the case. */}
+                <FieldNotes onSaved={setFieldNotes} />
+
                 {(decision === "accepted" || decision === "overridden") && (
                   <button
                     type="button"
@@ -648,6 +714,14 @@ export default function OfficerSubmitPage() {
                 <dt className="text-label text-ink-secondary">{t("submit.reviewOfficer")}</dt>
                 <dd className="text-label text-ink-primary break-all">{officerId ?? "—"}</dd>
               </div>
+              {/* Only shown once there is a note — an empty row would imply the officer had
+                  missed a required field. */}
+              {fieldNotes.trim() && (
+                <div className="flex flex-col gap-design-1 border-t border-border-default pt-design-2">
+                  <dt className="text-label text-ink-secondary">{t("submit.reviewNotes")}</dt>
+                  <dd className="text-label leading-relaxed text-ink-primary">{fieldNotes}</dd>
+                </div>
+              )}
             </dl>
             {submitError && (
               <p role="alert" className="text-caption text-status-error">
@@ -664,6 +738,7 @@ export default function OfficerSubmitPage() {
             </button>
           </div>
         )}
+        </div>
       </div>
     </main>
   );

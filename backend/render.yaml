@@ -5,7 +5,25 @@ services:
     region: singapore
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn wsgi:app
+    # THREADS, NOT WORKERS -- and that is a memory decision, not a style one.
+    #
+    # The default (1 sync worker) head-of-line blocks: a streaming CSV export pins the worker, its
+    # DB connection and an open transaction for the client's entire download, so the backend serves
+    # nothing else meanwhile -- including /api/v1/health, which is how Render decides whether to
+    # cycle the service. One admin on a slow link could get the deploy restarted underneath them.
+    #
+    # The obvious fix is more workers, but each worker is a separate process that loads its own
+    # copy of rf_compensation_v2.joblib (7.2 MB on disk, more once unpickled) plus its own numpy
+    # and scikit-learn. On the free plan's 512 MB that duplication is the thing most likely to OOM.
+    # gthread keeps ONE process -- so one copy of the model -- and gets concurrency from threads,
+    # which is the right trade for a workload that is almost entirely waiting on Postgres.
+    #
+    # 4 threads, not more: each in-flight request holds its own psycopg2 connection (there is no
+    # pool), so thread count is effectively the connection ceiling against Neon.
+    #
+    # --timeout 120 because the default 30s is what produced Story 7.2's 502-on-export while the
+    # audit row still claimed success.
+    startCommand: gunicorn wsgi:app --worker-class gthread --workers 1 --threads 4 --timeout 120
     healthCheckPath: /api/v1/health
     autoDeploy: true
     envVars:

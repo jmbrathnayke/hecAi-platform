@@ -16,14 +16,14 @@
   "target": "amount_lkr",
   "models": {
     "two_stage_rf": {
-      "mae": 338260.48922376614,
+      "mae": 338260.4892237663,
       "rmse": 721452.9770641511,
       "r2": 0.5691516669188842,
-      "mae_positive_rows": 339452.668541395,
-      "mae_pct_of_test_mean": 60.794924205010204,
+      "mae_positive_rows": 339452.6685413951,
+      "mae_pct_of_test_mean": 60.79492420501024,
       "hurdle_f1_payout_detection": 0.9624277456647399,
       "per_damage_type_mae": {
-        "death": 418892.05491300015,
+        "death": 418892.0549130003,
         "injury": 104276.33807946762,
         "property": 417061.40837783524
       }
@@ -42,17 +42,19 @@
       }
     },
     "two_stage_rf_random_split": {
-      "mae": 91946.27940156091,
-      "rmse": 242522.80441821387,
-      "r2": 0.6330792999257508,
-      "mae_positive_rows": 188483.4161407331,
-      "mae_pct_of_test_mean": 64.04513683639365,
+      "mae": 91946.27940156088,
+      "rmse": 242522.80441821375,
+      "r2": 0.6330792999257511,
+      "mae_positive_rows": 188483.41614073305,
+      "mae_pct_of_test_mean": 64.04513683639364,
       "hurdle_f1_payout_detection": 0.7737226277372263,
       "per_damage_type_mae": {
-        "death": 130328.62688501163,
+        "death": 130328.62688501157,
         "injury": 18158.78123732303,
-        "property": 126758.59279597079
-      }
+        "property": 126758.59279597075
+      },
+      "split": "random 80/20, random_state=42 -- NOT the time split; reported for contrast as the optimistic figure",
+      "n_test": 792
     }
   }
 }

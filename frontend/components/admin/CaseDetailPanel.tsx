@@ -111,7 +111,11 @@ export function CaseDetailPanel({ offlineId }: CaseDetailPanelProps) {
     <div className="space-y-design-4">
       <div className="rounded-md border border-border-default bg-surface-raised p-design-4 space-y-design-2">
         <div className="flex items-center gap-design-3">
-          <h2 className="text-heading-3 text-ink-primary">{c.canonical_id ?? "—"}</h2>
+          {/* was `text-heading-3`, which has never existed in tailwind.config.ts — and because
+              preflight resets h1-h6 to `font-size/font-weight: inherit`, this rendered at plain
+              body size and weight. DESIGN.md's Title tier names "Case #HEC-2026-0042" as its
+              own example, so this is the tier it was always meant to be. */}
+          <h2 className="text-title text-ink-primary">{c.canonical_id ?? "—"}</h2>
           {/* Status (Story 5.5 Task 5) -- not previously rendered anywhere in this panel;
               the action panel's own button set depends on it, so the admin needs to see it
               too. Reuses the same badge styling as CaseListTable's status column. */}

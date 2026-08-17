@@ -13,7 +13,7 @@ import csv
 import os
 import io
 import json
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
 
 import jwt
@@ -118,12 +118,21 @@ class FakeCursor:
         if "c.status = %s" in sql:
             value = rest.pop(0)
             rows = [c for c in rows if c["status"] == value]
+        # Date bounds are compared as Postgres compares them, NOT via .date() truncation.
+        # cases.submitted_at is TIMESTAMPTZ and the bound param is a bare `date`; Postgres casts
+        # that date to midnight before comparing. Truncating the row to .date() instead -- which
+        # this harness used to do -- makes `<= to_date` and `< to_date + 1 day` indistinguishable,
+        # so it silently hid the end-of-day bug and would have made any regression test for it
+        # pass no matter which operator the code used.
+        def _midnight(d):
+            return datetime.combine(d, time.min)
+
         if "c.submitted_at >= %s" in sql:
             value = rest.pop(0)
-            rows = [c for c in rows if c["submitted_at"].date() >= value]
-        if "c.submitted_at <= %s" in sql:
+            rows = [c for c in rows if c["submitted_at"] >= _midnight(value)]
+        if "c.submitted_at < %s" in sql:
             value = rest.pop(0)
-            rows = [c for c in rows if c["submitted_at"].date() <= value]
+            rows = [c for c in rows if c["submitted_at"] < _midnight(value)]
         if "c.damage_category = %s" in sql:
             value = rest.pop(0)
             rows = [c for c in rows if c["damage_category"] == value]
@@ -383,6 +392,35 @@ def test_csv_applies_date_range_filter(client):
     )
     _header, rows = _csv_rows(res)
     assert len(rows) == 2  # the 2026-06-20 case is outside the range
+
+
+def test_export_includes_cases_submitted_later_on_the_end_date(client, store):
+    """A case timestamped 18:30 on the `to` date must be exported. Regression for A2.
+
+    `c.submitted_at` is TIMESTAMPTZ and `to` arrives as a bare `date`, which Postgres casts to
+    midnight. The original `c.submitted_at <= %s` therefore excluded everything after 00:00:00
+    on the end date -- and `?to=<today>` is the most common range an admin selects, so the
+    export silently omitted the whole of the final day. Story 7.1's review fixed this inside
+    get_analytics() only; _build_conditions kept the bug, so list_cases and this export both
+    inherited it.
+
+    MUTATION-VERIFIED 2026-08-17: restoring `<= %s` (with the bare to_date param) turns this
+    test red. The harness had to be corrected first -- it compared row.date() to the bound,
+    which collapses both operators to the same result and would have let this pass either way.
+    """
+    store["cases"].append(
+        _case(99, DISTRICT_A, submitted_at=datetime(2026, 7, 31, 18, 30))
+    )
+    res = client.get(
+        "/api/v1/admin/export?from=2026-07-01&to=2026-07-31", headers=_auth()
+    )
+    _header, rows = _csv_rows(res)
+    canonical_ids = {r[0] for r in rows}
+    assert "HEC-2026-0099" in canonical_ids, (
+        "a case submitted at 18:30 on the end date was dropped -- the upper bound is "
+        "truncating to midnight again"
+    )
+    assert len(rows) == 3
 
 
 def test_csv_applies_division_filter(client):
