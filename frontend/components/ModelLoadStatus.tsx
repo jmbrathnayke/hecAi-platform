@@ -24,7 +24,18 @@ export function ModelLoadStatus() {
         .then(() => {
           if (mounted) setStatus("ready");
         })
-        .catch(() => {
+        .catch((err) => {
+          // Log the real cause. The error copy says "not available offline", but this state is
+          // reached on ANY load failure — a stale cached model, a bad export, a failed tfjs
+          // chunk. Swallowing the cause sent a real investigation down the wrong path: the
+          // deployed model.json was in a format TensorFlow.js could not parse, and the UI
+          // reported it as a connectivity problem. `cause` carries the underlying tfjs error
+          // (see ModelNotAvailableError in lib/mobilenet.ts).
+          console.error(
+            "[ModelLoadStatus] model failed to load",
+            { online: typeof navigator !== "undefined" ? navigator.onLine : null },
+            err instanceof Error ? (err.cause ?? err) : err,
+          );
           if (mounted) setStatus("error");
         });
     };
