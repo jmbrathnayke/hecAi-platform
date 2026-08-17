@@ -118,6 +118,40 @@ def _severity_multiplier(ai_severity):
     return _SEVERITY_MULTIPLIER.get(ai_severity, 1.0)  # absent/unrecognized -> neutral
 
 
+def compute_estimate(bundle, damage_type, district, ds_division, year, ai_severity, cap):
+    """The whole serving transform, with no I/O of its own -- pure given `bundle` and `cap`.
+
+    Extracted from estimate_and_store so the dissertation evaluation can score THIS code
+    rather than a re-implementation of it (backend/ml/evaluate.py, RER-3). Scoring a
+    hand-copied version of the transform would measure the copy, not the deployed path --
+    the same "test that cannot fail" failure mode this project keeps hitting.
+
+    `cap` is the policy ceiling in LKR or None for "no cap enforced"; the caller owns
+    fetching it, because that is the one step here that needs a database.
+    """
+    prior = _prior_year_features(district, ds_division, damage_type)
+    row = {
+        "damage_type": damage_type, "district": district, "ds_division": ds_division,
+        "year": year, **prior,
+    }
+    X = pd.DataFrame([row], columns=FEATURES)
+
+    gate = bool(bundle["clf"].predict(X)[0])
+    model_raw = float(np.clip(np.expm1(bundle["reg"].predict(X)[0]), 0, None)) if gate else 0.0
+    multiplier = _severity_multiplier(ai_severity)
+    raw_estimate = model_raw * multiplier
+
+    capped = cap is not None and raw_estimate > cap
+    return {
+        "amount": cap if capped else raw_estimate,
+        "raw_estimate": raw_estimate,
+        "model_raw": model_raw,
+        "multiplier": multiplier,
+        "capped": capped,
+        "row": row,
+    }
+
+
 def estimate_and_store(cur, case_id, damage_category, ds_division_id, submitted_at,
                         district=None, ai_severity=None):
     """Best-effort: returns the stored dict on success, None on any skip/failure.
@@ -156,35 +190,28 @@ def estimate_and_store(cur, case_id, damage_category, ds_division_id, submitted_
         if not isinstance(bundle, dict):
             return None
         resolved_district, ds_division = _resolve_district(district, ds_division_id)
-        year = submitted_at.year
-        prior = _prior_year_features(resolved_district, ds_division, damage_type)
 
-        row = {
-            "damage_type": damage_type, "district": resolved_district, "ds_division": ds_division,
-            "year": year, **prior,
-        }
-        X = pd.DataFrame([row], columns=FEATURES)
-
-        gate = bool(bundle["clf"].predict(X)[0])
-        model_raw = float(np.clip(np.expm1(bundle["reg"].predict(X)[0]), 0, None)) if gate else 0.0
-        multiplier = _severity_multiplier(ai_severity)
-        raw_estimate = model_raw * multiplier
-
+        # Fetched before the prediction (it used to follow it) only because compute_estimate
+        # takes the cap as an argument -- it is the one step of the transform that needs a
+        # database, so it stays here rather than inside the pure function. Both SELECTs still
+        # precede the INSERT, so the statement order Postgres sees is unchanged.
         cur.execute(
             "SELECT cap_amount_lkr FROM compensation_caps WHERE district = %s AND damage_type = %s",
             (resolved_district, damage_type),
         )
         cap_row = cur.fetchone()
         cap = float(cap_row[0]) if cap_row else None
-        capped = cap is not None and raw_estimate > cap
-        amount = cap if capped else raw_estimate
+
+        est = compute_estimate(bundle, damage_type, resolved_district, ds_division,
+                               submitted_at.year, ai_severity, cap)
 
         meta = bundle["meta"]
         result = {
-            "amount_lkr": round(amount, 2),
-            "raw_estimate_lkr": round(raw_estimate, 2),
-            "capped": capped,
-            "feature_values": {**row, "ai_severity": ai_severity, "severity_multiplier": multiplier},
+            "amount_lkr": round(est["amount"], 2),
+            "raw_estimate_lkr": round(est["raw_estimate"], 2),
+            "capped": est["capped"],
+            "feature_values": {**est["row"], "ai_severity": ai_severity,
+                               "severity_multiplier": est["multiplier"]},
             "model_version": f"rf_compensation_{meta.get('version', 'v2')}",
             "dataset_version": meta.get("dataset"),
         }

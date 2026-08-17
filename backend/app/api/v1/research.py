@@ -206,7 +206,12 @@ def research_export():
             with conn.cursor() as cur:
                 cur.execute(_RESEARCH_SELECT, (RESEARCH_MAX_ROWS,))
                 rows = cur.fetchall()
-    except psycopg2.Error:
+    except Exception:
+        # Broadened to match the audit/count block above, for the same reason recorded there: a
+        # non-psycopg2 failure (a driver-level TypeError, a serialization error surfacing from
+        # the cursor) otherwise escapes as an unhandled 500 with no log line and without the
+        # {"error": "server_error"} contract every other route in this API honours. The `finally`
+        # already prevents the connection leak; this is about the response contract.
         current_app.logger.exception("research export query failed")
         return jsonify({"error": "server_error"}), 500
     finally:
@@ -215,5 +220,13 @@ def research_export():
     payload = [_row_to_dict(r) for r in rows]
     response = jsonify(payload)
     response.headers["X-HEC-Row-Count"] = str(len(payload))
-    response.headers["X-HEC-Truncated"] = "true" if matched > RESEARCH_MAX_ROWS else "false"
+    # Derived from what was actually delivered, NOT from `matched`. The COUNT commits in the
+    # first transaction and the SELECT opens a second one, so under READ COMMITTED an insert
+    # between them makes `matched > RESEARCH_MAX_ROWS` disagree with the body: the header would
+    # read "false" over a payload that is genuinely capped. The audit row deliberately keeps the
+    # count-time figure (it records what was authorised); the header must describe the response.
+    response.headers["X-HEC-Truncated"] = "true" if len(payload) >= RESEARCH_MAX_ROWS else "false"
+    # Bulk export of research records. Nothing here is public, and the route will sit behind
+    # HTTPS with a proxy in front once deployed -- no intermediary should retain a copy.
+    response.headers["Cache-Control"] = "no-store"
     return response
