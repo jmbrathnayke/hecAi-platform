@@ -141,6 +141,68 @@ def _regression_metrics(y_true, y_pred) -> dict:
     }
 
 
+def _property_scope(serving, bundle, df) -> dict:
+    """Figures for the DECLARED system scope: property damage only.
+
+    Death and injury are out of scope (interim report s1.10) -- no labelled image corpus exists for
+    either, so the classifier has no such class, and the incident form has no pathway. Reporting
+    system performance on rows the system cannot accept would be neither flattering nor honest;
+    these are the figures the evaluation chapter should cite.
+
+    Also answers the obvious follow-up -- "then retrain without death and injury" -- with a
+    measurement rather than an assumption. It does NOT help: the excluded rows still teach the
+    model regional payout structure across 3,960 rows instead of 1,233, and dropping them costs
+    more than the narrower target gains. So the SCOPE narrows and the TRAINING SET does not.
+    """
+    from benchmark_compensation import fit_two_stage, make_two_stage
+
+    prop = df[df["damage_type"] == "property"]
+    tr = prop[~prop["year"].isin(TEST_YEARS)]
+    te = prop[prop["year"].isin(TEST_YEARS)]
+    y = te[TARGET].values
+
+    # The serving path's own feature construction, restricted to the in-scope rows.
+    served_rows = []
+    for r in te.itertuples():
+        priors = serving._prior_year_features(r.district, r.ds_division, "property")
+        served_rows.append({"damage_type": "property", "district": r.district,
+                            "ds_division": r.ds_division, "year": r.year, **priors})
+    served_frame = pd.DataFrame(served_rows, columns=FEATURES)
+
+    def score(preds):
+        m = _regression_metrics(y, preds)
+        m["mae_pct_of_test_mean"] = float(m["mae"] / y.mean() * 100)
+        return m
+
+    retrained = {}
+    for kind in ("rf", "gbm"):
+        clf, reg = make_two_stage(kind)
+        fit_two_stage(clf, reg, tr[FEATURES], tr[TARGET].values)
+        retrained[f"retrained_property_only_{kind}"] = score(
+            predict_two_stage(clf, reg, te[FEATURES]))
+
+    return {
+        "_note": ("Declared system scope. Cite these for RER-3. Death/injury excluded: no labelled "
+                  "image corpus, no form pathway -- see interim report s1.10."),
+        "n_train": int(len(tr)),
+        "n_test": int(len(te)),
+        "test_mean_lkr": float(y.mean()),
+        "zero_share_test": float((y == 0).mean()),
+        # The shipped model, judged only on in-scope rows, with true per-year lags.
+        "model_on_property_rows": score(
+            predict_two_stage(bundle["clf"], bundle["reg"], te[FEATURES])),
+        # The same model through the serving feature path -- deployed behaviour, in scope.
+        "served_on_property_rows": score(
+            predict_two_stage(bundle["clf"], bundle["reg"], served_frame)),
+        "reference_always_predict_property_mean": score(np.full(len(y), float(y.mean()))),
+        **retrained,
+        "retraining_verdict": (
+            "Retraining on property rows alone does NOT improve the estimator -- compare "
+            "retrained_property_only_rf against model_on_property_rows. Narrow the CLAIM, keep the "
+            "training set. RF still beats GBM under the narrowed scope, so RER-6 holds."),
+    }
+
+
 def _divergence_decomposition(serving, bundle, test, y_true) -> dict:
     """Attribute the model-vs-served gap to its two causes, and to their interaction.
 
@@ -257,6 +319,7 @@ def evaluate_compensation_serving() -> dict:
             for s in ("Minor", "Moderate", "Severe")
         },
         "divergence_decomposition": _divergence_decomposition(serving, bundle, test, y_true),
+        "property_scope": _property_scope(serving, bundle, df),
     }
     return metrics
 

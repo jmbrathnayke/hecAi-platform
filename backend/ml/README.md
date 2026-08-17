@@ -222,6 +222,31 @@ multiplier defaults to the neutral 1.0 for historical rows (the 0.7/1.3 band is 
 must stay runnable in the ML venv. That still scores the shipped file, which is the point —
 re-implementing the transform here would measure the re-implementation.
 
+### Declared scope: property damage (decided 2026-08-17)
+
+Death and injury are **out of scope** — no labelled image corpus exists for either, so the
+classifier has no such class, and the incident form has no pathway, meaning the system cannot accept
+such a claim at all. The `property_scope` block in `compensation_metrics.json` carries the figures
+to cite for RER-3:
+
+| property test rows, n=173 | MAE | R² |
+|---|---|---|
+| **model** (true per-year lags) | 417,061 | **0.601** |
+| **deployed serving path** | 406,134 | **0.406** |
+| reference: always predict the property mean | 736,222 | 0.000 |
+
+**Do not retrain on property rows alone** — it was measured and it does not help: R² 0.596 vs 0.601
+on true lags, and 0.360 vs 0.406 through the serving path. The death and injury rows still teach the
+model regional payout structure across 3,960 rows rather than 1,233. **Narrow the claim, keep the
+training set.** RF still beats GBM under the narrowed scope (0.596 vs 0.549), so RER-6 holds. The
+`retraining_verdict` field records this so nobody re-derives it.
+
+Note on thresholds: the ≥ 0.65 R² and ≤ 25%-of-mean MAE targets that appear in older documents are
+**pre-revision**, written for per-incident records. The PRD revised them on 2026-07-03 (`prd.md:71`)
+to ≥ 0.60 random / ≥ 0.55 time-based once it was established that DWC data exists only as
+division-year aggregates. Measured MAE is ~61% of the test mean and cannot reach 25% with aggregate
+data.
+
 Which number to publish is a write-up decision; see the F2 section of
 `_bmad-output/implementation-artifacts/deferred-work-triage-2026-08-17.md`.
 
