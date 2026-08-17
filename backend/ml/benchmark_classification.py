@@ -142,6 +142,14 @@ def main() -> None:
                   "are optimistically biased -- equally for both models, so the COMPARISON "
                   "remains fair even though the absolute figures are optimistic."),
         "n_val": int(len(images)),
+        # RER-6 asks for BROWSER inference latency. `inference_ms_per_image` below is a
+        # Python/TensorFlow desktop-CPU timing -- a different runtime and kernel library, and it
+        # understates the gap badly: Python says MobileNetV2 is ~1.9x faster than ResNet-50, a
+        # real browser says 10.4x. Keep this field (it is the like-for-like Python comparison)
+        # but do not cite it for RER-6.
+        "inference_ms_per_image_scope": (
+            "Python/TensorFlow on desktop CPU -- NOT browser latency. For RER-6 cite "
+            "results/browser_latency.json, produced by frontend/scripts/tfjs-bench/run-bench.mjs."),
         "source_artifacts": {
             "mobilenetv2": str(MOBILENET_KERAS),
             "resnet50": str(RESNET_KERAS),

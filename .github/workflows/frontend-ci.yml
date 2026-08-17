@@ -41,3 +41,14 @@ jobs:
 
       - name: Test
         run: npm test
+
+      # The unit tests mock @tensorflow/tfjs wholesale, so NONE of them loads a real weight file.
+      # That is exactly how a model.json that no browser could deserialize (Keras 3 layers format
+      # vs tfjs-layers 4.22.0) shipped and stayed broken: the converter exits 0, the mock defines
+      # whatever API the code calls, and every test passes. This step loads the real committed
+      # model in a real Chromium and asserts it returns a valid probability vector.
+      - name: Install Chromium for the model smoke check
+        run: npx playwright install --with-deps chromium
+
+      - name: Verify the deployed TF.js model actually loads
+        run: node scripts/tfjs-bench/verify-model.mjs --smoke

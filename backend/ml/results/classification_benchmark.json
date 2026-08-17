@@ -6,6 +6,7 @@
   ],
   "split": "80/20 train/validation, seed=123. NO separate test partition exists and model selection used this same split, so these are validation metrics and are optimistically biased -- equally for both models, so the COMPARISON remains fair even though the absolute figures are optimistic.",
   "n_val": 94,
+  "inference_ms_per_image_scope": "Python/TensorFlow on desktop CPU -- NOT browser latency. For RER-6 cite results/browser_latency.json, produced by frontend/scripts/tfjs-bench/run-bench.mjs.",
   "source_artifacts": {
     "mobilenetv2": "C:\\Users\\User\\Desktop\\final research\\docs\\Human Elephant Conflict Datasets\\model_training\\artifacts\\inference_model.keras",
     "resnet50": "C:\\Users\\User\\Desktop\\final research\\docs\\Human Elephant Conflict Datasets\\model_training\\artifacts\\resnet50\\best_model.keras",

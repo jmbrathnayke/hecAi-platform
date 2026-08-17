@@ -6,9 +6,9 @@
   "split": "time-based holdout: test = 2020-2021 (never seen in training)",
   "n_test": 359,
   "test_mean_lkr": 556395.938718663,
-  "mae": 338260.4892237662,
-  "rmse": 721452.9770641512,
-  "r2": 0.569151666918884,
+  "mae": 338260.4892237664,
+  "rmse": 721452.9770641513,
+  "r2": 0.5691516669188839,
   "features": [
     "damage_type",
     "district",
@@ -17,5 +17,77 @@
     "prior_year_amount",
     "prior_year_incident_count",
     "prior_year_had_payout"
-  ]
+  ],
+  "scope": "model only (predict_two_stage) -- see serving_path for deployed behaviour",
+  "serving_path": {
+    "scored_through": "app/infrastructure/ml/compensation.py::compute_estimate (shipped code)",
+    "split": "time-based holdout: test = 2020-2021 (never seen in training)",
+    "n_test": 359,
+    "ai_severity_assumed": null,
+    "severity_multiplier_applied": 1.0,
+    "cap_source": "read from compensation_caps (0 row(s) configured)",
+    "n_predictions_capped": 0,
+    "n_rows_falling_back_to_zero_priors": 26,
+    "damage_type_sent_to_model": "property",
+    "damage_type_collapse": "_DAMAGE_TYPE_MAP maps crop/property/combined -> 'property'; the incident form has no death or injury path, so those claims cannot reach the model as themselves",
+    "mae": 556473.1149064065,
+    "rmse": 1242017.9524566864,
+    "r2": -0.2769212191824948,
+    "per_true_damage_type": {
+      "death": {
+        "mae": 793314.5958177283,
+        "rmse": 1313867.197272619,
+        "r2": -2.7448720572672847,
+        "n": 95,
+        "true_mean_lkr": 809473.6842105263
+      },
+      "injury": {
+        "mae": 595030.6234782953,
+        "rmse": 1388383.591562587,
+        "r2": -50.43454240028282,
+        "n": 91,
+        "true_mean_lkr": 109907.63736263737
+      },
+      "property": {
+        "mae": 406133.9590300051,
+        "rmse": 1113216.9714714584,
+        "r2": 0.40559110136122833,
+        "n": 173,
+        "true_mean_lkr": 652280.6184971099
+      }
+    },
+    "severity_sensitivity_mae": {
+      "Minor": 494050.48125028296,
+      "Moderate": 556473.1149064064,
+      "Severe": 649802.1800278465
+    },
+    "divergence_decomposition": {
+      "_note": "isolates each serving-side divergence; D reproduces the served figures above",
+      "A_true_type_true_lags__published_model": {
+        "mae": 338260.48922376643,
+        "rmse": 721452.9770641515,
+        "r2": 0.5691516669188836
+      },
+      "B_true_type_snapshot_lookup": {
+        "mae": 297103.255152224,
+        "rmse": 818138.4338599035,
+        "r2": 0.4459334300114377
+      },
+      "C_collapsed_type_true_lags": {
+        "mae": 357689.6978370675,
+        "rmse": 733326.7428293227,
+        "r2": 0.5548530486200914
+      },
+      "D_collapsed_type_snapshot_lookup__deployed": {
+        "mae": 556473.1149064058,
+        "rmse": 1242017.9524566836,
+        "r2": -0.2769212191824886
+      },
+      "reference_always_predict_test_mean": {
+        "mae": 547945.1913160203,
+        "rmse": 1099121.7989595763,
+        "r2": 0.0
+      }
+    }
+  }
 }
