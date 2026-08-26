@@ -33,7 +33,71 @@ interface OfficerCase {
   updated_at: string | null;
 }
 
-type LoadState = "loading" | "error" | "ready";
+// Why the load state carries a reason (2026-08-21). Every non-ok response used to collapse into
+// a single "error", so a 403 (this account carries no officer role), a 500 (the server cannot
+// verify tokens at all) and an unreachable API all rendered the same sentence above the same
+// useless Retry button — the real cause was visible only in DevTools. The backend guards already
+// return distinguishable codes (auth.py: forbidden / token_expired / server_misconfigured /
+// server_error); this page was the thing throwing them away.
+type Failure =
+  | { reason: "config" }
+  | { reason: "no-session" }
+  | { reason: "signed-out"; status: number; code: string }
+  | { reason: "forbidden"; status: number; code: string }
+  | { reason: "server"; status: number; code: string }
+  | { reason: "network" }
+  | { reason: "unknown"; status: number; code: string };
+
+type LoadState = { kind: "loading" } | { kind: "ready" } | { kind: "failed"; failure: Failure };
+
+/** The backend's `{"error": "..."}` code, or "" when the body is not the shape we expect. */
+async function errorCode(res: Response): Promise<string> {
+  try {
+    const body = (await res.json()) as { error?: unknown };
+    return typeof body?.error === "string" ? body.error : "";
+  } catch {
+    return "";
+  }
+}
+
+function classifyResponse(status: number, code: string): Failure {
+  if (status === 401) return { reason: "signed-out", status, code };
+  if (status === 403) return { reason: "forbidden", status, code };
+  if (status >= 500) return { reason: "server", status, code };
+  return { reason: "unknown", status, code };
+}
+
+function failureMessageKey(f: Failure): string {
+  switch (f.reason) {
+    case "config":
+      return "dashboard.error.config";
+    case "no-session":
+      return "dashboard.error.noSession";
+    case "signed-out":
+      return "dashboard.error.signedOut";
+    case "forbidden":
+      return "dashboard.error.forbidden";
+    case "server":
+      // A JWKS blip also lands here as 500/server_misconfigured — deliberately, so a transient
+      // Supabase outage does not sign every officer out (auth.py's PyJWKClientConnectionError
+      // branch). That is why "server" stays retryable below.
+      return f.code === "server_misconfigured"
+        ? "dashboard.error.serverMisconfigured"
+        : "dashboard.error.server";
+    case "network":
+      return "dashboard.error.network";
+    default:
+      return "dashboard.error.unknown";
+  }
+}
+
+/** What the officer can actually do about it. Retry is offered only where it can help. */
+function failureRecovery(f: Failure): "sign-in" | "retry" | "none" {
+  if (f.reason === "no-session" || f.reason === "signed-out") return "sign-in";
+  // Retrying cannot mint a role claim, and it cannot write a missing env var either.
+  if (f.reason === "forbidden" || f.reason === "config") return "none";
+  return "retry";
+}
 
 function formatDate(iso: string | null, locale: string): string {
   if (!iso) return "—";
@@ -47,7 +111,7 @@ export default function OfficerDashboardPage() {
   const locale = useLocale();
   const { officer_id, assigned_divisions } = useOfficerSession();
   const [cases, setCases] = useState<OfficerCase[]>([]);
-  const [state, setState] = useState<LoadState>("loading");
+  const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
   // Bumped by Retry to force a re-fetch — setState to the same statusFilter would be an
   // Object.is no-op and would NOT re-run the effect, so Retry needs its own changing dep.
@@ -56,29 +120,58 @@ export default function OfficerDashboardPage() {
   useEffect(() => {
     let active = true;
     (async () => {
-      setState("loading");
+      setState({ kind: "loading" });
+
+      // Mirrors the guard inside getAccessToken() (lib/auth.ts), which returns null both for
+      // "no session" and for "this build has no Supabase keys". Told apart here so a missing
+      // env var is never reported as an expired session — that would send someone to a login
+      // page which, lacking the same keys, cannot sign them in either.
+      if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+        if (active) setState({ kind: "failed", failure: { reason: "config" } });
+        return;
+      }
+
       const token = await getAccessToken();
       if (!token) {
         // No session (middleware normally redirects; handle the race defensively).
-        if (active) setState("error");
+        if (active) setState({ kind: "failed", failure: { reason: "no-session" } });
         return;
       }
+
+      let res: Response;
       try {
         const qs = statusFilter ? `?status=${encodeURIComponent(statusFilter)}` : "";
-        const res = await fetch(`${API_BASE}/api/v1/officer/cases${qs}`, {
+        res = await fetch(`${API_BASE}/api/v1/officer/cases${qs}`, {
           headers: { Authorization: `Bearer ${token}` },
         });
-        if (!res.ok) {
-          if (active) setState("error");
-          return;
-        }
+      } catch {
+        // fetch() rejects only on a transport failure: API down, DNS, CORS, offline. An HTTP
+        // error status resolves normally and is classified below — the two are different
+        // problems with different fixes, and the old single catch conflated them.
+        if (active) setState({ kind: "failed", failure: { reason: "network" } });
+        return;
+      }
+
+      if (!res.ok) {
+        const failure = classifyResponse(res.status, await errorCode(res));
+        if (active) setState({ kind: "failed", failure });
+        return;
+      }
+
+      try {
         const data = (await res.json()) as { cases?: OfficerCase[] };
         if (active) {
           setCases(data.cases ?? []);
-          setState("ready");
+          setState({ kind: "ready" });
         }
       } catch {
-        if (active) setState("error");
+        // 200 with a body that is not the JSON we asked for — a proxy or captive portal.
+        if (active) {
+          setState({
+            kind: "failed",
+            failure: { reason: "unknown", status: res.status, code: "bad_response" },
+          });
+        }
       }
     })();
     return () => {
@@ -138,30 +231,54 @@ export default function OfficerDashboardPage() {
             ))}
           </div>
 
-          {state === "loading" && (
+          {state.kind === "loading" && (
             <p className="text-body text-ink-secondary" role="status">
               {t("dashboard.loading")}
             </p>
           )}
 
-          {state === "error" && (
+          {state.kind === "failed" && (
             <div role="alert" className="space-y-design-2">
-              <p className="text-body text-status-error">{t("dashboard.loadError")}</p>
-              <button
-                type="button"
-                onClick={() => setReloadNonce((n) => n + 1)}
-                className="min-h-touch-target rounded-md border border-forest px-design-4 text-label font-semibold text-forest"
-              >
-                {t("dashboard.retry")}
-              </button>
+              <p className="text-body text-status-error">{t(failureMessageKey(state.failure))}</p>
+
+              {/* The line that was missing: the HTTP status and the backend's own error code.
+                  An officer can ignore it; it is the first thing anyone debugging needs, and
+                  it is what previously required opening DevTools to see. */}
+              {"status" in state.failure && (
+                <p className="text-caption text-ink-secondary">
+                  {t("dashboard.error.detail", {
+                    status: state.failure.status,
+                    code: state.failure.code || "—",
+                  })}
+                </p>
+              )}
+
+              {failureRecovery(state.failure) === "retry" && (
+                <button
+                  type="button"
+                  onClick={() => setReloadNonce((n) => n + 1)}
+                  className="min-h-touch-target rounded-md border border-forest px-design-4 text-label font-semibold text-forest"
+                >
+                  {t("dashboard.retry")}
+                </button>
+              )}
+
+              {failureRecovery(state.failure) === "sign-in" && (
+                <Link
+                  href="/officer/login"
+                  className="inline-flex min-h-touch-target items-center rounded-md border border-forest px-design-4 text-label font-semibold text-forest"
+                >
+                  {t("dashboard.error.signIn")}
+                </Link>
+              )}
             </div>
           )}
 
-          {state === "ready" && cases.length === 0 && (
+          {state.kind === "ready" && cases.length === 0 && (
             <p className="text-body text-ink-secondary">{t("dashboard.empty")}</p>
           )}
 
-          {state === "ready" && cases.length > 0 && (
+          {state.kind === "ready" && cases.length > 0 && (
             <ul className="space-y-design-2">
               {cases.map((c) => (
                 <li

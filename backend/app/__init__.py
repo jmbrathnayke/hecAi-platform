@@ -69,6 +69,20 @@ def create_app(config=None):
         f"{supabase_url.rstrip('/')}/auth/v1" if supabase_url else None
     )
 
+    # Household registry pepper (Story 8.1, FR-10.2). Keys the HMAC that makes one NIC produce
+    # one stable digest, which is what the UNIQUE index in migration 024 enforces against.
+    #
+    # No default, deliberately. A fallback value would let registration succeed with digests
+    # anyone reading this repository could recompute, and the failure would stay invisible until
+    # someone audited the database — so nic_identity.py raises NicPepperMissing and the caller
+    # returns 500 `server_misconfigured`, the same treatment auth.py gives an unreachable JWKS.
+    #
+    # ROTATING THIS INVALIDATES THE WHOLE REGISTRY. Every digest changes, no stored value can be
+    # re-derived, and every household would have to register again. There is no recovery path by
+    # design (a reversible one would defeat the pepper). Risk R-13; back it up with the same
+    # custody as DATABASE_URL.
+    app.config["NIC_PEPPER"] = os.getenv("NIC_PEPPER")
+
     # Twilio SMS fallback (Story 3.6). Absent in tests (mocked) and until the DWC Twilio number
     # is provisioned; the webhook fails signature validation closed when TWILIO_AUTH_TOKEN is unset.
     app.config["TWILIO_ACCOUNT_SID"] = os.getenv("TWILIO_ACCOUNT_SID")
