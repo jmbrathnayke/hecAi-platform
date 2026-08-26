@@ -79,6 +79,66 @@
       "submit": "Submit Report"
     }
   },
+  "register": {
+    "steps": {
+      "registrant": "You",
+      "family": "Family",
+      "area": "Area"
+    },
+    "step1": {
+      "title": "Register your family",
+      "intro": "Only one person from each family registers. Start with your own ID number.",
+      "nic": "Your NIC number",
+      "fullName": "Your full name",
+      "nicError": "Enter a valid NIC number (9 digits and V, or 12 digits)."
+    },
+    "step2": {
+      "title": "Who is in your family?",
+      "intro": "Add the people who live in your household.",
+      "why": "Only one person from a family registers. This is so your family is not paid twice for the same incident.",
+      "nic": "NIC number",
+      "fullName": "Full name",
+      "memberN": "Family member {n}",
+      "addMember": "Add a family member",
+      "remove": "Remove",
+      "nicError": "One of the NIC numbers is not valid.",
+      "duplicateError": "The same NIC number is listed twice."
+    },
+    "step3": {
+      "title": "Where do you live?",
+      "intro": "This decides which officers and which Divisional Secretariat office handle your claims.",
+      "districtLabel": "District",
+      "districtPlaceholder": "Select your district",
+      "dsDivisionLabel": "Divisional Secretariat division",
+      "dsDivisionPlaceholder": "Select your division",
+      "gnLabel": "Grama Niladhari division (optional)",
+      "areaError": "Please select your district and division."
+    },
+    "error": {
+      "alreadyRegistered": "You have already registered a household.",
+      "nicTakenRegistrant": "Your family is already registered. Talk to the Divisional Secretariat office to be added to your family registration.",
+      "nicTakenMember": "One of the ID numbers you entered is already registered with another family. Please check it, or talk to the Divisional Secretariat office.",
+      "invalidNic": "That NIC number is not valid.",
+      "invalidDivision": "That district and division combination does not exist.",
+      "duplicateInForm": "The same person is listed twice.",
+      "invalidForm": "Some of the details are missing or not valid.",
+      "noSession": "You are not signed in.",
+      "forbidden": "This account cannot register a household.",
+      "config": "This app is not configured to sign you in. Please contact support.",
+      "network": "Could not reach the server. Check your connection.",
+      "server": "The server could not complete your registration."
+    },
+    "done": {
+      "label": "Your family is registered",
+      "body": "Keep this number. You can now report an incident.",
+      "reportIncident": "Report an incident"
+    },
+    "next": "Next",
+    "back": "Back",
+    "submit": "Register",
+    "submitting": "Registering…",
+    "retry": "Try again"
+  },
   "poc": {
     "title": "Proof of Claim",
     "canonicalLabel": "Reference Number",
