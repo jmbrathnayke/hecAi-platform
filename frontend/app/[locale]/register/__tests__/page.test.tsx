@@ -4,7 +4,16 @@ import { registerHousehold } from "@/lib/households";
 
 const push = jest.fn();
 const mockRouter = { push, replace: jest.fn() };
-jest.mock("@/navigation", () => ({ useRouter: () => mockRouter }));
+// `Link` is needed as well as `useRouter`: the Story 8.3 conflict screen renders locale-aware
+// links, and a mock that omits it makes <Link> undefined, which throws on render.
+jest.mock("@/navigation", () => ({
+  useRouter: () => mockRouter,
+  Link: ({ href, children, ...rest }: { href: string; children: React.ReactNode }) => (
+    <a href={href} {...rest}>
+      {children}
+    </a>
+  ),
+}));
 
 // Identity translator: t("step1.title") -> "step1.title" (same pattern as the report tests).
 jest.mock("next-intl", () => ({ useTranslations: () => (k: string) => k }));
@@ -45,11 +54,12 @@ function completeStep1(nic = NIC_CURRENT) {
   fireEvent.click(screen.getByText("next"));
 }
 
-/** Walk to step 3 and pick an area. */
+/** Walk all the way to the final step, with an area picked and the optional bank step skipped. */
 function reachStep3(nic = NIC_CURRENT) {
   completeStep1(nic);
-  fireEvent.click(screen.getByText("next")); // skip family step
+  fireEvent.click(screen.getByText("next")); // skip the family step
   fireEvent.click(screen.getByText("pick-area"));
+  fireEvent.click(screen.getByText("next")); // Story 8.6 added the optional bank step
 }
 
 describe("step navigation", () => {
@@ -129,11 +139,13 @@ describe("family members", () => {
 });
 
 describe("submission", () => {
-  it("requires an area before submitting", () => {
+  it("will not leave the area step without an area", () => {
+    // Story 8.6 moved this check earlier: the bank step now sits after the area step, so an
+    // unset area has to be caught on the way out of step 3 rather than at submit.
     render(<RegisterHouseholdPage />);
     completeStep1();
     fireEvent.click(screen.getByText("next"));
-    fireEvent.click(screen.getByText("submit"));
+    fireEvent.click(screen.getByText("next"));
     expect(screen.getByRole("alert")).toHaveTextContent("step3.areaError");
     expect(mockRegister).not.toHaveBeenCalled();
   });
@@ -147,6 +159,7 @@ describe("submission", () => {
     });
     fireEvent.click(screen.getByText("next"));
     fireEvent.click(screen.getByText("pick-area"));
+    fireEvent.click(screen.getByText("next"));
     fireEvent.click(screen.getByText("submit"));
 
     await waitFor(() => expect(mockRegister).toHaveBeenCalledTimes(1));
@@ -179,7 +192,7 @@ describe("submission", () => {
 });
 
 describe("failures", () => {
-  it("names the household when the citizen's OWN nic is already registered", async () => {
+  it("REPLACES the form when the citizen's OWN nic is already registered (Story 8.3)", async () => {
     mockRegister.mockResolvedValue({
       ok: false,
       failure: { reason: "nic-taken", scope: "registrant", householdRef: "HH-2026-0042" },
@@ -188,10 +201,28 @@ describe("failures", () => {
     reachStep3();
     fireEvent.click(screen.getByText("submit"));
 
-    expect(await screen.findByText("error.nicTakenRegistrant")).toBeInTheDocument();
+    // The family is in the registry; there is nothing on this form left to correct, so the form
+    // is gone rather than sitting under a red line offering a fix that does not exist.
+    expect(await screen.findByTestId("household-conflict")).toBeInTheDocument();
     expect(screen.getByTestId("conflict-household-ref")).toHaveTextContent("HH-2026-0042");
+    expect(screen.getByText("conflict.titleFamily")).toBeInTheDocument();
+    expect(screen.queryByText("submit")).not.toBeInTheDocument();
     // Retrying cannot free an occupied NIC.
     expect(screen.queryByText("retry")).not.toBeInTheDocument();
+  });
+
+  it("falls back to an inline message when the 409 carries no reference to show", async () => {
+    // A takeover screen whose whole point is to hand over a number is useless without one.
+    mockRegister.mockResolvedValue({
+      ok: false,
+      failure: { reason: "nic-taken", scope: "registrant", householdRef: "" },
+    });
+    render(<RegisterHouseholdPage />);
+    reachStep3();
+    fireEvent.click(screen.getByText("submit"));
+
+    expect(await screen.findByText("error.nicTakenRegistrant")).toBeInTheDocument();
+    expect(screen.queryByTestId("household-conflict")).not.toBeInTheDocument();
   });
 
   it("does NOT reveal another family's reference on a member clash", async () => {
@@ -207,7 +238,7 @@ describe("failures", () => {
     expect(screen.queryByTestId("conflict-household-ref")).not.toBeInTheDocument();
   });
 
-  it("tells a citizen who already registered, and names their household", async () => {
+  it("shows the own-account variant to a citizen who already registered (Story 8.3)", async () => {
     mockRegister.mockResolvedValue({
       ok: false,
       failure: { reason: "already-registered", householdRef: "HH-2026-0007" },
@@ -216,8 +247,12 @@ describe("failures", () => {
     reachStep3();
     fireEvent.click(screen.getByText("submit"));
 
-    expect(await screen.findByText("error.alreadyRegistered")).toBeInTheDocument();
+    expect(await screen.findByTestId("household-conflict")).toBeInTheDocument();
+    expect(screen.getByText("conflict.titleYou")).toBeInTheDocument();
     expect(screen.getByTestId("conflict-household-ref")).toHaveTextContent("HH-2026-0007");
+    // This citizen has a household already — send them on, not to the DS office.
+    expect(screen.getByText("conflict.reportIncident")).toBeInTheDocument();
+    expect(screen.queryByText("conflict.whatToDo")).not.toBeInTheDocument();
   });
 
   it("offers retry on a network failure", async () => {
@@ -273,11 +308,80 @@ describe("PII discipline (NFR-3.1)", () => {
     });
     fireEvent.click(screen.getByText("next"));
     fireEvent.click(screen.getByText("pick-area"));
+    fireEvent.click(screen.getByText("next"));
     fireEvent.click(screen.getByText("submit"));
     await screen.findByTestId("registration-receipt");
 
     const dump = JSON.stringify({ ...window.sessionStorage, ...window.localStorage });
     expect(dump).not.toContain(NIC_CURRENT);
     expect(dump).not.toContain(NIC_MEMBER);
+  });
+});
+
+// --- Story 8.6: the optional bank step ------------------------------------------------------
+
+describe("bank details are optional", () => {
+  it("omits `bank` entirely when the step is skipped", async () => {
+    // An empty object would be a 400 from the backend; the field has to be absent, not blank.
+    render(<RegisterHouseholdPage />);
+    reachStep3();
+    fireEvent.click(screen.getByText("submit"));
+    await waitFor(() => expect(mockRegister).toHaveBeenCalled());
+    expect(mockRegister.mock.calls[0][0].bank).toBeUndefined();
+  });
+
+  it("says plainly that the step can be skipped", () => {
+    render(<RegisterHouseholdPage />);
+    reachStep3();
+    expect(screen.getByText("step4.optional")).toBeInTheDocument();
+  });
+
+  it("sends the account when one is given", async () => {
+    render(<RegisterHouseholdPage />);
+    reachStep3();
+    fireEvent.change(screen.getByLabelText("step4.accountNumber"), {
+      target: { value: "8001234567890" },
+    });
+    fireEvent.change(screen.getByLabelText("step4.bankName"), {
+      target: { value: "Bank of Ceylon" },
+    });
+    fireEvent.click(screen.getByText("submit"));
+
+    await waitFor(() => expect(mockRegister).toHaveBeenCalled());
+    expect(mockRegister.mock.calls[0][0].bank).toEqual(
+      expect.objectContaining({
+        account_number: "8001234567890",
+        bank_name: "Bank of Ceylon",
+      }),
+    );
+  });
+
+  it("never writes the account number to browser storage", async () => {
+    // Same rule as the NICs: it exists in component state, travels once over TLS, and is gone.
+    render(<RegisterHouseholdPage />);
+    reachStep3();
+    fireEvent.change(screen.getByLabelText("step4.accountNumber"), {
+      target: { value: "8001234567890" },
+    });
+    fireEvent.click(screen.getByText("submit"));
+    await screen.findByTestId("registration-receipt");
+
+    const dump = JSON.stringify({ ...window.sessionStorage, ...window.localStorage });
+    expect(dump).not.toContain("8001234567890");
+  });
+
+  it("surfaces a rejected account number without losing the rest of the form", async () => {
+    mockRegister.mockResolvedValue({ ok: false, failure: { reason: "invalid-bank" } });
+    render(<RegisterHouseholdPage />);
+    reachStep3();
+    fireEvent.change(screen.getByLabelText("step4.accountNumber"), {
+      target: { value: "?" },
+    });
+    fireEvent.click(screen.getByText("submit"));
+
+    expect(await screen.findByText("error.invalidBank")).toBeInTheDocument();
+    // Inline, not a takeover — this one the citizen can fix right here.
+    expect(screen.queryByTestId("household-conflict")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("step4.accountNumber")).toBeInTheDocument();
   });
 });

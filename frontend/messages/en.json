@@ -22,6 +22,12 @@
     "reconnected": "Back online — syncing your reports"
   },
   "report": {
+    "gate": {
+      "checking": "Checking your registration…",
+      "title": "Register your family first",
+      "body": "Before you can report an incident, one person from your family needs to be registered. It only takes a few minutes, and you only do it once.",
+      "register": "Register my family"
+    },
     "steps": {
       "identity": "Identity",
       "location": "Location",
@@ -83,7 +89,8 @@
     "steps": {
       "registrant": "You",
       "family": "Family",
-      "area": "Area"
+      "area": "Area",
+      "bank": "Bank"
     },
     "step1": {
       "title": "Register your family",
@@ -114,6 +121,14 @@
       "gnLabel": "Grama Niladhari division (optional)",
       "areaError": "Please select your district and division."
     },
+    "step4": {
+      "title": "Bank account (optional)",
+      "intro": "If you give an account, the Divisional Secretariat can pay compensation into it directly.",
+      "optional": "You can skip this. The Divisional Secretariat office can add your account later.",
+      "accountNumber": "Account number",
+      "bankName": "Bank",
+      "branch": "Branch"
+    },
     "error": {
       "alreadyRegistered": "You have already registered a household.",
       "nicTakenRegistrant": "Your family is already registered. Talk to the Divisional Secretariat office to be added to your family registration.",
@@ -126,7 +141,18 @@
       "forbidden": "This account cannot register a household.",
       "config": "This app is not configured to sign you in. Please contact support.",
       "network": "Could not reach the server. Check your connection.",
-      "server": "The server could not complete your registration."
+      "server": "The server could not complete your registration.",
+      "invalidBank": "Please check the account number."
+    },
+    "conflict": {
+      "titleFamily": "Your family is already registered",
+      "titleYou": "You have already registered your family",
+      "refLabel": "Your household number",
+      "why": "Only one person from each family registers, so your family is not paid twice for the same loss.",
+      "whatToDo": "Talk to the Divisional Secretariat office to be added to your family registration — or to move it to your name if the registered person has died.",
+      "checkStatus": "Check claim status",
+      "reportIncident": "Report an incident",
+      "goHome": "Go to home"
     },
     "done": {
       "label": "Your family is registered",
@@ -323,7 +349,9 @@
       "reviewNotes": "Field notes",
       "submitError": "Could not complete the submission. Please try again.",
       "submitting": "Submitting…",
-      "submit": "Submit report"
+      "submit": "Submit report",
+      "householdNotRegistered": "This family is not registered. They must register at the Divisional Secretariat office before a claim can be filed.",
+      "householdLookupFailed": "Could not check the registration. Check your connection and try again."
     },
     "submitPoc": {
       "title": "Proof of Claim issued",
@@ -403,6 +431,46 @@
     "navNewReport": "New Report",
     "navClassify": "Classify",
     "navQueue": "Queue"
+  },
+  "ds": {
+    "title": "Divisional Secretariat",
+    "divisionLabel": "Division",
+    "loading": "Loading cases…",
+    "empty": "No cases in your division yet.",
+    "retry": "Try again",
+    "household": "Household",
+    "noHousehold": "Not linked to a household",
+    "filterAll": "All",
+    "error": {
+      "forbidden": "This account does not have Divisional Secretariat access.",
+      "noDivision": "No division is assigned to this account. An administrator must assign one.",
+      "signedOut": "Your session has expired.",
+      "server": "The server could not load your cases.",
+      "network": "Could not reach the server. Check your connection.",
+      "detail": "HTTP {status} · {code}"
+    },
+    "payment": {
+      "title": "Authorize payment",
+      "reveal": "Show account and authorize",
+      "revealing": "Authorizing…",
+      "warning": "The account number is shown only here, and every time it is shown is recorded.",
+      "accountNumber": "Account number",
+      "bankName": "Bank",
+      "branch": "Branch",
+      "accountHolder": "Account holder",
+      "amount": "Approved amount",
+      "authorizedAt": "Authorized",
+      "close": "Close",
+      "error": {
+        "notFound": "That case is not in your division.",
+        "notApproved": "This case has not been approved yet. The DWC administrator approves it before payment.",
+        "noHousehold": "This case is not linked to a registered household, so it cannot be paid.",
+        "noBankDetails": "This family has not given bank details. Ask them to provide an account.",
+        "unreadable": "The stored bank details could not be read. Contact the system administrator — do not ask the family to re-enter them.",
+        "server": "The server could not authorize this payment.",
+        "network": "Could not reach the server. Check your connection."
+      }
+    }
   },
   "admin": {
     "languageLabel": "Language",

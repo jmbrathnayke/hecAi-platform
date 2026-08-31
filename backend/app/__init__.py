@@ -83,6 +83,18 @@ def create_app(config=None):
     # custody as DATABASE_URL.
     app.config["NIC_PEPPER"] = os.getenv("NIC_PEPPER")
 
+    # Bank-detail encryption key (Story 8.6, FR-10.4). Fernet, server-side — the Divisional
+    # Secretariat must READ an account number to pay it, so unlike the NIC this is reversible
+    # encryption and unlike the client's AES-GCM key it cannot be per-device.
+    #
+    # No default, same as NIC_PEPPER: bank_crypto raises BankKeyMissing rather than storing
+    # an account number in the clear, and the caller returns 500 server_misconfigured.
+    # Registration simply refuses the optional bank step; the rest of registration works.
+    #
+    # Unlike NIC_PEPPER this CAN be rotated (the ciphertext is reversible), but doing so is a
+    # decrypt-old/encrypt-new migration over every row, and no such script exists yet.
+    app.config["BANK_DETAILS_KEY"] = os.getenv("BANK_DETAILS_KEY")
+
     # Twilio SMS fallback (Story 3.6). Absent in tests (mocked) and until the DWC Twilio number
     # is provisioned; the webhook fails signature validation closed when TWILIO_AUTH_TOKEN is unset.
     app.config["TWILIO_ACCOUNT_SID"] = os.getenv("TWILIO_ACCOUNT_SID")
@@ -119,6 +131,7 @@ def create_app(config=None):
     from app.api.v1.admin import admin_bp
     from app.api.v1.research import research_bp
     from app.api.v1.households import households_bp
+    from app.api.v1.ds import ds_bp
 
     app.register_blueprint(health_bp, url_prefix="/api/v1")
     app.register_blueprint(cases_bp, url_prefix="/api/v1")
@@ -131,5 +144,6 @@ def create_app(config=None):
     app.register_blueprint(admin_bp, url_prefix="/api/v1")
     app.register_blueprint(research_bp, url_prefix="/api/v1")
     app.register_blueprint(households_bp, url_prefix="/api/v1")
+    app.register_blueprint(ds_bp, url_prefix="/api/v1")
 
     return app

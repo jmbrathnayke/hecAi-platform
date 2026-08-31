@@ -31,9 +31,11 @@ import psycopg2
 import psycopg2.errors
 from flask import Blueprint, current_app, g, jsonify, request
 
-from app.api.v1.middleware.auth import require_citizen
+from app.api.v1.middleware.auth import require_citizen, require_officer
+from app.infrastructure import registry
 from app.infrastructure.audit import write_audit_log
 from app.infrastructure.geo.divisions import is_valid_pair
+from app.infrastructure.security.bank_crypto import BankKeyMissing, encrypt_bank_details
 from app.infrastructure.security.nic_identity import NicPepperMissing, nic_hmac
 
 households_bp = Blueprint("households", __name__)
@@ -140,6 +142,26 @@ def register_household():
     if len(set(digests)) != len(digests):
         return jsonify({"error": "duplicate_nic_in_form"}), 400
 
+    # Optional bank details (FR-10.4). Encrypted BEFORE the transaction opens so a crypto or
+    # configuration failure cannot abort a half-written registration — a family that mistyped an
+    # account number must not lose their household registration over it.
+    bank_ciphertext = None
+    bank_last4 = None
+    bank = body.get("bank")
+    if bank is not None:
+        try:
+            bank_ciphertext, bank_last4 = encrypt_bank_details(
+                bank, current_app.config.get("BANK_DETAILS_KEY")
+            )
+        except BankKeyMissing:
+            # A deployment without the key must not silently store an account number in the clear,
+            # and must not silently drop it either — the citizen would believe it was recorded.
+            current_app.logger.error("bank details supplied but BANK_DETAILS_KEY is not configured")
+            return jsonify({"error": "server_misconfigured"}), 500
+        except (ValueError, TypeError):
+            # No account number in the message. It is the one field here as sensitive as the NIC.
+            return jsonify({"error": "invalid_bank_details"}), 400
+
     try:
         conn = _get_connection()
         try:
@@ -176,10 +198,12 @@ def register_household():
 
                     cur.execute(
                         """INSERT INTO households
-                             (household_ref, district, ds_division, gn_division, registrant_uid)
-                           VALUES (%s, %s, %s, %s, %s) RETURNING id""",
+                             (household_ref, district, ds_division, gn_division, registrant_uid,
+                              bank_details_ciphertext, bank_account_last4)
+                           VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id""",
                         (household_ref, district, ds_division,
-                         _clean_text(body.get("gn_division")), citizen_id),
+                         _clean_text(body.get("gn_division")), citizen_id,
+                         bank_ciphertext, bank_last4),
                     )
                     household_id = cur.fetchone()[0]
 
@@ -197,7 +221,10 @@ def register_household():
                     write_audit_log(
                         cur, None, "household_registered", citizen_id,
                         {"household_ref": household_ref, "district": district,
-                         "ds_division": ds_division, "member_count": len(people)},
+                         "ds_division": ds_division, "member_count": len(people),
+                         # Whether, not what. The audit trail must not become the PII store the
+                         # rest of this design goes to lengths to avoid.
+                         "bank_details_provided": bank_ciphertext is not None},
                     )
         finally:
             conn.close()
@@ -214,6 +241,9 @@ def register_household():
         "district": district,
         "ds_division": ds_division,
         "member_count": len(people),
+        # The tail only, and only so the citizen can confirm they typed the right account. The
+        # full number is never returned by this endpoint or any other except the DS payment view.
+        "bank_account_last4": bank_last4,
     }), 201
 
 
@@ -255,6 +285,56 @@ def _conflict_after_race(digests):
         current_app.logger.exception("conflict re-read failed after unique violation")
         return jsonify({"error": "nic_already_registered", "scope": "member"}), 409
     return _conflict_response(digests[0], taken)
+
+
+@households_bp.route("/households/lookup", methods=["POST"])
+@require_officer()
+def lookup_household():
+    """NIC in, household reference out — the officer-assisted path's missing half (Story 8.5).
+
+    Story 8.4 gated `POST /cases/submit` on a `household_ref`, but the officer app had no way to
+    obtain one: it AES-GCM encrypts the citizen's NIC with a non-extractable device key, so the
+    reference cannot be derived client-side and cannot be recovered from the stored ciphertext.
+    This endpoint closes that gap; without it officer-assisted submission cannot complete.
+
+    POST, not GET, so the NIC travels in a request body rather than a URL — query strings end up
+    in access logs, browser history and Referer headers, and this is the one identifier the whole
+    Epic 8 design goes to lengths never to persist in the clear.
+
+    Officer-only. It answers "is this NIC registered, and where", which is exactly the probe the
+    registration endpoint withholds from citizens; officers already hold far more of a claimant's
+    data by virtue of standing in front of them with their card. Returns NO member list — the
+    officer needs the reference to file a case, not the family's composition.
+    """
+    pepper = current_app.config.get("NIC_PEPPER")
+    if not pepper:
+        current_app.logger.error("household lookup attempted with no NIC_PEPPER configured")
+        return jsonify({"error": "server_misconfigured"}), 500
+
+    body = request.get_json(silent=True) or {}
+
+    try:
+        conn = _get_connection()
+        try:
+            with conn:
+                with conn.cursor() as cur:
+                    household = registry.resolve_by_nic(cur, body.get("nic"), pepper)
+        finally:
+            conn.close()
+    except psycopg2.Error:
+        current_app.logger.exception("household lookup failed")
+        return jsonify({"error": "server_error"}), 500
+
+    if not household:
+        # Covers "no such registration" and "malformed NIC" alike: resolve_by_nic returns None
+        # for both, and distinguishing them here would confirm that a well-formed NIC exists.
+        return jsonify({"error": "not_registered"}), 404
+
+    return jsonify({
+        "household_ref": household["household_ref"],
+        "district": household["district"],
+        "ds_division": household["ds_division"],
+    }), 200
 
 
 @households_bp.route("/households/me", methods=["GET"])

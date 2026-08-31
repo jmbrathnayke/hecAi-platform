@@ -18,6 +18,9 @@ Dry run by default: it prints the before/after app_metadata and writes nothing u
                           names that must match `cases.ds_division_id` byte-for-byte, so reading
                           them from a generated file beats retyping them.
   --district ID           Sets district_id (admins are scoped to one district).
+  --division NAME         Sets ds_division (a Divisional Secretariat officer is scoped to ONE
+                          division, e.g. තලාව). Singular on purpose: unlike an officer's
+                          assigned_divisions list, a DS officer belongs to one DS office.
 
 THE SERVICE ROLE KEY IS NOT THE ANON KEY. It bypasses row-level security entirely. Pass it
 through the environment, never a command-line argument (argv is world-readable in `ps`), and
@@ -35,7 +38,7 @@ import sys
 import requests
 
 TIMEOUT = 30
-VALID_ROLES = ("officer", "admin", "system_admin")
+VALID_ROLES = ("officer", "admin", "system_admin", "ds_officer")
 
 
 def _env(name):
@@ -85,6 +88,12 @@ def get_user(base, headers, user_id):
 
 
 def main():
+    # Sinhala DS-division names appear in --help, in the before/after claim dump, and in
+    # several error strings; Windows consoles default to cp1252 and raise
+    # UnicodeEncodeError on them. Same guard as scripts/check_migration_parity.py.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
@@ -92,6 +101,8 @@ def main():
     parser.add_argument("--role", required=True, choices=VALID_ROLES)
     parser.add_argument("--divisions-from", help="JSON file of assigned_divisions")
     parser.add_argument("--district", help="district_id, for admins")
+    parser.add_argument("--division",
+                        help="ds_division, for ds_officer (ONE division, Sinhala name)")
     parser.add_argument("--apply", action="store_true", help="perform the write (default: dry run)")
     args = parser.parse_args()
 
@@ -112,11 +123,38 @@ def main():
         updated["assigned_divisions"] = _load_divisions(args.divisions_from)
     if args.district:
         updated["district_id"] = args.district
+    if args.division:
+        updated["ds_division"] = args.division
 
     # Promoting officer -> admin must not leave the old division list behind. migration
     # 005_create_users_table.sql enforces CHECK (role = 'admin' => assigned_divisions IS NULL),
     # so a merge that keeps them produces app_metadata the durable `users` mirror would reject —
     # the two sources of truth silently disagreeing about what this person can read.
+    # Story 8.5. A ds_officer is scoped by ONE division; migration 026's users_role_scope_check
+    # rejects a ds_officer row carrying assigned_divisions or district_id, so leaving either behind
+    # after a role change would make app_metadata and the durable `users` mirror disagree about
+    # what this person can read — the same failure the admin branch below guards against.
+    if args.role == "ds_officer":
+        if args.divisions_from:
+            sys.exit(
+                "ERROR: --divisions-from is not valid with --role ds_officer. That flag sets an "
+                "officer's assigned_divisions LIST; a DS officer has one division — use --division."
+            )
+        if args.district:
+            sys.exit(
+                "ERROR: --district is not valid with --role ds_officer. Districts scope admins; "
+                "a DS officer is scoped to one DS division — use --division."
+            )
+        if not args.division and not current.get("ds_division"):
+            sys.exit(
+                "ERROR: --role ds_officer requires --division. Without it the guard returns 403 "
+                "no_division_assigned on every request and the officer sees nothing."
+            )
+        for stale in ("assigned_divisions", "district_id"):
+            if stale in updated:
+                print(f"note   : dropping {stale} — it does not apply to role ds_officer.")
+                updated.pop(stale)
+
     if args.role in ("admin", "system_admin") and "assigned_divisions" in updated:
         if args.divisions_from:
             sys.exit(
@@ -128,6 +166,10 @@ def main():
             f" — they do not apply to role {args.role}."
         )
         updated.pop("assigned_divisions")
+
+    if args.role != "ds_officer" and "ds_division" in updated:
+        print(f"note   : dropping ds_division — it does not apply to role {args.role}.")
+        updated.pop("ds_division")
 
     print(f"after  : {json.dumps(updated, ensure_ascii=False)}\n")
     if updated == current:

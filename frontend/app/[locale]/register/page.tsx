@@ -20,6 +20,10 @@ import { StepIndicator } from "@/components/StepIndicator";
 import { DistrictPicker, type DistrictSelection } from "@/components/DistrictPicker";
 import { isValidNIC } from "@/lib/validation";
 import { registerHousehold, type RegisterFailure } from "@/lib/households";
+import {
+  HouseholdConflictScreen,
+  type ConflictVariant,
+} from "@/components/HouseholdConflictScreen";
 
 interface MemberDraft {
   key: number;
@@ -46,6 +50,8 @@ function failureKey(f: RegisterFailure): string {
       return "error.invalidDivision";
     case "duplicate-nic-in-form":
       return "error.duplicateInForm";
+    case "invalid-bank":
+      return "error.invalidBank";
     case "invalid-form":
       return "error.invalidForm";
     case "no-session":
@@ -72,6 +78,27 @@ function householdRefOf(f: RegisterFailure): string | null {
   return null;
 }
 
+/**
+ * Which failures replace the whole form, and which merely annotate it (Story 8.3).
+ *
+ * A clash on the REGISTRANT'S OWN NIC means this family is already in the registry. There is
+ * nothing on the form to correct, so leaving the half-filled form on screen under a red line
+ * would be offering a fix that does not exist — and, per EXPERIENCE.md, would read as an
+ * accusation to someone who has done nothing wrong. It takes over the screen.
+ *
+ * A clash on a DECLARED MEMBER is the opposite: the citizen can remove that person and carry on,
+ * so it stays inline where the form they need to edit still is.
+ *
+ * Returns null when there is no reference to show. A takeover screen whose whole purpose is to
+ * give the citizen a number to quote is worse than useless with the number missing.
+ */
+function takeoverVariant(f: RegisterFailure): ConflictVariant | null {
+  if (!householdRefOf(f)) return null;
+  if (f.reason === "already-registered") return "own-account";
+  if (f.reason === "nic-taken" && f.scope === "registrant") return "family-registered";
+  return null;
+}
+
 export default function RegisterHouseholdPage() {
   const t = useTranslations("register");
   const router = useRouter();
@@ -82,13 +109,19 @@ export default function RegisterHouseholdPage() {
   const [members, setMembers] = useState<MemberDraft[]>([]);
   const [area, setArea] = useState<DistrictSelection | null>(null);
   const [gnDivision, setGnDivision] = useState("");
+  // Step 4, optional (FR-10.4). Held in component state only, like the NICs — never written
+  // to any browser storage. Sent over TLS and encrypted server-side.
+  const [accountNumber, setAccountNumber] = useState("");
+  const [bankName, setBankName] = useState("");
+  const [branch, setBranch] = useState("");
 
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [failure, setFailure] = useState<RegisterFailure | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState<{ householdRef: string; memberCount: number } | null>(null);
 
-  const steps = [t("steps.registrant"), t("steps.family"), t("steps.area")];
+  const steps = [t("steps.registrant"), t("steps.family"), t("steps.area"), t("steps.bank")];
+  const LAST_STEP = 3;
 
   function goNext() {
     setFieldError(null);
@@ -97,6 +130,10 @@ export default function RegisterHouseholdPage() {
         setFieldError(t("step1.nicError"));
         return;
       }
+    }
+    if (step === 2 && !area) {
+      setFieldError(t("step3.areaError"));
+      return;
     }
     if (step === 1) {
       // Every row the user actually filled in must be a valid NIC. Blank rows are ignored rather
@@ -132,6 +169,15 @@ export default function RegisterHouseholdPage() {
       district: area.district,
       ds_division: area.dsDivision,
       gn_division: gnDivision.trim() || undefined,
+      // Omitted entirely when the citizen skipped the step — an empty object would be a 400.
+      bank: accountNumber.trim()
+        ? {
+            account_number: accountNumber.trim(),
+            bank_name: bankName.trim() || undefined,
+            branch: branch.trim() || undefined,
+            account_holder: fullName.trim() || undefined,
+          }
+        : undefined,
       members: members
         .filter((m) => m.nic.trim() !== "")
         .map((m) => ({
@@ -147,6 +193,20 @@ export default function RegisterHouseholdPage() {
       return;
     }
     setFailure(result.failure);
+  }
+
+  // -------------------------------------------------- already registered (Story 8.3)
+  // Checked before the success branch and before the form: when the family is already in the
+  // registry this is the only thing on screen.
+  const takeover = failure ? takeoverVariant(failure) : null;
+  if (failure && takeover) {
+    return (
+      <HouseholdConflictScreen
+        variant={takeover}
+        householdRef={householdRefOf(failure) ?? ""}
+        t={t}
+      />
+    );
   }
 
   // ---------------------------------------------------------------- success
@@ -296,6 +356,54 @@ export default function RegisterHouseholdPage() {
         </div>
       )}
 
+      {step === 3 && (
+        <div className="flex flex-col gap-design-4">
+          {/* Optional, and said so plainly. A citizen without an account, or who does not have
+              the number to hand at a village registration desk, must not be stuck here. */}
+          <p className="rounded-md bg-surface-tint p-design-4 text-body text-ink-secondary">
+            {t("step4.optional")}
+          </p>
+
+          <div className="flex flex-col gap-design-1">
+            <label htmlFor="bank-account" className="text-label font-medium text-ink-primary">
+              {t("step4.accountNumber")}
+            </label>
+            <input
+              id="bank-account"
+              inputMode="numeric"
+              autoComplete="off"
+              value={accountNumber}
+              onChange={(e) => setAccountNumber(e.target.value)}
+              className="min-h-touch-target rounded-md border border-border-default px-design-3 text-body text-ink-primary"
+            />
+          </div>
+
+          <div className="flex flex-col gap-design-1">
+            <label htmlFor="bank-name" className="text-label font-medium text-ink-primary">
+              {t("step4.bankName")}
+            </label>
+            <input
+              id="bank-name"
+              value={bankName}
+              onChange={(e) => setBankName(e.target.value)}
+              className="min-h-touch-target rounded-md border border-border-default px-design-3 text-body text-ink-primary"
+            />
+          </div>
+
+          <div className="flex flex-col gap-design-1">
+            <label htmlFor="bank-branch" className="text-label font-medium text-ink-primary">
+              {t("step4.branch")}
+            </label>
+            <input
+              id="bank-branch"
+              value={branch}
+              onChange={(e) => setBranch(e.target.value)}
+              className="min-h-touch-target rounded-md border border-border-default px-design-3 text-body text-ink-primary"
+            />
+          </div>
+        </div>
+      )}
+
       {fieldError && (
         <p role="alert" className="text-body text-status-error">
           {fieldError}
@@ -336,7 +444,7 @@ export default function RegisterHouseholdPage() {
             {t("back")}
           </button>
         )}
-        {step < 2 ? (
+        {step < LAST_STEP ? (
           <button
             type="button"
             onClick={goNext}

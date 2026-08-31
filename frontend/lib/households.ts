@@ -20,6 +20,13 @@ export interface HouseholdMemberInput {
   relationship?: string;
 }
 
+export interface BankDetailsInput {
+  account_number: string;
+  bank_name?: string;
+  branch?: string;
+  account_holder?: string;
+}
+
 export interface RegisterHouseholdInput {
   nic: string;
   full_name?: string;
@@ -27,6 +34,15 @@ export interface RegisterHouseholdInput {
   ds_division: string;
   gn_division?: string;
   members: HouseholdMemberInput[];
+  /**
+   * Optional (FR-10.4). Sent in the clear over TLS and encrypted SERVER-side with a key the
+   * browser never holds — the Divisional Secretariat has to be able to read the account to pay
+   * it, so unlike the NIC this cannot be a one-way digest, and unlike the incident form's fields
+   * it cannot use the per-device AES-GCM key (a desk in Thalawa cannot decrypt what a phone in a
+   * village encrypted). Never persisted client-side: like the NICs, it lives in component state
+   * only and is gone on unmount.
+   */
+  bank?: BankDetailsInput;
 }
 
 export interface Household {
@@ -55,6 +71,7 @@ export type RegisterFailure =
   | { reason: "invalid-nic" }
   | { reason: "invalid-division" }
   | { reason: "duplicate-nic-in-form" }
+  | { reason: "invalid-bank" }
   | { reason: "invalid-form"; code: string }
   | { reason: "no-session" }
   | { reason: "forbidden" }
@@ -63,7 +80,14 @@ export type RegisterFailure =
   | { reason: "network" };
 
 export type RegisterResult =
-  | { ok: true; householdRef: string; district: string; dsDivision: string; memberCount: number }
+  | {
+      ok: true;
+      householdRef: string;
+      district: string;
+      dsDivision: string;
+      memberCount: number;
+      bankAccountLast4: string | null;
+    }
   | { ok: false; failure: RegisterFailure };
 
 /** The backend's `{"error": ...}` envelope, or {} when the body is not the shape we expect. */
@@ -92,6 +116,7 @@ function classify(status: number, body: { error?: string; scope?: string; househ
     if (code === "invalid_nic") return { reason: "invalid-nic" };
     if (code === "invalid_division") return { reason: "invalid-division" };
     if (code === "duplicate_nic_in_form") return { reason: "duplicate-nic-in-form" };
+    if (code === "invalid_bank_details") return { reason: "invalid-bank" };
     return { reason: "invalid-form", code };
   }
   if (status === 401) return { reason: "no-session" };
@@ -131,6 +156,7 @@ export async function registerHousehold(input: RegisterHouseholdInput): Promise<
       district?: string;
       ds_division?: string;
       member_count?: number;
+      bank_account_last4?: string | null;
     };
     if (!data.household_ref) {
       // 201 with no reference is not a success we can show anyone.
@@ -142,9 +168,59 @@ export async function registerHousehold(input: RegisterHouseholdInput): Promise<
       district: data.district ?? input.district,
       dsDivision: data.ds_division ?? input.ds_division,
       memberCount: data.member_count ?? 1 + input.members.length,
+      // The tail only — enough for the citizen to confirm they typed the right account, and the
+      // most any surface but the DS payment view ever sees.
+      bankAccountLast4: data.bank_account_last4 ?? null,
     };
   } catch {
     return { ok: false, failure: { reason: "server", status: res.status, code: "bad_response" } };
+  }
+}
+
+export interface HouseholdLookup {
+  household_ref: string;
+  district: string;
+  ds_division: string;
+}
+
+export type LookupResult =
+  | { status: "found"; household: HouseholdLookup }
+  | { status: "not-registered" }
+  /** Anything that is not a clean yes/no — the officer must not be told "not registered" on a
+   *  network blip, because the correct action (send the family to the DS office) is wrong. */
+  | { status: "error" };
+
+/**
+ * Look a citizen's household up by NIC, for the officer-assisted path (Story 8.5).
+ *
+ * Story 8.4 gated submission on a household reference, but the officer app cannot derive one: it
+ * AES-GCM encrypts the citizen's NIC with a non-extractable device key, so the reference is
+ * recoverable neither client-side nor from the stored ciphertext. This is the only way the
+ * officer app can obtain it, and without it officer-assisted submission cannot complete.
+ *
+ * POST, so the NIC travels in a body rather than a URL — query strings reach access logs,
+ * browser history and Referer headers.
+ */
+export async function lookupHousehold(nic: string): Promise<LookupResult> {
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+    return { status: "error" };
+  }
+  const token = await getAccessToken();
+  if (!token) return { status: "error" };
+
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/households/lookup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ nic }),
+    });
+    if (res.status === 404) return { status: "not-registered" };
+    if (!res.ok) return { status: "error" };
+    const data = (await res.json()) as Partial<HouseholdLookup>;
+    if (!data.household_ref || !data.district || !data.ds_division) return { status: "error" };
+    return { status: "found", household: data as HouseholdLookup };
+  } catch {
+    return { status: "error" };
   }
 }
 

@@ -27,6 +27,7 @@ from flask import Blueprint, current_app, request
 from twilio.request_validator import RequestValidator
 
 from app.infrastructure.audit import write_audit_log
+from app.infrastructure import registry
 from app.infrastructure.ml import compensation
 from app.infrastructure.sms.twilio_client import send_sms
 
@@ -48,6 +49,13 @@ ERROR_REPLY = (
     "Types: CROP/PROPERTY/COMBINED/NONE"
 )
 UNREGISTERED_REPLY = "Your number is not registered as a DWC officer. Contact admin."
+# Story 8.4 (FR-10.3). Distinct from UNREGISTERED_REPLY above, which is about the OFFICER's
+# phone number; this one is about the CITIZEN whose NIC is in the message. Conflating them
+# would send an officer to fix their own account when the family is the thing not registered.
+NOT_REGISTERED_REPLY = (
+    "This NIC is not registered. The family must register at the Divisional Secretariat "
+    "office before a claim can be filed."
+)
 
 
 def _get_connection():
@@ -151,6 +159,20 @@ def inbound_sms():
                                 f"Case {existing[0]} recorded. Ref: {existing[1]}"
                             )
 
+                    # --- FR-10.3 registration gate (Story 8.4) ------------------------
+                    # SMS is the one channel carrying a server-readable plaintext NIC
+                    # (migration 009), so the household resolves straight from it — no
+                    # reference needs to travel in a 160-character message.
+                    #
+                    # resolve_by_nic matches declared MEMBERS as well as registrants: a son
+                    # whose father registered the family is covered by that registration and
+                    # must be able to report.
+                    household = registry.resolve_by_nic(
+                        cur, nic, current_app.config.get("NIC_PEPPER")
+                    )
+                    if household is None:
+                        return reply(NOT_REGISTERED_REPLY)
+
                     offline_id = str(uuid.uuid4())
                     # submitter_identity_hash mirrors the SHAPE the citizen path uses — an
                     # offline_id-scoped SHA-256 (the frontend hashes offline_id:nicCiphertext; SMS
@@ -169,9 +191,10 @@ def inbound_sms():
                              (offline_id, canonical_id, damage_category, gps_lat, gps_lng,
                               submitter_identity_hash, officer_id, submitted_by_officer,
                               submitted_via, citizen_nic_plain, twilio_message_sid,
-                              citizen_mobile_plain, status)
+                              citizen_mobile_plain, status,
+                              household_id, district, ds_division_id)
                            VALUES (%s, %s, %s, %s, %s, %s, %s, TRUE,
-                                   'sms', %s, %s, %s, 'Submitted')
+                                   'sms', %s, %s, %s, 'Submitted', %s, %s, %s)
                            ON CONFLICT (twilio_message_sid) DO NOTHING
                            RETURNING id""",
                         (
@@ -185,6 +208,13 @@ def inbound_sms():
                             nic,
                             message_sid,
                             mobile,
+                            # FR-10.6. Until Story 8.4 the SMS path inserted NO district or
+                            # division at all, so every SMS case was invisible to the
+                            # division-scoped officer query (officer.py:61). The household
+                            # supplies both.
+                            household["id"],
+                            household["district"],
+                            household["ds_division"],
                         ),
                     )
                     row = cur.fetchone()

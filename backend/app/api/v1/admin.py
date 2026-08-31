@@ -645,10 +645,21 @@ def post_case_action(offline_id):
                         # FR-5.6: payment authorization record, created on approval only. No
                         # citizen-identity column (see the story's CRITICAL #3) -- case_id ->
                         # canonical_id is the practical reference this schema can produce.
+                        # FR-5.6 as amended by Story 8.6: the record now carries the household
+                        # reference and the MASKED account tail, copied here so the authorisation
+                        # is self-contained — a family that later changes its account must not
+                        # retroactively rewrite what an existing authorisation says was paid.
+                        # Never the full number: that stays encrypted on households and is read
+                        # at exactly one call site (ds.py's payment authorisation).
                         cur.execute(
-                            """INSERT INTO payment_authorizations (case_id, amount_lkr, authorized_by)
-                               VALUES (%s, %s, %s)""",
-                            (case_id, resolved_amount, g.admin_id),
+                            """INSERT INTO payment_authorizations
+                                 (case_id, amount_lkr, authorized_by,
+                                  household_id, bank_account_last4)
+                               SELECT %s, %s, %s, c.household_id, h.bank_account_last4
+                                 FROM cases c
+                                 LEFT JOIN households h ON h.id = c.household_id
+                                WHERE c.id = %s""",
+                            (case_id, resolved_amount, g.admin_id, case_id),
                         )
                         write_audit_log(
                             cur, case_id, "case_approved", g.admin_id,

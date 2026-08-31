@@ -74,9 +74,19 @@ jest.mock("@/lib/poc", () => ({
   submitCaseOnline: jest.fn(),
 }));
 
+// Story 8.5: the identity step now resolves the citizen's household before it will advance —
+// the officer app cannot derive a household_ref itself (it encrypts the NIC with a
+// non-extractable device key), so this call is the only way it gets one. Default to found;
+// the dedicated tests below override it.
+jest.mock("@/lib/households", () => ({ lookupHousehold: jest.fn() }));
+
 jest.mock("@/lib/mobilenet", () => ({ classifyImage: jest.fn() }));
 jest.mock("@/lib/imageQuality", () => ({ assessImageQuality: jest.fn() }));
 jest.mock("@/lib/geolocation", () => ({ getCurrentPosition: jest.fn() }));
+
+import { lookupHousehold } from "@/lib/households";
+
+const mockLookupHousehold = lookupHousehold as jest.Mock;
 
 // The factory stays empty of behavior — every test's session shape is set via
 // createClient.mockReturnValue(...) at runtime (in beforeEach / individual tests), which avoids
@@ -106,6 +116,14 @@ function mockSession(session: { access_token: string; user: { id: string } } | n
 
 beforeEach(() => {
   push.mockReset();
+  mockLookupHousehold.mockReset().mockResolvedValue({
+    status: "found",
+    household: {
+      household_ref: "HH-2026-0001",
+      district: "අනුරාධපුරය",
+      ds_division: "තලාව",
+    },
+  });
   mockEncrypt.mockClear();
   mockUpdateDraft.mockReset().mockResolvedValue(undefined);
   mockGetDraftId.mockReset().mockReturnValue(null);
@@ -493,4 +511,67 @@ describe("OfficerSubmitPage — camera screen chrome", () => {
     expect(record).not.toHaveProperty("field_notes");
     expect(JSON.stringify(record)).not.toContain(note);
   });
+});
+
+// --- Story 8.5: the FR-10.3 gate on the officer-assisted path -------------------------------
+//
+// The officer is standing with the citizen and their card. Resolving the household at the
+// identity step means an unregistered family is found out in the first seconds — not after the
+// officer has photographed the damage and walked away, which is what a bare 403 at submit time
+// would cost.
+
+async function fillIdentityAndContinue() {
+  render(<OfficerSubmitPage />);
+  await act(async () => {});
+  fireEvent.change(screen.getByLabelText(/submit.citizenNic/i), {
+    target: { value: "200012345678" },
+  });
+  fireEvent.change(screen.getByLabelText(/submit.citizenMobile/i), {
+    target: { value: "0712345678" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "submit.continue" }));
+  await act(async () => {});
+}
+
+it("looks the household up from the NIC the officer typed", async () => {
+  await fillIdentityAndContinue();
+  expect(mockLookupHousehold).toHaveBeenCalledWith("200012345678");
+});
+
+it("stores the household reference on the draft, and never the NIC", async () => {
+  await fillIdentityAndContinue();
+  const [, fields] = mockUpdateDraft.mock.calls.at(-1)!;
+  expect(fields.household_ref).toBe("HH-2026-0001");
+  // The NIC itself stays encrypted, exactly as before Epic 8.
+  expect(JSON.stringify(fields)).not.toContain("200012345678");
+});
+
+it("blocks at the identity step when the family is not registered", async () => {
+  mockLookupHousehold.mockResolvedValue({ status: "not-registered" });
+  await fillIdentityAndContinue();
+  expect(screen.getByText("submit.householdNotRegistered")).toBeInTheDocument();
+  // Still on identity — the officer has not been walked into the location step.
+  expect(screen.getByLabelText(/submit.citizenNic/i)).toBeInTheDocument();
+  expect(mockUpdateDraft).not.toHaveBeenCalled();
+});
+
+it("does NOT say 'not registered' when the lookup itself failed", async () => {
+  // On a network blip that message would send a properly registered family to the DS office to
+  // fix nothing at all.
+  mockLookupHousehold.mockResolvedValue({ status: "error" });
+  await fillIdentityAndContinue();
+  expect(screen.getByText("submit.householdLookupFailed")).toBeInTheDocument();
+  expect(screen.queryByText("submit.householdNotRegistered")).not.toBeInTheDocument();
+});
+
+it("does not look up an invalid NIC", async () => {
+  render(<OfficerSubmitPage />);
+  await act(async () => {});
+  fireEvent.change(screen.getByLabelText(/submit.citizenNic/i), { target: { value: "junk" } });
+  fireEvent.change(screen.getByLabelText(/submit.citizenMobile/i), {
+    target: { value: "0712345678" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "submit.continue" }));
+  await act(async () => {});
+  expect(mockLookupHousehold).not.toHaveBeenCalled();
 });

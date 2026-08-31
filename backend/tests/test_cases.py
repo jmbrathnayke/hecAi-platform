@@ -12,6 +12,16 @@ from app import create_app
 
 SECRET = "test-jwt-secret-0123456789-abcdef-ghij"  # >=32 bytes for HS256
 
+# Story 8.4: every submission now resolves a registered household, and the case inherits the
+# household's district/division rather than taking them from the body (FR-10.6).
+DISTRICT = "අනුරාධපුරය"
+DIVISION = "තලාව"
+
+
+def _household(hid, ref, uid=None, status="active"):
+    return {"id": hid, "household_ref": ref, "district": DISTRICT,
+            "ds_division": DIVISION, "status": status, "registrant_uid": uid}
+
 
 def _token(sub="officer-1"):
     return jwt.encode({"sub": sub}, SECRET, algorithm="HS256")
@@ -28,9 +38,25 @@ class FakeCursor:
     def __exit__(self, *exc):
         return False
 
+    def _household(self, match):
+        """Projects the 5-tuple registry.py selects: id, ref, district, ds_division, status."""
+        hit = next((h for h in self.store["households"] if match(h)), None)
+        return (
+            hit["id"], hit["household_ref"], hit["district"], hit["ds_division"],
+            hit["status"],
+        ) if hit else None
+
     def execute(self, sql: str, params: tuple[Any, ...] = ()):
         if "pg_advisory_xact_lock" in sql:
             self._result = None
+        elif "FROM households WHERE registrant_uid" in sql:
+            uid, status = params
+            self._result = self._household(
+                lambda h: h["registrant_uid"] == uid and h["status"] == status)
+        elif "FROM households WHERE household_ref" in sql:
+            ref, status = params
+            self._result = self._household(
+                lambda h: h["household_ref"] == ref and h["status"] == status)
         elif "SELECT hash FROM audit_log" in sql:
             self._result = (self.store["audit"][-1][5],) if self.store["audit"] else None
         elif "SELECT canonical_id FROM cases" in sql:
@@ -53,6 +79,7 @@ class FakeCursor:
                 "district": params[9],
                 "ds_division": params[10],
                 "locale": params[11] if len(params) > 11 else "si",
+                "household_id": params[12] if len(params) > 12 else None,
             }
             self._result = (self.store["case_pk"],)
         elif "INSERT INTO audit_log" in sql:
@@ -85,7 +112,16 @@ class FakeConn:
 
 @pytest.fixture
 def store():
-    return {"cases": {}, "rows": {}, "seq": 0, "case_pk": 0, "audit": []}
+    return {
+        "cases": {}, "rows": {}, "seq": 0, "case_pk": 0, "audit": [],
+        # Registered households for the two subs these tests authenticate as. A test that
+        # wants the unregistered path empties this list.
+        "households": [
+            _household(1, "HH-2026-0001", uid="officer-1"),
+            _household(2, "HH-2026-0002", uid="officer-7"),
+            _household(3, "HH-2026-0003", uid="citizen-9"),
+        ],
+    }
 
 
 def _officer_token(sub="officer-1", role="officer"):
@@ -128,6 +164,9 @@ def _body(**overrides):
         "gps": {"lat": 7.29, "lng": 80.63},
         "damage_category": "crop",
         "submitter_identity_hash": "abc123",
+        # Ignored on the citizen path (the household comes from the JWT); used on the
+        # officer-assisted path, where the officer has looked the family up first.
+        "household_ref": "HH-2026-0001",
     }
     body.update(overrides)
     return body
@@ -333,18 +372,27 @@ def test_authenticated_citizen_submit_stamps_citizen_id(client, store):
     assert row["submitted_by_officer"] is False
 
 
-def test_officer_token_without_assist_flag_leaves_citizen_id_null(client, store):
-    # A staff (officer) token that is NOT using the officer-assisted flag is not a citizen —
-    # citizen_id stays NULL (staff cases aren't owned via the citizen leg).
+def test_officer_token_without_the_assist_flag_is_now_blocked(client, store):
+    """BEHAVIOUR CHANGE, Story 8.4. This used to create a case with citizen_id NULL — an officer
+    token that is neither a citizen nor using officer-assisted mode.
+
+    Under FR-10.3 there is no household to attach such a case to, and a case with no household
+    can never be paid: compensation goes to a registered family, not to a report. An officer who
+    witnesses an incident should file it in officer-assisted mode against the affected family's
+    household reference, which is the flow FR-1.2 describes.
+
+    The officer's own household (officer-7 is registered above, as a private citizen) is
+    deliberately NOT used: the case belongs to whoever suffered the damage, and silently
+    attaching it to the officer's own family would misroute the compensation.
+    """
     res = client.post(
         "/api/v1/cases/submit",
         json=_body(),
         headers={"Authorization": f"Bearer {_officer_token(sub='officer-7')}"},
     )
-    assert res.status_code == 201
-    row = store["rows"][_body()["offline_id"]]
-    assert row["citizen_id"] is None
-    assert row["officer_id"] is None  # not officer-assisted → officer_id also null
+    assert res.status_code == 403
+    assert res.get_json()["error"] == "not_registered"
+    assert store["rows"] == {}
 
 
 # --- Story 5.2: compensation estimation wired into the submit path --------------------------
@@ -358,7 +406,8 @@ def test_submit_triggers_compensation_estimate(client, store, estimate_spy):
     assert res.status_code == 201
     assert len(estimate_spy) == 1
     assert estimate_spy[0]["damage_category"] == "crop"
-    assert estimate_spy[0]["district"] is None
+    # Story 8.4: no longer None — the district now comes from the registered household.
+    assert estimate_spy[0]["district"] == DISTRICT
 
 
 def test_submit_retry_does_not_re_trigger_compensation_estimate(client, store, estimate_spy):
@@ -368,48 +417,113 @@ def test_submit_retry_does_not_re_trigger_compensation_estimate(client, store, e
     assert len(estimate_spy) == 1
 
 
-def test_submit_with_district_and_severity_persists_and_forwards(client, store, estimate_spy):
-    body = _body(district="අනුරාධපුරය", ds_division="ඉපලෝගම", ai_severity="Moderate")
+# --- Story 8.4: the case inherits its area from the household, never from the body ----------
+#
+# These three replace the Story 5.2 picker tests. Their subject changed rather than disappeared:
+# the old ones asserted the body's district was stored, coerced and null-guarded. FR-10.6 makes
+# the body's district irrelevant, so what has to be proven now is that it is IGNORED — including
+# when it is a plausible-looking, valid-but-wrong value.
+
+
+def test_case_inherits_district_and_division_from_the_household(client, store, estimate_spy):
+    body = _body(ai_severity="Moderate")
     res = client.post(
         "/api/v1/cases/submit", json=body,
         headers={"Authorization": f"Bearer {_token()}"},
     )
     assert res.status_code == 201
     row = store["rows"][body["offline_id"]]
-    assert row["district"] == "අනුරාධපුරය"
-    assert row["ds_division"] == "ඉපලෝගම"
-    assert estimate_spy[0]["district"] == "අනුරාධපුරය"
-    assert estimate_spy[0]["ds_division_id"] == "ඉපලෝගම"
+    assert row["district"] == DISTRICT
+    assert row["ds_division"] == DIVISION
+    assert row["household_id"] == 1
+    assert estimate_spy[0]["district"] == DISTRICT
+    assert estimate_spy[0]["ds_division_id"] == DIVISION
     assert estimate_spy[0]["ai_severity"] == "Moderate"
 
 
-def test_submit_wrong_type_district_is_ignored_not_500(client, store, estimate_spy):
-    body = _body(district=999, ai_severity={"x": 1})
-    res = client.post(
-        "/api/v1/cases/submit", json=body,
-        headers={"Authorization": f"Bearer {_token()}"},
-    )
-    assert res.status_code == 201
-    assert estimate_spy[0]["district"] is None
-    assert estimate_spy[0]["ai_severity"] is None
-
-
-def test_submit_empty_string_district_stored_as_none_not_empty_string(client, store, estimate_spy):
-    # Code review fix: "" used to pass the isinstance(str) guard unmodified, so
-    # cases.district ended up storing '' instead of NULL, and estimate_and_store
-    # received "" instead of None.
-    body = _body(district="", ds_division="", ai_severity="")
+def test_a_district_supplied_in_the_body_is_ignored(client, store, estimate_spy):
+    """The important one. A client sending a real-but-wrong division must not be able to route
+    its own case away from the officers whose area the incident is actually in."""
+    body = _body(district="අම්පාර", ds_division="ඉපලෝගම")
     res = client.post(
         "/api/v1/cases/submit", json=body,
         headers={"Authorization": f"Bearer {_token()}"},
     )
     assert res.status_code == 201
     row = store["rows"][body["offline_id"]]
-    assert row["district"] is None
-    assert row["ds_division"] is None
-    assert estimate_spy[0]["district"] is None
-    assert estimate_spy[0]["ds_division_id"] is None
+    assert row["district"] == DISTRICT
+    assert row["ds_division"] == DIVISION
+
+
+def test_a_malformed_district_in_the_body_is_still_ignored_not_a_500(client, store, estimate_spy):
+    """Pre-Epic-8 offline clients still send these fields; junk in them must not fail a report
+    that is otherwise perfectly valid."""
+    body = _body(district=999, ds_division="", ai_severity={"x": 1})
+    res = client.post(
+        "/api/v1/cases/submit", json=body,
+        headers={"Authorization": f"Bearer {_token()}"},
+    )
+    assert res.status_code == 201
+    assert store["rows"][body["offline_id"]]["district"] == DISTRICT
     assert estimate_spy[0]["ai_severity"] is None
+
+
+# --- Story 8.4: the FR-10.3 registration gate ------------------------------------------------
+
+
+def test_unregistered_citizen_cannot_submit(client, store):
+    store["households"].clear()
+    res = client.post(
+        "/api/v1/cases/submit", json=_body(),
+        headers={"Authorization": f"Bearer {_token()}"},
+    )
+    assert res.status_code == 403
+    assert res.get_json()["error"] == "not_registered"
+    assert store["rows"] == {}
+
+
+def test_a_revoked_household_cannot_submit(client, store):
+    store["households"] = [_household(1, "HH-2026-0001", uid="officer-1", status="revoked")]
+    res = client.post(
+        "/api/v1/cases/submit", json=_body(),
+        headers={"Authorization": f"Bearer {_token()}"},
+    )
+    assert res.status_code == 403
+
+
+def test_a_citizen_cannot_claim_a_household_via_the_body(client, store):
+    """The household comes from the JWT on this path. Naming someone else's reference in the body
+    must not attach the case to their registration."""
+    store["households"] = [_household(9, "HH-2026-0009", uid="somebody-else")]
+    res = client.post(
+        "/api/v1/cases/submit", json=_body(household_ref="HH-2026-0009"),
+        headers={"Authorization": f"Bearer {_token()}"},
+    )
+    assert res.status_code == 403
+
+
+def test_officer_assisted_submit_needs_a_real_household_ref(client, store):
+    body = _body(submitted_by_officer=True, officer_id="officer-1",
+                 household_ref="HH-2026-9999")
+    res = client.post(
+        "/api/v1/cases/submit", json=body,
+        headers={"Authorization": f"Bearer {_officer_token()}"},
+    )
+    assert res.status_code == 403
+    assert res.get_json()["error"] == "not_registered"
+
+
+def test_an_accepted_case_stays_idempotent_after_the_household_is_revoked(client, store):
+    """The gate sits AFTER the idempotency fast path on purpose: a retry of a case the platform
+    already accepted must keep returning its canonical id, not start 403ing."""
+    headers = {"Authorization": f"Bearer {_token()}"}
+    first = client.post("/api/v1/cases/submit", json=_body(), headers=headers)
+    assert first.status_code == 201
+
+    store["households"] = [_household(1, "HH-2026-0001", uid="officer-1", status="revoked")]
+    retry = client.post("/api/v1/cases/submit", json=_body(), headers=headers)
+    assert retry.status_code == 200
+    assert retry.get_json()["canonical_id"] == first.get_json()["canonical_id"]
 
 
 def test_submit_saves_locale(client, store):

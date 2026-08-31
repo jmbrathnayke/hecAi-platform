@@ -9,11 +9,15 @@ import json
 import jwt
 import psycopg2
 import pytest
+from cryptography.fernet import Fernet
 
 from app import create_app
 
 SECRET = "test-jwt-secret-0123456789-abcdef-ghij"  # >=32 bytes for HS256
 PEPPER = "test-pepper-not-a-real-secret"
+# A real Fernet key — generated once and pinned, so these tests do not depend on
+# key generation and a decrypt failure means the code is wrong, not the fixture.
+BANK_KEY = Fernet.generate_key().decode("ascii")
 
 DISTRICT = "අනුරාධපුරය"
 DIVISION = "තලාව"
@@ -91,6 +95,17 @@ class FakeCursor:
             hit = next((h for h in self.store["households"]
                         if h["registrant_uid"] == params[0] and h["status"] == "active"), None)
             self._one = (hit["household_ref"],) if hit else None
+        elif s.startswith("SELECT h.id, h.household_ref"):
+            # registry.resolve_by_nic — one household by ONE digest. Matched before the
+            # registration-conflict query below, which shares the same JOIN clause but takes a
+            # digest ARRAY and returns rows rather than a single household.
+            digest, status = params
+            member = next((m for m in self.store["members"] if m["nic_hmac"] == digest), None)
+            hit = next((h for h in self.store["households"]
+                        if member and h["id"] == member["household_id"]
+                        and h["status"] == status), None)
+            self._one = (hit["id"], hit["household_ref"], hit["district"],
+                         hit["ds_division"], hit["status"]) if hit else None
         elif "FROM household_members m JOIN households h" in s:
             wanted = set(params[0])
             by_id = {h["id"]: h for h in self.store["households"]}
@@ -100,12 +115,13 @@ class FakeCursor:
             self.store["seq"] += 1
             self._one = (self.store["seq"],)
         elif s.startswith("INSERT INTO households"):
-            ref, district, ds_division, gn, uid = params
+            ref, district, ds_division, gn, uid, bank_ct, bank_last4 = params
             new_id = len(self.store["households"]) + 1
             self.store["households"].append({
                 "id": new_id, "household_ref": ref, "district": district,
                 "ds_division": ds_division, "gn_division": gn, "registrant_uid": uid,
                 "status": "active", "registered_at": None,
+                "bank_details_ciphertext": bank_ct, "bank_account_last4": bank_last4,
             })
             self._one = (new_id,)
         elif s.startswith("INSERT INTO household_members"):
@@ -160,6 +176,7 @@ def client(monkeypatch, store):
     app = create_app({
         "TESTING": True, "DATABASE_URL": "postgresql://fake",
         "SUPABASE_JWT_SECRET": SECRET, "NIC_PEPPER": PEPPER,
+        "BANK_DETAILS_KEY": BANK_KEY,
     })
     monkeypatch.setattr("app.api.v1.households._get_connection", lambda: FakeConn(store))
     return app.test_client()
@@ -408,3 +425,97 @@ def test_me_does_not_return_another_citizens_household(client):
 
 def test_me_requires_a_token(client):
     assert client.get("/api/v1/households/me").status_code == 401
+
+
+# --- Story 8.5: POST /households/lookup (officer-assisted path) ------------------------------
+#
+# Story 8.4 gated cases/submit on a household_ref, but the officer app had no way to obtain one:
+# it AES-GCM encrypts the citizen's NIC with a non-extractable device key, so the reference can be
+# derived neither client-side nor from the stored ciphertext. Without this endpoint,
+# officer-assisted submission cannot complete at all.
+
+
+def _officer_token(sub="officer-1"):
+    return jwt.encode(
+        {"sub": sub, "app_metadata": {"role": "officer", "assigned_divisions": [DIVISION]}},
+        SECRET, algorithm="HS256",
+    )
+
+
+def _officer_auth():
+    return {"Authorization": f"Bearer {_officer_token()}"}
+
+
+def test_lookup_returns_the_household_reference_for_a_registered_nic(client):
+    client.post("/api/v1/households", json=_payload(), headers=_auth())
+    res = client.post("/api/v1/households/lookup", json={"nic": NIC_CURRENT},
+                      headers=_officer_auth())
+    assert res.status_code == 200
+    body = res.get_json()
+    assert body["household_ref"].startswith("HH-")
+    assert body["district"] == DISTRICT
+    assert body["ds_division"] == DIVISION
+
+
+def test_lookup_finds_a_declared_member_not_only_the_registrant(client):
+    """A son covered by his father's registration must be findable, or an officer standing in
+    front of him cannot file his family's case."""
+    client.post("/api/v1/households", json=_payload(members=[NIC_OTHER]), headers=_auth())
+    res = client.post("/api/v1/households/lookup", json={"nic": NIC_OTHER},
+                      headers=_officer_auth())
+    assert res.status_code == 200
+
+
+def test_lookup_accepts_either_card_format(client):
+    client.post("/api/v1/households", json=_payload(nic=NIC_CURRENT), headers=_auth())
+    res = client.post("/api/v1/households/lookup", json={"nic": NIC_LEGACY},
+                      headers=_officer_auth())
+    assert res.status_code == 200
+
+
+def test_lookup_404s_for_an_unregistered_nic(client):
+    res = client.post("/api/v1/households/lookup", json={"nic": NIC_THIRD},
+                      headers=_officer_auth())
+    assert res.status_code == 404
+    assert res.get_json()["error"] == "not_registered"
+
+
+def test_lookup_404s_for_a_malformed_nic_without_saying_which(client):
+    """Same response as "not registered": distinguishing them would confirm that a well-formed
+    NIC exists in the registry."""
+    res = client.post("/api/v1/households/lookup", json={"nic": "junk"},
+                      headers=_officer_auth())
+    assert res.status_code == 404
+    assert res.get_json()["error"] == "not_registered"
+
+
+def test_lookup_never_returns_the_member_list(client):
+    """The officer needs a reference to file a case, not the family's composition."""
+    client.post("/api/v1/households",
+                json=_payload(members=[{"nic": NIC_OTHER, "full_name": "Son"}]),
+                headers=_auth())
+    res = client.post("/api/v1/households/lookup", json={"nic": NIC_CURRENT},
+                      headers=_officer_auth())
+    blob = res.get_data(as_text=True)
+    assert "members" not in blob
+    assert "Son" not in blob
+    assert NIC_CURRENT not in blob
+    assert "nic_hmac" not in blob
+
+
+def test_lookup_is_officer_only(client):
+    """Citizens must not get this probe: it answers "is this NIC registered, and where", which is
+    exactly what the registration endpoint withholds from them."""
+    res = client.post("/api/v1/households/lookup", json={"nic": NIC_CURRENT}, headers=_auth())
+    assert res.status_code == 403
+
+
+def test_lookup_requires_a_token(client):
+    assert client.post("/api/v1/households/lookup", json={"nic": NIC_CURRENT}).status_code == 401
+
+
+def test_lookup_fails_closed_with_no_pepper(nopepper_client):
+    res = nopepper_client.post("/api/v1/households/lookup", json={"nic": NIC_CURRENT},
+                               headers=_officer_auth())
+    assert res.status_code == 500
+    assert res.get_json()["error"] == "server_misconfigured"

@@ -16,6 +16,7 @@ import psycopg2
 from flask import Blueprint, current_app, g, jsonify, request
 
 from app.api.v1.middleware.auth import require_officer
+from app.infrastructure import registry
 from app.infrastructure.audit import write_audit_log
 from app.infrastructure.ml import compensation
 
@@ -196,12 +197,22 @@ def _sync_one(cur, item: dict, officer_id: str) -> dict:
     submitted_by_officer = item.get("submitted_by_officer") is True
     item_officer_id = officer_id if submitted_by_officer else None
 
-    # District/DS-division picker (Story 5.2 Task 7) and AI severity (Task 8) -- both
-    # optional, additive fields on the synced item, same shape as the one-shot submit path.
-    district = item.get("district")
-    district = district if isinstance(district, str) and district else None
-    ds_division = item.get("ds_division")
-    ds_division = ds_division if isinstance(ds_division, str) and ds_division else None
+    # --- FR-10.3 registration gate (Story 8.4) --------------------------------------------
+    # Resolved AFTER the already-synced fast path above, so replaying a case the platform has
+    # already accepted keeps returning its canonical id rather than starting to fail.
+    #
+    # Reported PER ITEM rather than failing the batch. An officer's queue can hold 50 cases
+    # collected over days; one unregistered family must not block the other 49 from syncing.
+    # The queue UI (Story 4.4) already renders per-item outcomes.
+    household = registry.resolve_by_ref(cur, item.get("household_ref"))
+    if not household:
+        return {"offline_id": offline_id, "error": "not_registered", "inserted": False}
+
+    household_id = household["id"]
+    # FR-10.6: from the household, never from the item. Same rule as cases.py — a queued draft
+    # built before Epic 8 still carries its own district/ds_division fields and they are ignored.
+    district = household["district"]
+    ds_division = household["ds_division"]
     ai_severity = item.get("ai_severity")
     ai_severity = ai_severity if isinstance(ai_severity, str) and ai_severity else None
 
@@ -214,8 +225,9 @@ def _sync_one(cur, item: dict, officer_id: str) -> dict:
         """INSERT INTO cases
              (offline_id, canonical_id, damage_category,
               gps_lat, gps_lng, submitter_identity_hash,
-              officer_id, submitted_by_officer, district, ds_division_id, locale)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+              officer_id, submitted_by_officer, district, ds_division_id, locale,
+              household_id)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
            ON CONFLICT (offline_id) DO NOTHING
            RETURNING id""",
         (
@@ -230,6 +242,8 @@ def _sync_one(cur, item: dict, officer_id: str) -> dict:
             district,
             ds_division,
             locale,
+            # Appended, so every existing positional index above is unchanged.
+            household_id,
         ),
     )
     row = cur.fetchone()

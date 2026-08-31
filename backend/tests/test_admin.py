@@ -320,9 +320,24 @@ class FakeCursor:
                     self._result = (c["updated_at"],)
                     break
         elif "INSERT INTO payment_authorizations" in sql:
-            case_id, amount, authorized_by = params
+            # Story 8.6: now an INSERT ... SELECT that pulls household_id and the MASKED account
+            # tail from the case's household, so the authorisation is self-contained. The extra
+            # trailing case_id is the SELECT's WHERE parameter.
+            case_id, amount, authorized_by, _where_case_id = params
+            case = next(
+                (c for c in self.store["cases"] if c["id"] == case_id), {}
+            )
+            household_id = case.get("household_id")
+            household = self.store.get("households", {}).get(household_id, {})
             self.store["payment_authorizations"].append(
-                {"case_id": case_id, "amount_lkr": amount, "authorized_by": authorized_by}
+                {
+                    "case_id": case_id,
+                    "amount_lkr": amount,
+                    "authorized_by": authorized_by,
+                    "household_id": household_id,
+                    # NEVER the full number — only the tail is copied here.
+                    "bank_account_last4": household.get("bank_account_last4"),
+                }
             )
         elif "SELECT template FROM sms_templates" in sql:
             # Story 5.6: notify_status_change() always queries language='si' today (CRITICAL
@@ -940,8 +955,17 @@ def test_action_approve_defaults_to_rf_estimate_when_no_amount_given(client, sto
     body = res.get_json()
     assert body["case"]["status"] == "Approved"
     assert body["case"]["approved_amount"] == 45000.0
+    # Story 8.6 (FR-5.6): the record now also carries the household reference and the MASKED
+    # account tail. Both are None here — this fixture's case has no household, which is the
+    # pre-Epic-8 shape the nullable columns exist to keep valid.
     assert store["payment_authorizations"] == [
-        {"case_id": _CASE_1_ID, "amount_lkr": 45000.0, "authorized_by": "admin-1"}
+        {
+            "case_id": _CASE_1_ID,
+            "amount_lkr": 45000.0,
+            "authorized_by": "admin-1",
+            "household_id": None,
+            "bank_account_last4": None,
+        }
     ]
 
 

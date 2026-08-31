@@ -16,6 +16,17 @@ from app import create_app
 
 SECRET = "test-jwt-secret-0123456789-abcdef-ghij"  # >=32 bytes for HS256
 
+# Story 8.4: every synced item now resolves a registered household by reference, and the case
+# inherits that household's district/division rather than the item's own (FR-10.6).
+DISTRICT = "අනුරාධපුරය"
+DIVISION = "තලාව"
+HOUSEHOLD_REF = "HH-2026-0001"
+
+
+def _household(hid=1, ref=HOUSEHOLD_REF, status="active"):
+    return {"id": hid, "household_ref": ref, "district": DISTRICT,
+            "ds_division": DIVISION, "status": status}
+
 
 def _officer_token(sub="officer-1", role="officer"):
     return jwt.encode({"sub": sub, "app_metadata": {"role": role}}, SECRET, algorithm="HS256")
@@ -38,6 +49,14 @@ class FakeCursor:
 
         if "pg_advisory_xact_lock" in sql:
             self._result = None
+        elif "FROM households WHERE household_ref" in sql:
+            ref, status = params
+            hit = next((h for h in self.store["households"]
+                        if h["household_ref"] == ref and h["status"] == status), None)
+            self._result = (
+                hit["id"], hit["household_ref"], hit["district"], hit["ds_division"],
+                hit["status"],
+            ) if hit else None
         elif "SELECT hash FROM audit_log" in sql:
             self._result = (self.store["audit"][-1]["hash"],) if self.store["audit"] else None
         elif "SELECT id, canonical_id" in sql:
@@ -74,6 +93,7 @@ class FakeCursor:
                 district,
                 ds_division,
                 locale,
+                household_id,
             ) = params
             if offline_id == self.store.get("race_offline_id") and offline_id not in self.store["cases"]:
                 # Simulate a concurrent winner committing between our fast-path SELECT
@@ -100,6 +120,7 @@ class FakeCursor:
                     "district": district,
                     "ds_division": ds_division,
                     "locale": locale,
+                    "household_id": household_id,
                 }
                 self._result = (self.store["case_pk"],)
         elif "INSERT INTO audit_log" in sql:
@@ -142,7 +163,11 @@ class FakeConn:
 
 @pytest.fixture
 def store():
-    return {"cases": {}, "rows": {}, "seq": 0, "case_pk": 0, "audit": []}
+    return {
+        "cases": {}, "rows": {}, "seq": 0, "case_pk": 0, "audit": [],
+        # A test that wants the unregistered path empties this list.
+        "households": [_household()],
+    }
 
 
 @pytest.fixture
@@ -180,6 +205,8 @@ def _item(offline_id, **overrides):
         "gps": {"lat": 7.29, "lng": 80.63},
         "damage_category": "crop",
         "submitter_identity_hash": "abc123",
+        # The officer looked the family up before queueing the case offline.
+        "household_ref": HOUSEHOLD_REF,
     }
     item.update(overrides)
     return item
@@ -473,7 +500,8 @@ def test_batch_insert_triggers_compensation_estimate(client, store, estimate_spy
     assert res.status_code == 200
     assert len(estimate_spy) == 1
     assert estimate_spy[0]["damage_category"] == "crop"
-    assert estimate_spy[0]["district"] is None
+    # Story 8.4: no longer None — the district now comes from the registered household.
+    assert estimate_spy[0]["district"] == DISTRICT
     assert estimate_spy[0]["ai_severity"] is None
 
 
@@ -485,49 +513,113 @@ def test_batch_retry_does_not_re_trigger_compensation_estimate(client, store, es
     assert len(estimate_spy) == 1
 
 
-def test_batch_item_with_district_and_severity_persists_and_forwards(client, store, estimate_spy):
-    item = _item(
-        "11111111-1111-4111-8111-111111111111",
-        district="අනුරාධපුරය",
-        ds_division="ඉපලෝගම",
-        ai_severity="Severe",
-    )
+# --- Story 8.4: the synced case inherits its area from the household ------------------------
+#
+# These replace the Story 5.2 picker tests. Their subject changed rather than vanished: the old
+# ones proved the item's district was stored and null-guarded; FR-10.6 makes the item's district
+# irrelevant, so what matters now is that it is IGNORED.
+
+
+def test_synced_case_inherits_district_and_division_from_the_household(client, store, estimate_spy):
+    item = _item("11111111-1111-4111-8111-111111111111", ai_severity="Severe")
     res = client.post(
         "/api/v1/sync/batch", json={"cases": [item]}, headers=_auth(_officer_token())
     )
     assert res.status_code == 200
     stored = store["rows"][item["offline_id"]]
-    assert stored["district"] == "අනුරාධපුරය"
-    assert stored["ds_division"] == "ඉපලෝගම"
-    assert estimate_spy[0]["district"] == "අනුරාධපුරය"
-    assert estimate_spy[0]["ds_division_id"] == "ඉපලෝගම"
+    assert stored["district"] == DISTRICT
+    assert stored["ds_division"] == DIVISION
+    assert stored["household_id"] == 1
+    assert estimate_spy[0]["district"] == DISTRICT
+    assert estimate_spy[0]["ds_division_id"] == DIVISION
     assert estimate_spy[0]["ai_severity"] == "Severe"
 
 
-def test_batch_item_wrong_type_district_is_ignored_not_500(client, store, estimate_spy):
-    bad = _item("11111111-1111-4111-8111-111111111111", district=12345, ai_severity=["Severe"])
-    res = client.post(
-        "/api/v1/sync/batch", json={"cases": [bad]}, headers=_auth(_officer_token())
-    )
-    assert res.status_code == 200
-    assert estimate_spy[0]["district"] is None
-    assert estimate_spy[0]["ai_severity"] is None
-
-
-def test_batch_item_empty_string_district_stored_as_none_not_empty_string(client, store, estimate_spy):
-    item = _item(
-        "11111111-1111-4111-8111-111111111111", district="", ds_division="", ai_severity="",
-    )
+def test_a_district_on_the_queued_item_is_ignored(client, store, estimate_spy):
+    """A draft queued before Epic 8 still carries its own picker fields. They must not override
+    the household's area, or the case routes to officers in the wrong division."""
+    item = _item("11111111-1111-4111-8111-111111111111",
+                 district="අම්පාර", ds_division="ඉපලෝගම")
     res = client.post(
         "/api/v1/sync/batch", json={"cases": [item]}, headers=_auth(_officer_token())
     )
     assert res.status_code == 200
     stored = store["rows"][item["offline_id"]]
-    assert stored["district"] is None
-    assert stored["ds_division"] is None
-    assert estimate_spy[0]["district"] is None
-    assert estimate_spy[0]["ds_division_id"] is None
+    assert stored["district"] == DISTRICT
+    assert stored["ds_division"] == DIVISION
+
+
+def test_a_malformed_district_on_the_item_is_still_ignored_not_a_500(client, store, estimate_spy):
+    item = _item("11111111-1111-4111-8111-111111111111",
+                 district=12345, ds_division="", ai_severity=["Severe"])
+    res = client.post(
+        "/api/v1/sync/batch", json={"cases": [item]}, headers=_auth(_officer_token())
+    )
+    assert res.status_code == 200
+    assert store["rows"][item["offline_id"]]["district"] == DISTRICT
     assert estimate_spy[0]["ai_severity"] is None
+
+
+# --- Story 8.4: the FR-10.3 gate, reported per item -----------------------------------------
+
+
+def test_an_item_with_no_registered_household_is_rejected(client, store):
+    store["households"].clear()
+    item = _item("11111111-1111-4111-8111-111111111111")
+    res = client.post(
+        "/api/v1/sync/batch", json={"cases": [item]}, headers=_auth(_officer_token())
+    )
+    assert res.status_code == 200
+    result = res.get_json()["results"][0]
+    assert result["error"] == "not_registered"
+    assert result["inserted"] is False
+    assert store["rows"] == {}
+
+
+def test_one_unregistered_item_does_not_block_the_rest_of_the_batch(client, store):
+    """The reason this is a per-item result and not a 400 for the whole batch: an officer's queue
+    can hold days of fieldwork, and one unregistered family must not strand the others."""
+    good_a = _item("11111111-1111-4111-8111-111111111111")
+    bad = _item("22222222-2222-4222-8222-222222222222", household_ref="HH-2026-9999")
+    good_b = _item("33333333-3333-4333-8333-333333333333")
+    res = client.post(
+        "/api/v1/sync/batch", json={"cases": [good_a, bad, good_b]},
+        headers=_auth(_officer_token()),
+    )
+    assert res.status_code == 200
+    results = res.get_json()["results"]
+    assert results[0]["inserted"] is True
+    assert results[1]["error"] == "not_registered"
+    assert results[2]["inserted"] is True
+    assert len(store["cases"]) == 2
+
+
+def test_a_revoked_household_cannot_sync(client, store):
+    store["households"] = [_household(status="revoked")]
+    item = _item("11111111-1111-4111-8111-111111111111")
+    res = client.post(
+        "/api/v1/sync/batch", json={"cases": [item]}, headers=_auth(_officer_token())
+    )
+    assert res.get_json()["results"][0]["error"] == "not_registered"
+
+
+def test_replaying_an_accepted_item_still_works_after_the_household_is_revoked(client, store):
+    """The gate sits after the already-synced fast path, so a queue that retries for days does
+    not start failing because the family's registration changed in the meantime."""
+    item = _item("11111111-1111-4111-8111-111111111111")
+    first = client.post(
+        "/api/v1/sync/batch", json={"cases": [item]}, headers=_auth(_officer_token())
+    )
+    canonical = first.get_json()["results"][0]["canonical_id"]
+
+    store["households"] = [_household(status="revoked")]
+    again = client.post(
+        "/api/v1/sync/batch", json={"cases": [item]}, headers=_auth(_officer_token())
+    )
+    result = again.get_json()["results"][0]
+    assert result["canonical_id"] == canonical
+    assert result["inserted"] is False
+    assert "error" not in result
 
 
 def test_batch_sync_saves_locale(client, store, estimate_spy):
