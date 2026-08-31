@@ -21,7 +21,9 @@ from flask import Blueprint, current_app, g, jsonify, request
 
 from app.api.v1.middleware.auth import require_ds_officer
 from app.infrastructure.audit import write_audit_log
+from app.domain.validation import MIN_REASON_LENGTH
 from app.infrastructure.security.bank_crypto import BankDecryptFailed, decrypt_bank_details
+from app.infrastructure.security.nic_identity import NicPepperMissing, nic_hmac
 
 ds_bp = Blueprint("ds", __name__)
 
@@ -216,4 +218,133 @@ def authorize_payment(canonical_id):
         "authorized_at": auth_row[2].isoformat() if auth_row[2] else None,
         # The one response on the platform that carries a full account number.
         "bank_details": details,
+    }), 200
+
+
+@ds_bp.route("/households/<string:household_ref>/transfer", methods=["POST"])
+@require_ds_officer()
+def transfer_registration(household_ref):
+    """Move registrant status to another declared member (Story 8.7, FR-10.5).
+
+    THE PROBLEM THIS SOLVES. A household is registered against one person, and that registration
+    is what lets the family claim at all (FR-10.3). If the registrant dies or is incapacitated,
+    every NIC in that family is already occupied by their own registration — so nobody can
+    re-register, and the family is permanently locked out of compensation by a control that exists
+    to protect them. This endpoint is the release valve, and it is deliberately a Divisional
+    Secretariat action rather than a self-service one: the DS office is where a death is evidenced
+    in the real process.
+
+    THE HOUSEHOLD STAYS 'active'. Migration 023's comment suggested a transfer should move the
+    status to 'transferred'; that would be exactly wrong. registry.py admits only 'active'
+    households to the submit gate, so marking it 'transferred' would lock the family out — the
+    outcome FR-10.5 exists to prevent. The transfer is recorded by the is_registrant flip and by
+    the audit trail, not by a status that disables the row. 'transferred' remains unused.
+
+    The old registrant's row is KEPT, with is_registrant cleared. Deleting it would free their NIC
+    for a fresh registration elsewhere and erase the family's declared composition — both wrong.
+    """
+    ds_division = g.ds_division
+    ds_officer_id = g.ds_officer_id
+
+    pepper = current_app.config.get("NIC_PEPPER")
+    if not pepper:
+        current_app.logger.error("registration transfer attempted with no NIC_PEPPER configured")
+        return jsonify({"error": "server_misconfigured"}), 500
+
+    body = request.get_json(silent=True) or {}
+
+    reason = body.get("reason")
+    if not isinstance(reason, str) or len(reason.strip()) < MIN_REASON_LENGTH:
+        # Same floor as an AI override and an admin case action. A transfer moves who may claim
+        # a family's compensation; it must not be possible to do it without saying why.
+        return jsonify({"error": "reason_required",
+                        "min_length": MIN_REASON_LENGTH}), 400
+    reason = reason.strip()
+
+    try:
+        new_digest = nic_hmac(body.get("new_registrant_nic"), pepper)
+    except NicPepperMissing:
+        return jsonify({"error": "server_misconfigured"}), 500
+    except (ValueError, TypeError):
+        return jsonify({"error": "invalid_nic"}), 400
+
+    try:
+        conn = _get_connection()
+        try:
+            with conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT id, status FROM households "
+                        " WHERE household_ref = %s AND ds_division = %s",
+                        (household_ref.strip().upper(), ds_division),
+                    )
+                    row = cur.fetchone()
+                    # 404 for "not in your division" as well as "does not exist" — a distinct 403
+                    # would confirm the existence of households outside this officer's division.
+                    if not row:
+                        return jsonify({"error": "not_found"}), 404
+
+                    household_id, status = row
+                    if status != "active":
+                        return jsonify({"error": "household_not_active",
+                                        "status": status}), 409
+
+                    # The new registrant must ALREADY be a declared member of THIS household.
+                    # Allowing an arbitrary NIC would turn this into a back door for registering
+                    # someone into a family they were never declared part of.
+                    cur.execute(
+                        "SELECT id, is_registrant FROM household_members "
+                        " WHERE household_id = %s AND nic_hmac = %s",
+                        (household_id, new_digest),
+                    )
+                    member = cur.fetchone()
+                    if not member:
+                        return jsonify({"error": "not_a_member"}), 404
+                    new_member_id, already_registrant = member
+                    if already_registrant:
+                        # Not an error worth failing over, but not a silent success either: the
+                        # officer believes they changed something.
+                        return jsonify({"error": "already_registrant"}), 409
+
+                    cur.execute(
+                        "UPDATE household_members SET is_registrant = FALSE "
+                        " WHERE household_id = %s AND is_registrant",
+                        (household_id,),
+                    )
+                    cur.execute(
+                        "UPDATE household_members SET is_registrant = TRUE WHERE id = %s",
+                        (new_member_id,),
+                    )
+                    # registrant_uid is CLEARED, not moved: it holds a Supabase account id, and the
+                    # DS office has no way to know the new registrant's app account. The family is
+                    # not locked out by this — officer-assisted and SMS reporting both resolve by
+                    # NIC and continue to work (asserted by test). What stops working is citizen
+                    # SELF-SERVICE until the new registrant links an account, which is not built.
+                    cur.execute(
+                        "UPDATE households SET registrant_uid = NULL, updated_at = now() "
+                        " WHERE id = %s",
+                        (household_id,),
+                    )
+
+                    # FR-10.5 requires this in the append-only hash-chained trail. No NIC and no
+                    # digest in the metadata — the reason and the actor are the record.
+                    write_audit_log(
+                        cur, None, "household_registrant_transferred", ds_officer_id,
+                        {
+                            "ip_address": _client_ip(),
+                            "ds_division": ds_division,
+                            "household_ref": household_ref.strip().upper(),
+                            "reason": reason,
+                        },
+                    )
+        finally:
+            conn.close()
+    except psycopg2.Error:
+        current_app.logger.exception("registration transfer failed")
+        return jsonify({"error": "server_error"}), 500
+
+    return jsonify({
+        "household_ref": household_ref.strip().upper(),
+        "status": "active",
+        "transferred_by": ds_officer_id,
     }), 200

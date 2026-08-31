@@ -25,11 +25,23 @@
 -- what the registrant told us, so a DS officer has it to hand when verifying against the GN's
 -- household register.
 --
--- status: 'active' is the only state that satisfies the FR-10.3 submit gate. 'transferred' marks
--- a household whose registrant changed (FR-10.5, death/incapacity); 'revoked' is an administrative
--- close. Bank columns arrive in migration 025 (Story 8.6), NOT here -- 8.1 is schema + identity
--- only, and bank data carries an ethics dependency (architecture R-14) that must not be
--- entangled with the migration that creates the registry.
+-- status: 'active' is the only state that satisfies the FR-10.3 submit gate. 'revoked' is an
+-- administrative close.
+--
+-- CORRECTION (2026-09-01, Story 8.7). An earlier version of this comment said 'transferred' marks
+-- a household whose registrant changed under FR-10.5. That was WRONG and would have been harmful:
+-- registry.py admits only 'active' households to the submit gate, so setting 'transferred' on a
+-- registrant change would permanently lock the family out of compensation -- precisely the outcome
+-- FR-10.5 exists to prevent. A transfer leaves status 'active'; it is recorded by the
+-- is_registrant flip on household_members and by the append-only audit trail. 'transferred'
+-- remains in the CHECK constraint but is deliberately UNUSED. The constraint is not altered here
+-- because this migration is already applied, and removing a permitted value from an applied CHECK
+-- buys nothing over simply never writing it.
+--
+-- Bank columns are NOT here: 8.1 is schema + identity only, and bank data carries an ethics
+-- dependency (architecture R-14) that must not be entangled with the migration that creates the
+-- registry. They landed in migration 027 (Story 8.6) -- not 025 as originally planned, because
+-- Story 8.4 took 025 for cases.household_id first.
 
 CREATE TABLE IF NOT EXISTS households (
   id             BIGSERIAL PRIMARY KEY,
