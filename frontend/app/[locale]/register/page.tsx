@@ -112,6 +112,7 @@ export default function RegisterHouseholdPage() {
   // Step 4, optional (FR-10.4). Held in component state only, like the NICs — never written
   // to any browser storage. Sent over TLS and encrypted server-side.
   const [accountNumber, setAccountNumber] = useState("");
+  const [contactEmail, setContactEmail] = useState("");
   const [bankName, setBankName] = useState("");
   const [branch, setBranch] = useState("");
 
@@ -169,6 +170,7 @@ export default function RegisterHouseholdPage() {
       district: area.district,
       ds_division: area.dsDivision,
       gn_division: gnDivision.trim() || undefined,
+      contact_email: contactEmail.trim() || undefined,
       // Omitted entirely when the citizen skipped the step — an empty object would be a 400.
       bank: accountNumber.trim()
         ? {
@@ -400,6 +402,26 @@ export default function RegisterHouseholdPage() {
               onChange={(e) => setBranch(e.target.value)}
               className="min-h-touch-target rounded-md border border-border-default px-design-3 text-body text-ink-primary"
             />
+          </div>
+
+          {/* Contact email, grouped here rather than with the registrant's name because it shares
+              the bank block's character: optional, and about being paid/told rather than about
+              proving who you are. The hint says what it is FOR — a field whose purpose is unclear
+              gets left blank, and this is the only server-readable way to reach the family. */}
+          <div className="flex flex-col gap-design-1">
+            <label htmlFor="contact-email" className="text-label font-medium text-ink-primary">
+              {t("step4.contactEmail")}
+            </label>
+            <input
+              id="contact-email"
+              type="email"
+              inputMode="email"
+              autoComplete="email"
+              value={contactEmail}
+              onChange={(e) => setContactEmail(e.target.value)}
+              className="min-h-touch-target rounded-md border border-border-default px-design-3 text-body text-ink-primary"
+            />
+            <p className="text-caption text-ink-secondary">{t("step4.contactEmailHint")}</p>
           </div>
         </div>
       )}

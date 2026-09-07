@@ -127,7 +127,9 @@
       "optional": "You can skip this. The Divisional Secretariat office can add your account later.",
       "accountNumber": "Account number",
       "bankName": "Bank",
-      "branch": "Branch"
+      "branch": "Branch",
+      "contactEmail": "Email address",
+      "contactEmailHint": "We will email you when your claim status changes. You can leave this blank."
     },
     "error": {
       "alreadyRegistered": "You have already registered a household.",
@@ -659,5 +661,14 @@
       "openMenu": "Open navigation menu",
       "closeMenu": "Close navigation menu"
     }
+  },
+  "notifications": {
+    "title": "Notifications on this device",
+    "hint": "Get a notification on this phone when your claim status changes.",
+    "enabledHint": "Notifications are on for this device.",
+    "enable": "Turn on notifications",
+    "disable": "Turn off notifications",
+    "working": "Please wait…",
+    "blocked": "Notifications are blocked in your browser settings for this site. You can still check your claim status at any time using your reference number."
   }
 }

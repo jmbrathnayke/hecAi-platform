@@ -102,6 +102,21 @@ def create_app(config=None):
     app.config["TWILIO_FROM_NUMBER"] = os.getenv("TWILIO_FROM_NUMBER")
     app.config["TWILIO_PUBLIC_WEBHOOK_URL"] = os.getenv("TWILIO_PUBLIC_WEBHOOK_URL")
 
+    # SendGrid email notifications. Absent in tests (mocked) and in any deployment that has not
+    # provisioned email; sendgrid_client.send_email() treats an unset key as "not configured" and
+    # returns False rather than raising, so an unconfigured install degrades to the public status
+    # page instead of failing a case action.
+    app.config["SENDGRID_API_KEY"] = os.getenv("SENDGRID_API_KEY")
+    app.config["SENDGRID_FROM_EMAIL"] = os.getenv("SENDGRID_FROM_EMAIL")
+    app.config["SENDGRID_FROM_NAME"] = os.getenv("SENDGRID_FROM_NAME")
+
+    # Web Push (VAPID). Self-generated keypair, no vendor account and no registered business
+    # entity -- unlike SMS. The private key signs push requests; the public key is handed to the
+    # browser at subscribe time. Unset means the subscribe endpoint reports push unavailable.
+    app.config["VAPID_PUBLIC_KEY"] = os.getenv("VAPID_PUBLIC_KEY")
+    app.config["VAPID_PRIVATE_KEY"] = os.getenv("VAPID_PRIVATE_KEY")
+    app.config["VAPID_SUBJECT"] = os.getenv("VAPID_SUBJECT", "mailto:admin@hec-platform.lk")
+
     if config:
         app.config.from_mapping(config)
 
@@ -132,6 +147,7 @@ def create_app(config=None):
     from app.api.v1.research import research_bp
     from app.api.v1.households import households_bp
     from app.api.v1.ds import ds_bp
+    from app.api.v1.notifications import notifications_bp
 
     app.register_blueprint(health_bp, url_prefix="/api/v1")
     app.register_blueprint(cases_bp, url_prefix="/api/v1")
@@ -145,5 +161,6 @@ def create_app(config=None):
     app.register_blueprint(research_bp, url_prefix="/api/v1")
     app.register_blueprint(households_bp, url_prefix="/api/v1")
     app.register_blueprint(ds_bp, url_prefix="/api/v1")
+    app.register_blueprint(notifications_bp, url_prefix="/api/v1")
 
     return app

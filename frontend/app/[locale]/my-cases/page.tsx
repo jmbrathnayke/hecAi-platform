@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { getAccessToken } from "@/lib/auth";
 import { createClient } from "@/lib/supabase";
+import PushNotificationToggle from "@/components/PushNotificationToggle";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
 
@@ -137,6 +138,11 @@ export default function MyCasesPage() {
           ))}
         </ul>
       )}
+
+      {/* Below the list, not above it: the citizen came here to see their claims, and a permission
+          prompt competing with that is how prompts get dismissed permanently. Renders nothing on a
+          browser or deployment where push cannot work. */}
+      <PushNotificationToggle />
     </main>
   );
 }

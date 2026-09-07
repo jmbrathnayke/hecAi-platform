@@ -43,7 +43,7 @@ from app.domain.validation import MIN_REASON_LENGTH
 from app.infrastructure.audit import verify_chain, write_audit_log
 from app.infrastructure.export.report import build_pdf, stream_csv
 from app.infrastructure.ml.compensation import DISTRICT_REF_PATH
-from app.infrastructure.sms.notification_service import notify_status_change
+from app.infrastructure.notifications import notify_status_change_all
 
 admin_bp = Blueprint("admin", __name__)
 
@@ -665,7 +665,7 @@ def post_case_action(offline_id):
                             cur, case_id, "case_approved", g.admin_id,
                             {"amount_lkr": resolved_amount, "reason": reason},
                         )
-                        notify_status_change(
+                        notify_status_change_all(
                             cur, case_id, row[0], citizen_mobile_plain, "Approved", g.admin_id,
                             amount_lkr=resolved_amount,
                         )
@@ -689,7 +689,7 @@ def post_case_action(offline_id):
                         # other action's optional reason.
                         metadata = {"reason": reason} if reason else {}
                         write_audit_log(cur, case_id, _ACTION_EVENT[action], g.admin_id, metadata)
-                        notify_status_change(
+                        notify_status_change_all(
                             cur, case_id, row[0], citizen_mobile_plain, target_status, g.admin_id,
                         )
                         new_status = target_status

@@ -162,6 +162,18 @@ def register_household():
             # No account number in the message. It is the one field here as sensitive as the NIC.
             return jsonify({"error": "invalid_bank_details"}), 400
 
+    # Optional contact email for status notifications (migration 029). Unlike the bank details it
+    # is stored in the clear: the server must be able to hand it to the mail transport, and there
+    # is nothing to protect it from that encrypting it would not also hide from the sender.
+    #
+    # NOT VALIDATED BEYOND SHAPE, and deliberately so. An address that looks wrong may still be
+    # deliverable, and rejecting a registration over a contact field would trade a family's claim
+    # for a typo. A malformed address costs one skipped notification, which is audit-logged; the
+    # public status page (FR-6.1) still works for them either way.
+    contact_email = _clean_text(body.get("contact_email"))
+    if contact_email is not None and ("@" not in contact_email or " " in contact_email):
+        contact_email = None
+
     try:
         conn = _get_connection()
         try:
@@ -199,11 +211,11 @@ def register_household():
                     cur.execute(
                         """INSERT INTO households
                              (household_ref, district, ds_division, gn_division, registrant_uid,
-                              bank_details_ciphertext, bank_account_last4)
-                           VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+                              bank_details_ciphertext, bank_account_last4, contact_email)
+                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
                         (household_ref, district, ds_division,
                          _clean_text(body.get("gn_division")), citizen_id,
-                         bank_ciphertext, bank_last4),
+                         bank_ciphertext, bank_last4, contact_email),
                     )
                     household_id = cur.fetchone()[0]
 

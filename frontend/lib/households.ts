@@ -43,6 +43,16 @@ export interface RegisterHouseholdInput {
    * only and is gone on unmount.
    */
   bank?: BankDetailsInput;
+  /**
+   * Optional. Where status notifications are emailed.
+   *
+   * Unlike the NIC and the bank account this is not sensitive enough to need special handling —
+   * but it is the ONLY server-readable way to reach a citizen. The incident form's mobile number
+   * is AES-GCM encrypted client-side with a non-extractable key, so the server can never read it
+   * (see migration 020); an address given here is the one that works. Omitting it costs nothing:
+   * the public status page needs no address, no login and no permission.
+   */
+  contact_email?: string;
 }
 
 export interface Household {
