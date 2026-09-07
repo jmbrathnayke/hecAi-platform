@@ -206,7 +206,7 @@
   },
   "login": {
     "title": "Sign in",
-    "subtitle": "Sign in with your mobile number to see all of your reports in one place. You can also report without an account.",
+    "subtitle": "Sign in to see all your reports in one place. You can also report without an account.",
     "phone": "Mobile number",
     "phonePlaceholder": "+9477XXXXXXX",
     "sendCode": "Send code",
@@ -216,8 +216,18 @@
     "verify": "Verify & sign in",
     "changeNumber": "Change number",
     "sendError": "Couldn’t send the code. Check the number and try again.",
+    "invalidPhone": "That does not look like a Sri Lankan mobile number. Enter it as 07X XXX XXXX.",
     "verifyError": "That code didn’t work. Please try again.",
-    "networkError": "Couldn’t reach the sign-in service. Please try again."
+    "networkError": "Couldn’t reach the sign-in service. Please try again.",
+    "channelLabel": "How to receive your code",
+    "useEmail": "Email",
+    "usePhone": "SMS",
+    "email": "Email address",
+    "emailPlaceholder": "you@example.com",
+    "sendLink": "Send sign-in link",
+    "linkSent": "We sent a sign-in link to your email.",
+    "linkHint": "Open your inbox and click the link. You can open it on your phone — it will sign you in here.",
+    "changeEmail": "Use a different email"
   },
   "myCases": {
     "title": "My Cases",
