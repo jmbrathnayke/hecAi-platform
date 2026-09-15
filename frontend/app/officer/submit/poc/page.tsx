@@ -149,7 +149,7 @@ export default function OfficerPoCPage() {
 
       <section
         aria-label={t("submitPoc.detailsLabel")}
-        className="mx-auto flex w-full max-w-md flex-col gap-design-3 rounded-md border border-border-default bg-surface-raised p-design-4"
+        className="mx-auto flex w-full max-w-md flex-col gap-design-3 rounded-md border border-border-subtle bg-surface-raised shadow-card p-design-4"
       >
         <div className="flex items-center justify-between gap-design-3">
           <span className="text-label text-ink-secondary">{t("submitPoc.citizenNic")}</span>

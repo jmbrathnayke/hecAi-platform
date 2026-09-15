@@ -115,13 +115,14 @@ class FakeCursor:
             self.store["seq"] += 1
             self._one = (self.store["seq"],)
         elif s.startswith("INSERT INTO households"):
-            ref, district, ds_division, gn, uid, bank_ct, bank_last4 = params
+            ref, district, ds_division, gn, uid, bank_ct, bank_last4, contact_email = params
             new_id = len(self.store["households"]) + 1
             self.store["households"].append({
                 "id": new_id, "household_ref": ref, "district": district,
                 "ds_division": ds_division, "gn_division": gn, "registrant_uid": uid,
                 "status": "active", "registered_at": None,
                 "bank_details_ciphertext": bank_ct, "bank_account_last4": bank_last4,
+                "contact_email": contact_email,
             })
             self._one = (new_id,)
         elif s.startswith("INSERT INTO household_members"):

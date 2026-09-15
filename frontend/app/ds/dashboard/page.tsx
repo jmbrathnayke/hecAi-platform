@@ -13,6 +13,7 @@ import { useTranslations } from "next-intl";
 import Link from "next/link";
 import { fetchDsCases, type DsCase, type DsFailure } from "@/lib/dsCases";
 import { PaymentAuthorizationPanel } from "@/components/PaymentAuthorizationPanel";
+import PushNotificationToggle from "@/components/PushNotificationToggle";
 
 type LoadState =
   | { kind: "loading" }
@@ -77,6 +78,12 @@ export default function DsDashboardPage() {
     <main className="mx-auto flex w-full max-w-3xl flex-col gap-design-6 px-design-5 py-design-6">
       <header className="flex flex-col gap-design-1">
         <h1 className="text-title font-bold text-ink-primary">{t("title")}</h1>
+        {/* FR-6.4. This is the surface the alert matters most on: approval is when the DS
+            office acquires work, and before this the only way to learn of it was to open
+            this page and look. */}
+        <div className="mt-design-3">
+          <PushNotificationToggle variant="staff" />
+        </div>
         {dsDivision && (
           // Named explicitly, so a DS officer is never in doubt about whose cases these are.
           <p className="text-body text-ink-secondary">
@@ -143,7 +150,7 @@ export default function DsDashboardPage() {
           {cases.map((c) => (
             <li
               key={c.canonical_id}
-              className="rounded-md border border-border-default p-design-4"
+              className="rounded-md border border-border-subtle bg-surface-raised p-design-4 shadow-card"
               data-testid="ds-case"
             >
               <div className="flex items-baseline justify-between gap-design-3">

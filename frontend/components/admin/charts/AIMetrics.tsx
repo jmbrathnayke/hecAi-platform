@@ -34,7 +34,7 @@ export function AIMetrics({ data }: AIMetricsProps) {
   const { direction, this_month_pct, last_month_pct } = data.override_rate_trend;
 
   return (
-    <section className="rounded-md border border-border-default bg-surface-raised p-design-4">
+    <section className="rounded-md border border-border-subtle bg-surface-raised shadow-card p-design-4">
       <h2 className="text-headline text-ink-primary">{t("analytics.aiMetrics")}</h2>
 
       <div className="mt-design-3 grid grid-cols-1 gap-design-4 sm:grid-cols-2">

@@ -44,6 +44,7 @@ from app.infrastructure.audit import verify_chain, write_audit_log
 from app.infrastructure.export.report import build_pdf, stream_csv
 from app.infrastructure.ml.compensation import DISTRICT_REF_PATH
 from app.infrastructure.notifications import notify_status_change_all
+from app.infrastructure.push.push_service import notify_staff_push
 
 admin_bp = Blueprint("admin", __name__)
 
@@ -180,7 +181,8 @@ def list_cases():
                     # sort column has duplicate values (code review fix).
                     cur.execute(
                         f"""SELECT c.canonical_id, c.offline_id, c.damage_category, c.status,
-                                   c.submitted_at, c.updated_at, il.confidence
+                                   c.submitted_at, c.updated_at, il.confidence,
+                                   c.submitted_by_officer
                               FROM cases c
                               LEFT JOIN LATERAL (
                                 SELECT confidence FROM inference_log
@@ -273,6 +275,15 @@ def list_cases():
             "submitted_at": r[4].isoformat() if r[4] else None,
             "updated_at": r[5].isoformat() if r[5] else None,
             "ai_confidence": float(r[6]) if r[6] is not None else None,
+            # WHO SAW THE DAMAGE. True only on the officer-assisted path (migration 007), where a
+            # DWC officer was physically present, photographed the damage and reviewed the
+            # classification. False means the citizen submitted from their own device and nobody
+            # has verified that the damage is real, recent, theirs, or elephant-caused.
+            #
+            # submitted_via cannot answer this: migration 009 sets it to 'app' for BOTH paths.
+            # Without this field the approver sees two identical rows and authorises the same
+            # amount for both — see R-18.
+            "submitted_by_officer": bool(r[7]),
         }
         for r in rows
     ]
@@ -335,7 +346,7 @@ def _load_case_detail(cur, offline_id, district, known_row=None, known_comp_row=
         cur.execute(
             """SELECT canonical_id, offline_id, damage_category, status,
                       gps_lat, gps_lng, submitted_at, updated_at, submitted_via,
-                      approved_amount, id
+                      approved_amount, id, submitted_by_officer
                  FROM cases WHERE offline_id = %s AND district = %s""",
             (offline_id, district),
         )
@@ -396,6 +407,9 @@ def _load_case_detail(cur, offline_id, district, known_row=None, known_comp_row=
         "updated_at": row[7].isoformat() if row[7] else None,
         "submitted_via": row[8],
         "approved_amount": float(row[9]) if row[9] is not None else None,
+        # See the list query's note: submitted_via is 'app' for both the citizen and the
+        # officer-assisted path, so it cannot tell the approver whether anyone saw the damage.
+        "submitted_by_officer": bool(row[11]),
     }
 
     ai_result = None
@@ -585,7 +599,8 @@ def post_case_action(offline_id):
                     cur.execute(
                         """SELECT canonical_id, offline_id, damage_category, status,
                                   gps_lat, gps_lng, submitted_at, updated_at, submitted_via,
-                                  approved_amount, id, citizen_mobile_plain
+                                  approved_amount, id, citizen_mobile_plain,
+                                  submitted_by_officer, ds_division_id
                              FROM cases WHERE offline_id = %s AND district = %s
                              FOR UPDATE""",
                         (offline_id, district),
@@ -669,6 +684,14 @@ def post_case_action(offline_id):
                             cur, case_id, row[0], citizen_mobile_plain, "Approved", g.admin_id,
                             amount_lkr=resolved_amount,
                         )
+                        # FR-6.4: approval is the exact moment the Divisional Secretariat acquires
+                        # work -- the DWC administrator approves, the DS office pays. Appended as
+                        # the 14th column rather than inserted, so every positional index above
+                        # (and the tests asserting on them) is unchanged.
+                        notify_staff_push(
+                            cur, case_id, "payment_pending", "ds_officer",
+                            row[13], row[0], g.admin_id,
+                        )
                         new_status = "Approved"
                         new_approved_amount = resolved_amount
                         known_comp_row = est_row
@@ -704,6 +727,11 @@ def post_case_action(offline_id):
                         row[0], row[1], row[2], new_status,
                         row[4], row[5], row[6], new_updated_at,
                         row[8], new_approved_amount, row[10],
+                        # Carried through rather than defaulted. _load_case_detail reads index 11
+                        # as submitted_by_officer; omitting it would make every case look
+                        # unverified the moment an action was taken on it — the response would
+                        # contradict the list the admin was just looking at.
+                        row[12],
                     )
                     # Same response shape as GET .../cases/<offline_id> (Dev Notes Sec Response
                     # Shape Reuse) -- includes the action just written, since this call happens

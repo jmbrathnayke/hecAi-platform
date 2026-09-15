@@ -34,7 +34,7 @@ export function AIResultPanel({ aiResult }: AIResultPanelProps) {
       : null;
 
   return (
-    <div className="rounded-md border border-border-default bg-surface-raised p-design-4 space-y-design-2">
+    <div className="rounded-md border border-border-subtle bg-surface-raised shadow-card p-design-4 space-y-design-2">
       {/* was `text-heading-3` — never defined in the theme, so preflight left this rendering at
           plain body size/weight. DESIGN.md: "Headline (18px / 600) is section and card headings." */}
       <h3 className="text-headline text-ink-primary">{t("ai.heading")}</h3>

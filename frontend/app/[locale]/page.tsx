@@ -25,7 +25,7 @@ export default function HomePage() {
       {/* Language row — a full-width bar directly under the header (mockup), not a control
           buried mid-page. */}
       <section
-        className="flex flex-wrap items-center justify-between gap-design-2 border-b border-border-default bg-surface-raised px-design-4 py-design-2"
+        className="flex flex-wrap items-center justify-between gap-design-2 border-b border-border-subtle bg-surface-raised px-design-4 py-design-2"
         aria-label={t("languageSelector")}
       >
         {/* Short visible label ("භාෂාව / Language") so the row fits on ONE line at 360px, as in

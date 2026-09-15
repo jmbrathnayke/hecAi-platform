@@ -70,6 +70,40 @@ def is_valid_pair(district, ds_division):
     return district_for_division(ds_division) == district.strip()
 
 
+def districts():
+    """-> every district name in the reference data, sorted.
+
+    Needed by user provisioning: an administrator is scoped to one district, and a district_id
+    claim that matches nothing produces an account whose dashboard is permanently empty. That
+    failure is silent and looks identical to "no cases yet", so the value is validated at the
+    point it is assigned rather than discovered later.
+    """
+    return sorted(set(_reference().values()))
+
+
+def all_divisions():
+    """-> [(ds_division, district)] for every division, sorted by district then division.
+
+    For pickers. A DS-division field left as free text is unusable: the names are Sinhala, there
+    are 167 of them, and a user has no way to discover a valid one — the only feedback is a
+    rejection after submitting. Carrying the district alongside disambiguates the several
+    divisions that share a name with their district.
+    """
+    return sorted(_reference().items(), key=lambda pair: (pair[1], pair[0]))
+
+
+def is_valid_district(district):
+    """-> True if the district exists in the reference data."""
+    if not isinstance(district, str) or not district.strip():
+        return False
+    return district.strip() in set(_reference().values())
+
+
+def is_valid_division(ds_division):
+    """-> True if the DS division exists in the reference data, in any district."""
+    return district_for_division(ds_division) is not None
+
+
 def divisions_in(district):
     """-> sorted DS divisions of a district. For error messages and operator scripts."""
     if not isinstance(district, str):

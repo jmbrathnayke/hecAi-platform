@@ -274,7 +274,7 @@ export default function OfficerClassifyPage() {
         />
 
         {/* Instruction strip (mockup): what to shoot, and how many are banked so far. */}
-        <div className="border-b border-border-default bg-surface-raised px-design-5 py-design-3 text-center">
+        <div className="border-b border-border-subtle bg-surface-raised px-design-5 py-design-3 text-center">
           <p className="text-label text-ink-secondary">
             <span aria-hidden="true">📸 </span>
             {atMax ? t("camera.maxReached", { max: MAX_PHOTOS }) : t("camera.instruction")}

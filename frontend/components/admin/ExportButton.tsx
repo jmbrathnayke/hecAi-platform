@@ -111,7 +111,7 @@ export function ExportButton({ filters, count, disabled = false }: ExportButtonP
         <div
           role="menu"
           aria-label={t("export.menuAria")}
-          className="absolute right-0 top-full z-50 mt-design-1 rounded-md border border-border-default bg-surface-raised shadow-lg"
+          className="absolute right-0 top-full z-50 mt-design-1 rounded-md border border-border-subtle bg-surface-raised shadow-card shadow-lg"
         >
           <button
             type="button"

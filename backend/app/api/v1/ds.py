@@ -23,9 +23,16 @@ from app.api.v1.middleware.auth import require_ds_officer
 from app.infrastructure.audit import write_audit_log
 from app.domain.validation import MIN_REASON_LENGTH
 from app.infrastructure.security.bank_crypto import BankDecryptFailed, decrypt_bank_details
+from app.infrastructure.notifications import notify_status_change_all
 from app.infrastructure.security.nic_identity import NicPepperMissing, nic_hmac
 
 ds_bp = Blueprint("ds", __name__)
+
+# Must match admin.py's _ACTION_TARGET_STATUS["mark_paid"] and the seeded template rows in
+# migrations 019 and 030. A divergence here would leave the DS-authorised path with no template
+# in any language, so every notification would log template_missing and none would be sent.
+_PAID_STATUS = "Payment Processed"
+_APPROVED_STATUS = "Approved"
 
 # A working queue, not an export (export is Epic 7) — cap the result set, same as officer.py.
 MAX_CASES = 200
@@ -142,9 +149,12 @@ def authorize_payment(canonical_id):
                 with conn.cursor() as cur:
                     cur.execute(
                         """SELECT c.id, c.status, c.approved_amount, c.household_id,
-                                  h.household_ref, h.bank_details_ciphertext, h.bank_account_last4
+                                  h.household_ref, h.bank_details_ciphertext,
+                                  h.bank_account_last4, c.citizen_mobile_plain,
+                                  pa.ds_authorized_at
                              FROM cases c
                              LEFT JOIN households h ON h.id = c.household_id
+                             LEFT JOIN payment_authorizations pa ON pa.case_id = c.id
                             WHERE c.canonical_id = %s AND c.ds_division_id = %s""",
                         (canonical_id.upper(), ds_division),
                     )
@@ -155,11 +165,23 @@ def authorize_payment(canonical_id):
                         return jsonify({"error": "not_found"}), 404
 
                     case_id, status, approved_amount, household_id, household_ref, \
-                        ciphertext, last4 = row
+                        ciphertext, last4, citizen_mobile_plain, previously_authorized = row
 
-                    if status != "Approved":
+                    # Read BEFORE the UPDATE below overwrites ds_authorized_at. This endpoint is
+                    # repeatable on purpose — an officer who closed the window needs the account
+                    # number back — so without this every re-reveal would re-announce a payment
+                    # the citizen was already told about.
+                    first_authorization = previously_authorized is None
+
+                    if status not in (_APPROVED_STATUS, _PAID_STATUS):
                         # The DWC administrator approves; the DS office pays. Paying something not
                         # yet approved would bypass the human decision NFR-6.1 exists to require.
+                        #
+                        # _PAID_STATUS is admitted too, and must be: this endpoint's own docstring
+                        # promises a repeat call re-reveals for an officer who closed the window,
+                        # and the first call now moves the case OFF "Approved". Accepting only
+                        # "Approved" would make the endpoint work exactly once and then lock the
+                        # officer out of the account number they are in the middle of paying.
                         return jsonify({"error": "not_approved", "status": status}), 409
                     if not household_id:
                         # Pre-Epic-8 or seeded. There is no registered family to pay.
@@ -205,6 +227,46 @@ def authorize_payment(canonical_id):
                             "bank_account_last4": last4,
                         },
                     )
+
+                    # THE CITIZEN IS TOLD BY THE OFFICE THAT ACTUALLY PAYS.
+                    #
+                    # Before this, "Payment Processed" could only be set by the DWC administrator's
+                    # mark_paid action — but the administrator does not disburse and has no way to
+                    # know when the DS office did. The citizen's "you have been paid" message
+                    # therefore depended on a phone call between two organisations that the
+                    # software knew nothing about, and never arrived at all if that call was not
+                    # made. Releasing the account number IS the disbursement decision, so it is the
+                    # event that should announce itself.
+                    #
+                    # WHAT "Payment Processed" MEANS, stated because it is easy to overclaim: the
+                    # DS office has authorised and released the payment. It does NOT mean funds
+                    # have landed — the platform does not move money (PRD Section 4b non-goal) and
+                    # cannot observe the Divisional Secretariat's financial system. This is the
+                    # last event the platform can honestly witness.
+                    #
+                    # mark_paid stays on the admin side as a manual fallback for cases authorised
+                    # outside the system, and is unchanged.
+                    # Announce ONLY when this call is the one making the transition. A case already
+                    # at _PAID_STATUS was either authorised here before, or marked paid by the
+                    # administrator — who has already notified. Re-announcing would tell a citizen
+                    # twice that they had been paid once.
+                    if first_authorization and status == _APPROVED_STATUS:
+                        cur.execute(
+                            # updated_at is bumped deliberately: list_cases' avg_processing_days
+                            # KPI is computed from it, and a status change that left it stale
+                            # would quietly distort Epic 7's analytics.
+                            "UPDATE cases SET status = %s, updated_at = now() WHERE id = %s",
+                            (_PAID_STATUS, case_id),
+                        )
+                        write_audit_log(
+                            cur, case_id, "case_paid", ds_officer_id,
+                            {"ds_division": ds_division, "authorized_by": "ds_officer"},
+                        )
+                        notify_status_change_all(
+                            cur, case_id, canonical_id.upper(), citizen_mobile_plain,
+                            _PAID_STATUS, ds_officer_id,
+                            amount_lkr=float(auth_row[1]) if auth_row[1] is not None else None,
+                        )
         finally:
             conn.close()
     except psycopg2.Error:

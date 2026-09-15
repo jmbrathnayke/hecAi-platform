@@ -10,6 +10,7 @@ import { useOfficerSession } from "@/hooks/useOfficerSession";
 import { KNOWN_STATUSES } from "@/lib/status";
 import { ModelLoadStatus } from "@/components/ModelLoadStatus";
 import { LanguageSelectorCookie } from "@/components/LanguageSelectorCookie";
+import PushNotificationToggle from "@/components/PushNotificationToggle";
 import { OfficerTopBar } from "@/components/OfficerTopBar";
 
 // Reuse the canonical case-status labels (status.statusLabels) rather than duplicating them
@@ -207,6 +208,9 @@ export default function OfficerDashboardPage() {
           </div>
         </header>
 
+        {/* FR-6.4: alerts for the divisions this officer is assigned to. */}
+        <PushNotificationToggle variant="staff" />
+
         <ModelLoadStatus />
 
         <section className="space-y-design-3">
@@ -283,7 +287,7 @@ export default function OfficerDashboardPage() {
               {cases.map((c) => (
                 <li
                   key={c.offline_id ?? c.canonical_id}
-                  className="rounded-md border border-border-default bg-surface-raised px-design-3 py-design-3"
+                  className="rounded-md border border-border-subtle bg-surface-raised shadow-card px-design-3 py-design-3"
                 >
                   <div className="flex items-center justify-between gap-design-2">
                     <span className="text-label font-semibold text-ink-primary">

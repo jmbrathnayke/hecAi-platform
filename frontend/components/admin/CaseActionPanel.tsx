@@ -173,7 +173,7 @@ export function CaseActionPanel({
       )}
 
       {activeAction && (
-        <div className="rounded-md border border-border-default bg-surface-raised p-design-4 space-y-design-3">
+        <div className="rounded-md border border-border-subtle bg-surface-raised shadow-card p-design-4 space-y-design-3">
           <h4 className="text-label font-semibold text-ink-primary">
             {t("action.confirmTitle", { action: t(`action.${ACTION_LABEL_KEYS[activeAction]}`) })}
           </h4>

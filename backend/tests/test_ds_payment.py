@@ -74,12 +74,44 @@ class FakeCursor:
                 self._one = None
             else:
                 h = self.store["households"].get(c["household_id"])
+                # ds_authorized_at comes from the LEFT JOIN on payment_authorizations and is what
+                # tells the endpoint whether this is the FIRST authorisation. Modelling it as
+                # always-None would make every repeat reveal look like a first one, and the test
+                # asserting a citizen is not re-notified would pass without the code being right.
+                pa = self.store["payment_auth"].get(c["id"])
                 self._one = (
                     c["id"], c["status"], c["approved_amount"], c["household_id"],
                     h["household_ref"] if h else None,
                     h["bank_details_ciphertext"] if h else None,
                     h["bank_account_last4"] if h else None,
+                    c.get("citizen_mobile_plain"),
+                    pa.get("ds_authorized_at") if pa else None,
                 )
+        elif s.startswith("UPDATE cases SET status"):
+            # Written only on the FIRST authorisation. Applying it for real, rather than
+            # swallowing it, is what lets a test assert the case actually reached
+            # "Payment Processed" — a fake that ignored the write would pass either way.
+            new_status, case_id = params
+            for c in self.store["cases"].values():
+                if c["id"] == case_id:
+                    c["status"] = new_status
+            self._one = None
+        # --- statements issued by the notification chain (notify_status_change_all) -----------
+        # Push short-circuits on missing VAPID keys before querying, so only the email and SMS
+        # lookups reach here. Both resolve to "nobody to tell" in this fixture, which is the
+        # honest state: no household in it carries a contact_email or a plaintext mobile.
+        # Notification CONTENT is covered properly in tests/test_notification_channels.py.
+        elif "h.contact_email" in s:
+            (case_id,) = params
+            c = next((c for c in self.store["cases"].values() if c["id"] == case_id), None)
+            h = self.store["households"].get(c["household_id"]) if c else None
+            self._one = ((h or {}).get("contact_email"), c.get("locale", "si")) if c else None
+        elif "SELECT c.household_id, c.locale" in s:
+            (case_id,) = params
+            c = next((c for c in self.store["cases"].values() if c["id"] == case_id), None)
+            self._one = (c["household_id"], c.get("locale", "si")) if c else None
+        elif "FROM push_subscriptions" in s:
+            self._rows = []
         elif s.startswith("UPDATE payment_authorizations"):
             ds_by, household_id, last4, case_id = params
             auth = self.store["payment_auth"].get(case_id)
@@ -334,3 +366,71 @@ def test_no_read_endpoint_selects_the_bank_ciphertext():
         "bank_details_ciphertext is referenced outside the payment/registration paths: "
         + str(offenders)
     )
+
+
+# ============================================================ the citizen is told by whoever pays
+#
+# WHY THESE EXIST. "Payment Processed" could previously be set only by the DWC administrator's
+# mark_paid action. But the administrator does not disburse -- the DS office does, and it is the
+# only role that can decrypt an account number. So the citizen's "you have been paid" message
+# depended on a phone call between two organisations that the software could not see, and never
+# arrived at all if nobody made that call. Releasing the account number IS the disbursement
+# decision, so it is the event that now announces itself.
+
+def _events(store):
+    return [entry["event"] for entry in store["audit"]]
+
+
+def test_authorising_payment_moves_the_case_to_paid(client, store):
+    assert store["cases"]["HEC-2026-0001"]["status"] == "Approved"
+    assert _post(client).status_code == 200
+    assert store["cases"]["HEC-2026-0001"]["status"] == "Payment Processed"
+
+
+def test_authorising_payment_records_the_paid_event_against_the_ds_officer(client, store):
+    """The audit trail must name the office that actually paid, not the one that approved."""
+    _post(client)
+    paid = [e for e in store["audit"] if e["event"] == "case_paid"]
+    assert len(paid) == 1
+    assert paid[0]["actor_id"] == "ds-1"
+    assert json.loads(paid[0]["metadata"])["authorized_by"] == "ds_officer"
+
+
+def test_a_repeat_reveal_does_not_announce_the_payment_twice(client, store):
+    """The endpoint re-reveals on purpose. Re-announcing would tell a citizen twice."""
+    _post(client)
+    _post(client)
+    assert len([e for e in _events(store) if e == "case_paid"]) == 1
+
+
+def test_a_repeat_reveal_still_returns_the_account_number(client):
+    """REGRESSION GUARD. Moving the case off "Approved" on the first call made the status guard
+    reject every later call with 409, silently breaking the re-reveal this endpoint promises in
+    its own docstring -- locking an officer out of the number mid-payment."""
+    first = _post(client)
+    second = _post(client)
+    assert first.status_code == second.status_code == 200
+    assert second.get_json()["bank_details"]["account_number"] == \
+        first.get_json()["bank_details"]["account_number"]
+
+
+def test_a_case_the_administrator_already_marked_paid_is_not_re_announced(client, store):
+    """mark_paid stays available on the admin side and notifies when used. A DS officer opening
+    that case afterwards needs the account number, but the citizen has already been told."""
+    store["cases"]["HEC-2026-0001"]["status"] = "Payment Processed"
+    assert _post(client).status_code == 200
+    assert "case_paid" not in _events(store)
+
+
+def test_an_unapproved_case_is_still_refused(client, store):
+    """Widening the guard to admit "Payment Processed" must not admit everything else."""
+    res = _post(client, canonical="HEC-2026-0002")  # Submitted
+    assert res.status_code == 409
+    assert res.get_json()["error"] == "not_approved"
+    assert store["cases"]["HEC-2026-0002"]["status"] == "Submitted"
+
+
+def test_a_refused_authorisation_moves_no_status(client, store):
+    _post(client, canonical="HEC-2026-0004")  # Approved but no household
+    assert store["cases"]["HEC-2026-0004"]["status"] == "Approved"
+    assert "case_paid" not in _events(store)

@@ -20,7 +20,7 @@ export function BottomNav({ ariaLabel, children }: { ariaLabel: string; children
     <nav
       aria-label={ariaLabel}
       data-testid="bottom-nav"
-      className="sticky bottom-0 z-40 flex border-t border-border-default bg-surface-raised pb-[max(env(safe-area-inset-bottom),0.75rem)] pt-design-2 print:hidden"
+      className="sticky bottom-0 z-40 flex border-t border-border-subtle bg-surface-raised pb-[max(env(safe-area-inset-bottom),0.75rem)] pt-design-2 print:hidden"
     >
       {children}
     </nav>

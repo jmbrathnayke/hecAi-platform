@@ -20,7 +20,15 @@ import {
   type PushState,
 } from "@/lib/push";
 
-export default function PushNotificationToggle() {
+/** Which audience this instance is addressing.
+ *
+ * The wording is the only difference: a citizen is told about "your claim", a member of staff about
+ * "a case needing your attention". The subscription itself is identical, and the SERVER decides the
+ * routing from the verified JWT role — this prop cannot influence who gets notified, which is why
+ * it is safe for it to be a plain presentational flag. */
+type Props = { variant?: "citizen" | "staff" };
+
+export default function PushNotificationToggle({ variant = "citizen" }: Props) {
   const t = useTranslations("notifications");
   const [state, setState] = useState<PushState | "checking">("checking");
   const [busy, setBusy] = useState(false);
@@ -68,17 +76,17 @@ export default function PushNotificationToggle() {
   }
 
   return (
-    <section className="rounded-md border border-border-default p-design-4">
+    <section className="rounded-md border border-border-subtle bg-surface-raised p-design-4 shadow-card">
       <h2 className="text-label font-semibold text-ink-primary">{t("title")}</h2>
       <p className="mt-design-1 text-caption text-ink-secondary">
-        {subscribed ? t("enabledHint") : t("hint")}
+        {subscribed ? t("enabledHint") : t(variant === "staff" ? "staffHint" : "hint")}
       </p>
 
       {state === "denied" && (
         // Nothing this button can do will help: only the browser's own site settings can undo a
         // denial, so say that instead of offering a press that silently does nothing.
         <p role="alert" className="mt-design-2 text-caption text-ink-secondary">
-          {t("blocked")}
+          {t(variant === "staff" ? "staffBlocked" : "blocked")}
         </p>
       )}
 

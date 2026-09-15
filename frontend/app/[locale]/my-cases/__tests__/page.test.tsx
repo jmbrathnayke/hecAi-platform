@@ -42,7 +42,12 @@ beforeEach(() => {
 test("renders the citizen's cases and sends the Bearer token", async () => {
   render(<MyCasesPage />);
   expect(await screen.findByText("HEC-2026-0001")).toBeInTheDocument();
-  expect(screen.getByText("crop")).toBeInTheDocument();
+  // Through the translator, not as the raw column value. Both of these used to render the English
+  // database string to a Sinhala or Tamil reader — "crop" and "Submitted" — even though every
+  // label has been translated in all three message files since Story 2.5.
+  expect(screen.getByText("category.crop")).toBeInTheDocument();
+  expect(screen.getByText("statusLabels.Submitted")).toBeInTheDocument();
+  expect(screen.queryByText("crop")).not.toBeInTheDocument();
   const [url, init] = (global.fetch as jest.Mock).mock.calls[0];
   expect(String(url)).toContain("/api/v1/citizen/cases");
   expect(init.headers.Authorization).toBe("Bearer tok-123");
@@ -54,17 +59,56 @@ test("shows the empty state when the citizen owns no cases", async () => {
   expect(await screen.findByText("empty")).toBeInTheDocument();
 });
 
-test("shows an error state when the request fails", async () => {
+test("a server fault says so, and offers Retry", async () => {
   (global.fetch as jest.Mock).mockResolvedValue({ ok: false, status: 500, json: async () => ({}) });
   render(<MyCasesPage />);
-  expect(await screen.findByRole("alert")).toHaveTextContent("error");
+  expect(await screen.findByRole("alert")).toHaveTextContent("serverTitle");
+  expect(screen.getByRole("button", { name: "retry" })).toBeInTheDocument();
+  // Nothing is wrong with their account, so do not send them to a login screen.
+  expect(screen.queryByRole("link", { name: "signIn" })).not.toBeInTheDocument();
 });
 
-test("shows an error state when there is no session token (does not fetch)", async () => {
+test("a network failure is told apart from a server fault", async () => {
+  (global.fetch as jest.Mock).mockRejectedValue(new TypeError("Failed to fetch"));
+  render(<MyCasesPage />);
+  expect(await screen.findByRole("alert")).toHaveTextContent("networkTitle");
+  expect(screen.getByRole("button", { name: "retry" })).toBeInTheDocument();
+});
+
+test("no session asks the citizen to sign in and does NOT offer Retry", async () => {
+  // The defect this guards. Retry cannot produce a session, so offering it left a signed-out
+  // citizen pressing a button that failed every time while being told the system was broken.
   mockGetAccessToken.mockResolvedValue(null);
   render(<MyCasesPage />);
   await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
+  expect(screen.getByRole("alert")).toHaveTextContent("signedOutTitle");
+  expect(screen.getByRole("link", { name: "signIn" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "retry" })).not.toBeInTheDocument();
   expect(global.fetch).not.toHaveBeenCalled();
+});
+
+test("an expired session is told apart from never having signed in", async () => {
+  (global.fetch as jest.Mock).mockResolvedValue({ ok: false, status: 401, json: async () => ({}) });
+  render(<MyCasesPage />);
+  expect(await screen.findByRole("alert")).toHaveTextContent("expiredTitle");
+  expect(screen.getByRole("link", { name: "signIn" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "retry" })).not.toBeInTheDocument();
+});
+
+test("Sign out is not offered to someone who is not signed in", async () => {
+  mockGetAccessToken.mockResolvedValue(null);
+  render(<MyCasesPage />);
+  await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
+  expect(screen.queryByRole("button", { name: "signOut" })).not.toBeInTheDocument();
+});
+
+test("the reference lookup stays reachable when sign-in is the obstacle", async () => {
+  // FR-6.1: a reference number needs no account, so the one route that still works must be on the
+  // screen that tells someone they cannot sign in.
+  mockGetAccessToken.mockResolvedValue(null);
+  render(<MyCasesPage />);
+  await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
+  expect(screen.getByRole("link", { name: "checkByReference" })).toBeInTheDocument();
 });
 
 test("Retry re-fetches after an error and recovers", async () => {

@@ -32,6 +32,33 @@ interface MemberDraft {
   relationship: string;
 }
 
+// One class for every field on this form. Extracted because the form had NO focus styling at all:
+// a keyboard user could not see which of the twelve inputs they were in, on the screen that asks
+// for a national identity number and a bank account (WCAG 2.4.7). Sharing the constant means a
+// field added later inherits the ring rather than quietly omitting it.
+const FIELD =
+  "min-h-touch-target rounded-md border border-border-default bg-surface-raised px-design-4 " +
+  "text-body text-ink-primary transition-shadow duration-quick " +
+  "focus:border-border-focus focus:shadow-focus focus:outline-none";
+
+/** The same identifying band the public status page carries, so the two read as one service. */
+function RegisterHeader() {
+  const s = useTranslations("status");
+  return (
+    <header className="border-b border-border-subtle bg-surface-raised">
+      <div className="mx-auto flex w-full max-w-xl items-center gap-design-3 px-design-5 py-design-4">
+        <span aria-hidden="true" className="text-title">
+          🌿
+        </span>
+        <div className="min-w-0">
+          <p className="truncate text-label font-semibold text-ink-primary">{s("serviceName")}</p>
+          <p className="truncate text-caption text-ink-secondary">{s("serviceTag")}</p>
+        </div>
+      </div>
+    </header>
+  );
+}
+
 let nextKey = 1;
 function blankMember(): MemberDraft {
   return { key: nextKey++, nic: "", fullName: "", relationship: "" };
@@ -214,40 +241,55 @@ export default function RegisterHouseholdPage() {
   // ---------------------------------------------------------------- success
   if (done) {
     return (
-      <main className="mx-auto flex w-full max-w-md flex-col gap-design-6 px-design-5 py-design-6">
-        <div
-          className="rounded-lg bg-forest p-design-6 text-center"
-          role="status"
-          aria-live="polite"
-          data-testid="registration-receipt"
-        >
-          <p className="text-label text-ink-on-dark opacity-90">{t("done.label")}</p>
-          <p className="mt-design-2 text-display font-bold text-ink-on-dark">{done.householdRef}</p>
+      <main className="flex-1 bg-surface-base pb-design-8">
+        <RegisterHeader />
+        <div className="mx-auto flex w-full max-w-xl flex-col gap-design-5 px-design-5 py-design-6">
+          <div
+            className="overflow-hidden rounded-md border border-border-subtle bg-surface-raised shadow-raised"
+            role="status"
+            aria-live="polite"
+            data-testid="registration-receipt"
+          >
+            <div className="bg-forest px-design-6 py-design-6 text-center">
+              <p className="text-label text-ink-on-dark opacity-90">{t("done.label")}</p>
+              {/* The reference is the one thing they must keep, so it is the largest element on
+                  the screen and selectable in a single tap. */}
+              <p className="mt-design-2 select-all font-mono text-display font-bold text-ink-on-dark">
+                {done.householdRef}
+              </p>
+            </div>
+            <p className="px-design-6 py-design-5 text-body text-ink-primary">{t("done.body")}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => router.push("/report")}
+            className="min-h-primary-btn rounded-md bg-amber px-design-4 text-label font-semibold text-ink-on-amber transition-opacity duration-quick hover:opacity-90"
+          >
+            {t("done.reportIncident")}
+          </button>
         </div>
-        <p className="text-body text-ink-primary">{t("done.body")}</p>
-        <button
-          type="button"
-          onClick={() => router.push("/report")}
-          className="min-h-touch-target rounded-md bg-amber px-design-4 text-label font-semibold text-ink-on-amber"
-        >
-          {t("done.reportIncident")}
-        </button>
       </main>
     );
   }
 
   // ---------------------------------------------------------------- form
   return (
-    <main className="mx-auto flex w-full max-w-md flex-col gap-design-6 px-design-5 py-design-6">
-      <StepIndicator steps={steps} currentStep={step} />
+    <main className="flex-1 bg-surface-base pb-design-8">
+      <RegisterHeader />
 
-      <header>
-        <h1 className="text-title font-bold text-ink-primary">{t(`step${step + 1}.title`)}</h1>
-        <p className="mt-design-2 text-body text-ink-secondary">{t(`step${step + 1}.intro`)}</p>
-      </header>
+      <div className="mx-auto flex w-full max-w-xl flex-col gap-design-5 px-design-5 py-design-6">
+        <StepIndicator steps={steps} currentStep={step} />
+
+        <header>
+          <p className="text-caption font-semibold uppercase tracking-wide text-forest">
+            {t("stepOf", { current: step + 1, total: steps.length })}
+          </p>
+          <h1 className="mt-design-1 text-title text-ink-primary">{t(`step${step + 1}.title`)}</h1>
+          <p className="mt-design-2 text-body text-ink-secondary">{t(`step${step + 1}.intro`)}</p>
+        </header>
 
       {step === 0 && (
-        <div className="flex flex-col gap-design-4">
+        <div className="flex flex-col gap-design-4 rounded-md border border-border-subtle bg-surface-raised p-design-5 shadow-card">
           <div className="flex flex-col gap-design-1">
             <label htmlFor="registrant-nic" className="text-label font-medium text-ink-primary">
               {t("step1.nic")}
@@ -257,7 +299,7 @@ export default function RegisterHouseholdPage() {
               inputMode="numeric"
               value={nic}
               onChange={(e) => setNic(e.target.value)}
-              className="min-h-touch-target rounded-md border border-border-default px-design-3 text-body text-ink-primary"
+              className={FIELD}
             />
           </div>
           <div className="flex flex-col gap-design-1">
@@ -268,14 +310,22 @@ export default function RegisterHouseholdPage() {
               id="registrant-name"
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
-              className="min-h-touch-target rounded-md border border-border-default px-design-3 text-body text-ink-primary"
+              className={FIELD}
             />
           </div>
+
+          {/* Asking a villager for a national identity number deserves an answer to "what happens
+              to it". This one is true: the server derives a keyed digest and stores that — the
+              number itself is never written to the database. */}
+          <p className="flex items-start gap-design-2 rounded-md bg-surface-tint px-design-4 py-design-3 text-caption text-ink-secondary">
+            <span aria-hidden="true">🔒</span>
+            <span>{t("privacyNic")}</span>
+          </p>
         </div>
       )}
 
       {step === 1 && (
-        <div className="flex flex-col gap-design-4">
+        <div className="flex flex-col gap-design-4 rounded-md border border-border-subtle bg-surface-raised p-design-5 shadow-card">
           {/* Stated as a reason, not a rule (EXPERIENCE.md). Someone being told their relatives
               are blocked deserves to know why before it happens to them. */}
           <p className="rounded-md bg-surface-tint p-design-4 text-body text-ink-secondary">
@@ -299,7 +349,7 @@ export default function RegisterHouseholdPage() {
                     prev.map((x) => (x.key === m.key ? { ...x, nic: e.target.value } : x)),
                   )
                 }
-                className="min-h-touch-target rounded-md border border-border-default px-design-3 text-body text-ink-primary"
+                className={FIELD}
               />
               <label htmlFor={`member-name-${m.key}`} className="text-label font-medium text-ink-primary">
                 {t("step2.fullName")}
@@ -312,7 +362,7 @@ export default function RegisterHouseholdPage() {
                     prev.map((x) => (x.key === m.key ? { ...x, fullName: e.target.value } : x)),
                   )
                 }
-                className="min-h-touch-target rounded-md border border-border-default px-design-3 text-body text-ink-primary"
+                className={FIELD}
               />
               <button
                 type="button"
@@ -335,7 +385,7 @@ export default function RegisterHouseholdPage() {
       )}
 
       {step === 2 && (
-        <div className="flex flex-col gap-design-4">
+        <div className="flex flex-col gap-design-4 rounded-md border border-border-subtle bg-surface-raised p-design-5 shadow-card">
           <DistrictPicker
             value={area}
             onChange={setArea}
@@ -352,18 +402,23 @@ export default function RegisterHouseholdPage() {
               id="gn-division"
               value={gnDivision}
               onChange={(e) => setGnDivision(e.target.value)}
-              className="min-h-touch-target rounded-md border border-border-default px-design-3 text-body text-ink-primary"
+              className={FIELD}
             />
           </div>
         </div>
       )}
 
       {step === 3 && (
-        <div className="flex flex-col gap-design-4">
+        <div className="flex flex-col gap-design-4 rounded-md border border-border-subtle bg-surface-raised p-design-5 shadow-card">
           {/* Optional, and said so plainly. A citizen without an account, or who does not have
               the number to hand at a village registration desk, must not be stuck here. */}
           <p className="rounded-md bg-surface-tint p-design-4 text-body text-ink-secondary">
             {t("step4.optional")}
+          </p>
+
+          <p className="flex items-start gap-design-2 rounded-md bg-surface-tint px-design-4 py-design-3 text-caption text-ink-secondary">
+            <span aria-hidden="true">🔒</span>
+            <span>{t("privacyBank")}</span>
           </p>
 
           <div className="flex flex-col gap-design-1">
@@ -376,7 +431,7 @@ export default function RegisterHouseholdPage() {
               autoComplete="off"
               value={accountNumber}
               onChange={(e) => setAccountNumber(e.target.value)}
-              className="min-h-touch-target rounded-md border border-border-default px-design-3 text-body text-ink-primary"
+              className={FIELD}
             />
           </div>
 
@@ -388,7 +443,7 @@ export default function RegisterHouseholdPage() {
               id="bank-name"
               value={bankName}
               onChange={(e) => setBankName(e.target.value)}
-              className="min-h-touch-target rounded-md border border-border-default px-design-3 text-body text-ink-primary"
+              className={FIELD}
             />
           </div>
 
@@ -400,7 +455,7 @@ export default function RegisterHouseholdPage() {
               id="bank-branch"
               value={branch}
               onChange={(e) => setBranch(e.target.value)}
-              className="min-h-touch-target rounded-md border border-border-default px-design-3 text-body text-ink-primary"
+              className={FIELD}
             />
           </div>
 
@@ -419,7 +474,7 @@ export default function RegisterHouseholdPage() {
               autoComplete="email"
               value={contactEmail}
               onChange={(e) => setContactEmail(e.target.value)}
-              className="min-h-touch-target rounded-md border border-border-default px-design-3 text-body text-ink-primary"
+              className={FIELD}
             />
             <p className="text-caption text-ink-secondary">{t("step4.contactEmailHint")}</p>
           </div>
@@ -427,13 +482,19 @@ export default function RegisterHouseholdPage() {
       )}
 
       {fieldError && (
-        <p role="alert" className="text-body text-status-error">
+        <p
+          role="alert"
+          className="rounded-md border border-status-error bg-status-error-pale px-design-4 py-design-3 text-body text-status-error"
+        >
           {fieldError}
         </p>
       )}
 
       {failure && (
-        <div role="alert" className="flex flex-col gap-design-2">
+        <div
+          role="alert"
+          className="flex flex-col gap-design-3 rounded-md border border-status-error bg-status-error-pale px-design-4 py-design-4"
+        >
           <p className="text-body text-status-error">{t(failureKey(failure))}</p>
           {householdRefOf(failure) && (
             <p className="text-label font-semibold text-ink-primary" data-testid="conflict-household-ref">
@@ -484,6 +545,7 @@ export default function RegisterHouseholdPage() {
             {submitting ? t("submitting") : t("submit")}
           </button>
         )}
+        </div>
       </div>
     </main>
   );

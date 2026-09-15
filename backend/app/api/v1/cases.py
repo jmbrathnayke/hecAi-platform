@@ -13,6 +13,7 @@ from flask import Blueprint, current_app, jsonify, request
 from app.api.v1.middleware.auth import authenticated_claims, authz_role
 from app.infrastructure import registry
 from app.infrastructure.audit import write_audit_log
+from app.infrastructure.push.push_service import notify_staff_push
 from app.infrastructure.ml import compensation
 
 cases_bp = Blueprint("cases", __name__)
@@ -191,6 +192,16 @@ def submit_case():
                     cur, case_id, damage_category, ds_division, datetime.now(timezone.utc),
                     district=district, ai_severity=ai_severity,
                 )
+                # FR-6.4: a submitted case is work arriving for two roles at once -- the field
+                # officers covering the division, and the administrator responsible for the
+                # district. Both are best-effort: notify_staff_push never raises, which matters
+                # more here than anywhere else in the platform, because an exception inside this
+                # transaction would roll back the citizen's SUBMISSION rather than merely the
+                # announcement of it.
+                notify_staff_push(cur, case_id, "case_submitted", "officer",
+                                  ds_division, canonical_id, claims.get("sub"))
+                notify_staff_push(cur, case_id, "case_submitted", "admin",
+                                  district, canonical_id, claims.get("sub"))
         return jsonify({"canonical_id": canonical_id, "offline_id": offline_id}), 201
     finally:
         conn.close()

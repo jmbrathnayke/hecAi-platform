@@ -220,6 +220,19 @@ def test_submit_rejects_wrong_type_damage_category(client, store):
     assert len(store["cases"]) == 0
 
 
+def _events(store):
+    """-> the event names written to the audit log, in order.
+
+    Tests here used to assert on len(store["audit"]) as a proxy for "one submitted row". That
+    stopped meaning what it said once submit_case gained the FR-6.4 staff alerts: with no VAPID
+    keypair in the test config both alerts short-circuit and each records its own
+    staff_push_skipped_not_configured row, so the count is 3 while the thing being asserted --
+    exactly one submitted event -- is unchanged. Naming the event says what is meant and does not
+    have to be revisited the next time a notification channel is added.
+    """
+    return [row[1] for row in store["audit"]]
+
+
 def test_submit_creates_case_with_canonical_id(client, store):
     res = client.post(
         "/api/v1/cases/submit", json=_body(), headers={"Authorization": f"Bearer {_token()}"}
@@ -229,7 +242,7 @@ def test_submit_creates_case_with_canonical_id(client, store):
     assert data["canonical_id"] == "HEC-2026-0001"
     assert data["offline_id"] == _body()["offline_id"]
     # audit row written with the JWT subject as actor
-    assert len(store["audit"]) == 1
+    assert _events(store).count("submitted") == 1
     assert store["audit"][0][1] == "submitted"
     assert store["audit"][0][2] == "officer-1"
 
@@ -272,7 +285,7 @@ def test_submit_is_idempotent(client, store):
     assert first.get_json()["canonical_id"] == second.get_json()["canonical_id"]
     # only one case + one audit row despite two submissions
     assert len(store["cases"]) == 1
-    assert len(store["audit"]) == 1
+    assert _events(store).count("submitted") == 1
 
 
 # --- Story 3.5: officer-assisted submission -------------------------------------------------
@@ -352,7 +365,7 @@ def test_officer_assisted_is_idempotent(client, store):
     assert second.status_code == 200
     assert first.get_json()["canonical_id"] == second.get_json()["canonical_id"]
     assert len(store["cases"]) == 1
-    assert len(store["audit"]) == 1
+    assert _events(store).count("submitted") == 1
 
 
 # --- Story 4.0: citizen ownership -----------------------------------------------------------

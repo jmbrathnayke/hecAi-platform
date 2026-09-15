@@ -19,7 +19,7 @@ resolves to one:
     cases.household_id -> households.contact_email
 """
 from app.infrastructure.audit import write_audit_log
-from app.infrastructure.email.sendgrid_client import send_email
+from app.infrastructure.email.sendgrid_client import email_configured, send_email
 
 DEFAULT_LOCALE = "si"
 
@@ -81,6 +81,21 @@ def notify_status_change_email(cur, case_id, canonical_id, new_status, admin_id,
     body = body.replace("{ref}", ref)
     if amount_lkr is not None:
         body = body.replace("{amount}", f"{amount_lkr:,.2f}")
+
+    # Not provisioned is a DEPLOYMENT state, not a delivery failure, and the audit log is the only
+    # place that difference is visible to anyone reading the case afterwards. Recording both as
+    # "email_failed" made a deployment that had simply never been given a SendGrid key look exactly
+    # like one whose mail was being rejected by the provider -- two problems with different owners
+    # and different fixes.
+    #
+    # CHECKED HERE, after the address and the template have resolved, rather than at the top of the
+    # function. The earlier skips are more specific and more actionable, so they must keep winning:
+    # a case whose family gave no address reports no_address whether or not mail is provisioned,
+    # and does not silently change its recorded reason the day a key is finally added.
+    if not email_configured():
+        write_audit_log(cur, case_id, "email_skipped_not_configured", admin_id,
+                        {"status": new_status})
+        return
 
     # The address never enters audit metadata. It is already stored once on `households`;
     # duplicating it into an append-only, widely-read log enlarges the exposure surface for no

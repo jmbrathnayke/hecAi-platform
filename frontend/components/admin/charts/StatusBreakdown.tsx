@@ -32,7 +32,7 @@ export function StatusBreakdown({ data }: StatusBreakdownProps) {
   const color = (status: string) => STATUS_CHART_COLORS[status] ?? STATUS_CHART_FALLBACK_COLOR;
 
   return (
-    <section className="rounded-md border border-border-default bg-surface-raised p-design-4">
+    <section className="rounded-md border border-border-subtle bg-surface-raised shadow-card p-design-4">
       <h2 className="text-headline text-ink-primary">{t("analytics.statusDistribution")}</h2>
       {total === 0 ? (
         <p className="mt-design-3 text-body text-ink-secondary">{t("analytics.noData")}</p>

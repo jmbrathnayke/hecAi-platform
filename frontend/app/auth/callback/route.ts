@@ -36,10 +36,23 @@ function safeErrorCode(raw: string): string {
   return ALLOWED_PROVIDER_ERRORS.has(raw) ? raw : "oauth_error";
 }
 
-/** Login page to bounce back to when the exchange fails, inferred from the intended destination. */
+/**
+ * Login page to bounce back to when the exchange fails, inferred from the intended destination.
+ *
+ * EVERY staff tree must be listed. A tree that is missing falls through to the citizen login, so a
+ * Divisional Secretariat officer whose sign-in fails is deposited on /en/login — a page whose only
+ * control emails a one-time code to a citizen account, with no route back to the portal they were
+ * trying to enter and no indication of what went wrong. /ds was missing from this list for the
+ * whole life of Story 8.5, and /system would have repeated it.
+ *
+ * This is the third place that enumerates the staff trees, after middleware.ts and the login pages
+ * themselves. Adding a fourth tree means editing all three.
+ */
 function loginPathFor(next: string): string {
   if (next.startsWith("/admin")) return "/admin/login";
   if (next.startsWith("/officer")) return "/officer/login";
+  if (next.startsWith("/ds")) return "/ds/login";
+  if (next.startsWith("/system")) return "/system/login";
   // Citizen login is locale-prefixed (/si|/ta|/en/login); the unprefixed form is resolved by
   // next-intl's middleware on the follow-up request.
   return "/login";
@@ -131,6 +144,18 @@ export async function GET(request: NextRequest) {
 
     const { data, error } = await supabase.auth.exchangeCodeForSession(code);
     if (error) {
+      // The URL deliberately carries only a generic code (see safeErrorCode), but the SERVER log
+      // must carry the real reason or this failure is undiagnosable: "exchange_failed" is the same
+      // string whether the PKCE verifier cookie was absent, the code was already spent, or the
+      // callback URL is missing from the provider's redirect allowlist — three different fixes.
+      console.error(
+        "[auth/callback] exchangeCodeForSession failed:",
+        error.message,
+        "| status:", error.status,
+        "| next:", next,
+        "| verifier cookie present:",
+        request.cookies.getAll().some((c) => c.name.includes("code-verifier")),
+      );
       exchangeFailed = "exchange_failed";
     } else if (!data?.session) {
       // "No error" is not the same as "session created". Returning the success redirect without

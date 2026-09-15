@@ -5,6 +5,9 @@ writable *only* with the service-role key (see app/api/v1/middleware/auth.py). T
 what makes it safe — and also why the Supabase dashboard renders it read-only. There is no UI
 for this, so granting an officer or admin their role has to go through the Auth Admin API.
 
+Credentials come from backend/.env (SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY), or from the shell
+environment if you would rather export them there:
+
   set SUPABASE_URL=https://<project>.supabase.co
   set SUPABASE_SERVICE_ROLE_KEY=<service role key>
 
@@ -36,6 +39,14 @@ import os
 import sys
 
 import requests
+from dotenv import load_dotenv
+
+# Read backend/.env like every other script in this directory. Without this the script demanded
+# the credentials be exported into the shell first, while check_migration_parity, seed_research_data
+# and setup_demo_accounts all read the same file automatically — so the one script that grants a
+# role was also the one that appeared broken on a correctly configured machine. Explicit shell
+# variables still win: load_dotenv does not override what is already set.
+load_dotenv(dotenv_path=".env")
 
 TIMEOUT = 30
 VALID_ROLES = ("officer", "admin", "system_admin", "ds_officer")

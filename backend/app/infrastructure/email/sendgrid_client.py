@@ -41,6 +41,29 @@ def _mask(address: str) -> str:
     return f"{head}***@{domain}"
 
 
+def email_configured() -> bool:
+    """-> True if this deployment holds the credentials needed to send anything at all.
+
+    ADVISORY, NOT A PRECONDITION. send_email() performs this same check itself and remains safe to
+    call without consulting this first. The two are deliberately not collapsed into one: a caller
+    that never looks at this predicate must keep working exactly as before.
+
+    It exists so a caller writing an audit trail can tell a deployment that was never given a
+    SendGrid key from one whose mail is being rejected. Both make send_email() return False, and
+    recording both as a delivery failure made an unprovisioned deployment indistinguishable from a
+    broken one for anyone reading the log afterwards -- including in §7.3, where email is
+    documented as implemented but not provisioned.
+    """
+    try:
+        return bool(current_app.config.get("SENDGRID_API_KEY")
+                    and current_app.config.get("SENDGRID_FROM_EMAIL"))
+    except Exception:
+        # No application context (a background thread, an import-time probe). Unconfigured is the
+        # safe answer: this sits on a notification path that must never break its caller, and the
+        # worst outcome of a false negative is one audit row naming the wrong reason.
+        return False
+
+
 def send_email(to: str, subject: str, body: str) -> bool:
     """Send one plain-text email. Returns True on acceptance, False on any failure.
 

@@ -79,7 +79,7 @@ export function CaseDetailPanel({ offlineId }: CaseDetailPanelProps) {
 
   if (state === "loading") {
     return (
-      <div className="rounded-md border border-border-default bg-surface-raised p-design-4">
+      <div className="rounded-md border border-border-subtle bg-surface-raised shadow-card p-design-4">
         <p className="text-body text-ink-secondary" role="status">
           {t("detail.loading")}
         </p>
@@ -89,7 +89,7 @@ export function CaseDetailPanel({ offlineId }: CaseDetailPanelProps) {
 
   if (state === "error") {
     return (
-      <div role="alert" className="space-y-design-2 rounded-md border border-border-default bg-surface-raised p-design-4">
+      <div role="alert" className="space-y-design-2 rounded-md border border-border-subtle bg-surface-raised shadow-card p-design-4">
         <p className="text-body text-status-error">{t("detail.loadError")}</p>
         <button
           type="button"
@@ -109,7 +109,7 @@ export function CaseDetailPanel({ offlineId }: CaseDetailPanelProps) {
 
   return (
     <div className="space-y-design-4">
-      <div className="rounded-md border border-border-default bg-surface-raised p-design-4 space-y-design-2">
+      <div className="rounded-md border border-border-subtle bg-surface-raised shadow-card p-design-4 space-y-design-2">
         <div className="flex items-center gap-design-3">
           {/* was `text-heading-3`, which has never existed in tailwind.config.ts — and because
               preflight resets h1-h6 to `font-size/font-weight: inherit`, this rendered at plain
@@ -133,6 +133,23 @@ export function CaseDetailPanel({ offlineId }: CaseDetailPanelProps) {
           <div>
             <dt className="text-label text-ink-disabled">{t("detail.channel")}</dt>
             <dd className="text-ink-primary">{c.submitted_via ?? "—"}</dd>
+          </div>
+          {/* This panel is where the approve/reject decision is taken, so the verification state
+              belongs here and not only in the list. `channel` above cannot answer it: it reads
+              "app" whether an officer stood in the field or the citizen sat at home. */}
+          <div>
+            <dt className="text-label text-ink-disabled">{t("detail.verification")}</dt>
+            <dd
+              className={
+                c.submitted_by_officer
+                  ? "text-ink-primary"
+                  : "font-medium text-ink-primary"
+              }
+            >
+              {c.submitted_by_officer
+                ? t("table.verifiedByOfficer")
+                : `⚠ ${t("table.notVerified")}`}
+            </dd>
           </div>
           <div>
             <dt className="text-label text-ink-disabled">{t("detail.damageCategory")}</dt>

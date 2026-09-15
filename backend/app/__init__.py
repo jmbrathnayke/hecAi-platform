@@ -57,6 +57,12 @@ def create_app(config=None):
     # the derived value, so it is documented in .env.example alongside SUPABASE_URL rather than
     # existing only in this source file.
     supabase_url = _https_url(os.getenv("SUPABASE_URL"), "SUPABASE_URL")
+    # Stored, not just derived from. Until FR-11 this value existed only as a local used to build
+    # the JWKS URL and the issuer, so `current_app.config["SUPABASE_URL"]` was always None and the
+    # provisioning API refused with "not configured" on a correctly configured machine. The
+    # already-validated local is reused rather than re-reading the environment, so provisioning
+    # inherits _https_url()'s scheme check and cannot be pointed at a plaintext host.
+    app.config["SUPABASE_URL"] = supabase_url
     app.config["SUPABASE_JWKS_URL"] = _https_url(
         os.getenv("SUPABASE_JWKS_URL"), "SUPABASE_JWKS_URL"
     ) or (
@@ -106,6 +112,12 @@ def create_app(config=None):
     # provisioned email; sendgrid_client.send_email() treats an unset key as "not configured" and
     # returns False rather than raising, so an unconfigured install degrades to the public status
     # page instead of failing a case action.
+    # Supabase Auth Admin API. Required only by the staff-provisioning API (FR-11): app_metadata
+    # is writable with this key alone, which is precisely what makes the role claim trustworthy —
+    # a citizen cannot call auth.updateUser() and name themselves an administrator. Absent, that
+    # API returns 503 rather than degrading to something that appears to work.
+    app.config["SUPABASE_SERVICE_ROLE_KEY"] = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+
     app.config["SENDGRID_API_KEY"] = os.getenv("SENDGRID_API_KEY")
     app.config["SENDGRID_FROM_EMAIL"] = os.getenv("SENDGRID_FROM_EMAIL")
     app.config["SENDGRID_FROM_NAME"] = os.getenv("SENDGRID_FROM_NAME")
@@ -148,6 +160,7 @@ def create_app(config=None):
     from app.api.v1.households import households_bp
     from app.api.v1.ds import ds_bp
     from app.api.v1.notifications import notifications_bp
+    from app.api.v1.users import users_bp
 
     app.register_blueprint(health_bp, url_prefix="/api/v1")
     app.register_blueprint(cases_bp, url_prefix="/api/v1")
@@ -162,5 +175,6 @@ def create_app(config=None):
     app.register_blueprint(households_bp, url_prefix="/api/v1")
     app.register_blueprint(ds_bp, url_prefix="/api/v1")
     app.register_blueprint(notifications_bp, url_prefix="/api/v1")
+    app.register_blueprint(users_bp, url_prefix="/api/v1")
 
     return app

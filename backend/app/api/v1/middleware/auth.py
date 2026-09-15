@@ -421,6 +421,51 @@ def require_research():
     return decorator
 
 
+def require_system_admin():
+    """Guard the user-provisioning API (FR-11).
+
+    Same role check as require_research() — both admit only `system_admin` — but kept separate
+    because they guard different kinds of action and should be able to diverge. require_research()
+    protects a bulk read of de-identified data; this protects the ability to CREATE accounts and
+    ASSIGN roles, which is the one operation in the platform that can manufacture authority. If a
+    future revision needs to narrow one of them (a read-only researcher, say, who must not be able
+    to mint an administrator), a shared guard would have to be split under pressure.
+
+    The role comes from `app_metadata`, which is writable only with the service-role key. That is
+    load-bearing here in a way it is nowhere else: if this guard read client-writable
+    `user_metadata`, any authenticated citizen could call auth.updateUser(), name themselves
+    system_admin, and then grant themselves an administrator role over any district. The 2026-08-11
+    fix recorded in require_research()'s docstring is what closed that path.
+
+    Sets g.system_admin_id for the audit metadata — every provisioning action records who took it.
+    """
+    def decorator(f):
+        @functools.wraps(f)
+        def wrapper(*args, **kwargs):
+            claims, error = authenticated_claims()
+            if error:
+                return error
+
+            if authz_role(claims) != "system_admin":
+                # An admin or ds_officer token must never reach this: a district administrator who
+                # could provision accounts could mint a second administrator for another district,
+                # which is privilege escalation dressed as an ordinary feature.
+                return jsonify({"error": "forbidden"}), 403
+
+            system_admin_id = claims.get("sub")
+            if not system_admin_id:
+                # A validly-signed token with no `sub` is malformed. Refusing here keeps a null
+                # actor out of the audit row for an action that grants authority.
+                return jsonify({"error": "invalid_token"}), 401
+
+            g.system_admin_id = system_admin_id
+            return f(*args, **kwargs)
+
+        return wrapper
+
+    return decorator
+
+
 def require_citizen():
     """Guard citizen-owned routes (Story 4.0). Mirrors require_officer()'s independent JWT
     validation, but a citizen is a plain authenticated Supabase user with NO staff role: any

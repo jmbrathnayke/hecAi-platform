@@ -165,7 +165,11 @@
     "back": "Back",
     "submit": "Register",
     "submitting": "Registering…",
-    "retry": "Try again"
+    "retry": "Try again",
+    "stepOf": "Step {current} of {total}",
+    "privacyNic": "Your ID number is turned into a code the moment it reaches us. The number itself is never stored.",
+    "privacyBank": "Your account number is encrypted. It can be read only by the Divisional Secretariat, at the moment it releases your payment.",
+    "secureLabel": "Protected"
   },
   "poc": {
     "title": "Proof of Claim",
@@ -204,6 +208,21 @@
       "Approved": "Approved",
       "Rejected": "Rejected",
       "PaymentProcessed": "Payment Processed"
+    },
+    "serviceName": "Department of Wildlife Conservation",
+    "serviceTag": "Human–Elephant Conflict compensation",
+    "intro": "Enter the reference number printed on your Proof of Claim. You do not need an account.",
+    "progressTitle": "Claim progress",
+    "emptyTitle": "No claim shown yet",
+    "emptyBody": "Enter your reference number above, or scan the QR code on your Proof of Claim.",
+    "copy": "Copy",
+    "copied": "Copied",
+    "nextStep": {
+      "Submitted": "Your report has been received. A wildlife officer will assess the damage.",
+      "UnderReview": "An officer is assessing your claim. No action is needed from you.",
+      "Approved": "Your claim has been approved. The Divisional Secretariat will release payment to your registered bank account.",
+      "Rejected": "This claim was not approved. Your Divisional Secretariat office can explain the decision.",
+      "PaymentProcessed": "Payment has been released to your registered bank account."
     }
   },
   "login": {
@@ -237,7 +256,25 @@
     "error": "Couldn’t load your cases.",
     "retry": "Retry",
     "empty": "You have no reports yet.",
-    "signOut": "Sign out"
+    "signOut": "Sign out",
+    "subtitle": "Every report you have submitted, and where each one has reached.",
+    "signedOutTitle": "You are signed out",
+    "signedOutBody": "Sign in to see the claims linked to your account. You can also check any claim with its reference number.",
+    "expiredTitle": "Your session has expired",
+    "expiredBody": "Sign in again to see your claims.",
+    "serverTitle": "We could not reach the service",
+    "serverBody": "This is a problem at our end, not with your claim. Please try again.",
+    "networkTitle": "No connection",
+    "networkBody": "Check your internet connection and try again.",
+    "signIn": "Sign in",
+    "checkByReference": "Check a claim by reference number",
+    "emptyTitle": "No reports yet",
+    "submittedOn": "Submitted",
+    "category": {
+      "crop": "Crop damage",
+      "property": "Property damage",
+      "combined": "Crop and property damage"
+    }
   },
   "officer": {
     "languageLabel": "Language",
@@ -445,6 +482,19 @@
     "navQueue": "Queue"
   },
   "ds": {
+    "login": {
+      "title": "Divisional Secretariat",
+      "google": "Sign in with Google",
+      "or": "or",
+      "emailPlaceholder": "Divisional Secretariat email address",
+      "passwordPlaceholder": "Password",
+      "signIn": "Sign In",
+      "networkError": "Could not reach the sign-in service. Check your connection and try again.",
+      "errorAccessDenied": "Sign-in was cancelled. Please try again.",
+      "errorMissingCode": "That sign-in link is incomplete. Please start again from this page.",
+      "errorExchangeFailed": "Your sign-in link has expired or was already used. Please try again.",
+      "errorProvider": "Sign-in failed. Please try again."
+    },
     "title": "Divisional Secretariat",
     "divisionLabel": "Division",
     "loading": "Loading cases…",
@@ -532,7 +582,10 @@
       "colStatus": "Status",
       "colSubmissionDate": "Submission Date",
       "colDaysPending": "Days Pending",
-      "sortAria": "Sort by {column}"
+      "sortAria": "Sort by {column}",
+      "colVerification": "Verification",
+      "verifiedByOfficer": "Officer verified",
+      "notVerified": "Not verified"
     },
     "filter": {
       "formAria": "Filter cases",
@@ -561,7 +614,8 @@
       "channel": "Channel",
       "damageCategory": "Damage Category",
       "submitted": "Submitted",
-      "location": "Location"
+      "location": "Location",
+      "verification": "Verification"
     },
     "action": {
       "heading": "Actions",
@@ -669,6 +723,82 @@
     "enable": "Turn on notifications",
     "disable": "Turn off notifications",
     "working": "Please wait…",
-    "blocked": "Notifications are blocked in your browser settings for this site. You can still check your claim status at any time using your reference number."
+    "blocked": "Notifications are blocked in your browser settings for this site. You can still check your claim status at any time using your reference number.",
+    "staffHint": "Get a notification on this device when a case needs your attention.",
+    "staffBlocked": "Notifications are blocked in your browser settings for this site. Cases still appear on your dashboard."
+  },
+  "system": {
+    "title": "System Administration",
+    "subtitle": "Create, update and remove staff accounts. Each account holds one role and one scope.",
+    "loading": "Loading accounts…",
+    "empty": "No staff accounts yet.",
+    "working": "Please wait…",
+    "saved": "Account updated.",
+    "deleted": "Account removed.",
+    "confirmDelete": "Remove {email}? Their past actions stay in the audit trail.",
+    "role": {
+      "officer": "Wildlife Field Officer",
+      "admin": "DWC Administrator",
+      "ds_officer": "Divisional Secretariat Officer",
+      "system_admin": "System Administrator"
+    },
+    "form": {
+      "createTitle": "Create a staff account",
+      "editTitle": "Edit {email}",
+      "email": "Email address",
+      "role": "Role",
+      "scope": {
+        "officer": "Assigned DS divisions",
+        "admin": "District",
+        "ds_officer": "DS division"
+      },
+      "scopeHint": {
+        "officer": "Type to search, then Add. Choose as many divisions as the officer covers.",
+        "admin": "One district. An administrator sees every case in it.",
+        "ds_officer": "One division. The office authorises payment for this division only."
+      },
+      "add": "Add"
+    },
+    "table": {
+      "email": "Email",
+      "role": "Role",
+      "scope": "Scope",
+      "lastSignIn": "Last sign-in",
+      "actions": "Actions",
+      "never": "Never"
+    },
+    "action": {
+      "create": "Create account",
+      "save": "Save changes",
+      "cancel": "Cancel",
+      "edit": "Edit",
+      "delete": "Remove"
+    },
+    "password": {
+      "title": "Temporary password",
+      "hint": "Shown once. Give it to the account holder and ask them to change it at first sign-in. It is not stored anywhere."
+    },
+    "error": {
+      "forbidden": "This account does not have System Administrator access.",
+      "unavailable": "Account provisioning is not configured on this server.",
+      "duplicate": "An account with that email address already exists.",
+      "invalid": "That scope is not valid. Check the district or division name.",
+      "self": "You cannot remove or demote your own account.",
+      "generic": "The server could not complete that request.",
+      "unknownDivision": "‘{name}’ is not a DS division. Choose one from the list."
+    },
+    "login": {
+      "title": "System Administration",
+      "google": "Sign in with Google",
+      "or": "or",
+      "emailPlaceholder": "Email address",
+      "passwordPlaceholder": "Password",
+      "signIn": "Sign In",
+      "networkError": "Could not reach the sign-in service. Check your connection and try again.",
+      "errorAccessDenied": "Sign-in was cancelled. Please try again.",
+      "errorMissingCode": "That sign-in link is incomplete. Please start again from this page.",
+      "errorExchangeFailed": "Your sign-in link has expired or was already used. Please try again.",
+      "errorProvider": "Sign-in failed. Please try again."
+    }
   }
 }

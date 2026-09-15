@@ -468,7 +468,7 @@ export default function OfficerSubmitPage() {
               onBack={() => setStep("damage")}
               fileInputTestId="submit-file-input"
             />
-            <div className="border-b border-border-default bg-surface-raised px-design-5 py-design-3 text-center">
+            <div className="border-b border-border-subtle bg-surface-raised px-design-5 py-design-3 text-center">
               <p className="text-label text-ink-secondary">
                 <span aria-hidden="true">📸 </span>
                 {thumbnails.length >= MAX_PHOTOS
@@ -718,7 +718,7 @@ export default function OfficerSubmitPage() {
 
         {step === "review" && (
           <div className="space-y-design-4">
-            <dl className="space-y-design-2 rounded-md border border-border-default bg-surface-raised p-design-4">
+            <dl className="space-y-design-2 rounded-md border border-border-subtle bg-surface-raised shadow-card p-design-4">
               <div className="flex justify-between gap-design-3">
                 <dt className="text-label text-ink-secondary">{t("submit.reviewDamage")}</dt>
                 <dd className="text-label text-ink-primary">{damage ? tReport(`step3.${damage}`) : "—"}</dd>
