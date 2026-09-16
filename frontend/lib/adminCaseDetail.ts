@@ -17,6 +17,11 @@ export interface AdminCaseDetailCase {
   submitted_at: string | null;
   updated_at: string | null;
   submitted_via: string | null;
+  /**
+   * Whether a DWC field officer was physically present to see the damage. True only on the
+   * officer-assisted path. `submitted_via` is "app" for both paths and cannot answer this.
+   */
+  submitted_by_officer: boolean;
   submitter_identity_hash: string | null;
   approved_amount: number | null;
 }

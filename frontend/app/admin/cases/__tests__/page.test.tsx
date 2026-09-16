@@ -87,6 +87,9 @@ function makeItem(overrides: Record<string, unknown> = {}) {
     submitted_at: "2026-07-08T10:00:00.000Z",
     updated_at: "2026-07-08T10:00:00.000Z",
     ai_confidence: null,
+    // Defaults to the officer-verified case, so a test that cares about the UNVERIFIED state has
+    // to say so explicitly rather than inheriting it from a fixture that happens to be falsy.
+    submitted_by_officer: true,
     ...overrides,
   };
 }
@@ -515,4 +518,64 @@ test("export button is not offered while the list is still loading", async () =>
   });
   await screen.findByText("HEC-2026-0001");
   expect(screen.getByRole("button", { name: /export\.button/ })).not.toBeDisabled();
+});
+
+// ============================================================ verification column
+//
+// WHY THIS COLUMN EXISTS. Two claims can reach this list with identical damage, identical amount
+// and identical status: one where a DWC officer walked to the site and photographed the damage,
+// and one where the citizen uploaded a photo from home and nobody checked anything. Before this
+// column the approver could not tell them apart — `submitted_via` reads "app" for both paths
+// (migration 009) — so the same money was authorised on the same evidence in both cases. See R-18.
+
+test("a case an officer verified is labelled as verified", async () => {
+  mockAdmin();
+  mockFetchAdminCases.mockResolvedValue(
+    makeResponse({ items: [makeItem({ submitted_by_officer: true })] }),
+  );
+  render(<AdminCasesPage />);
+  await screen.findByText("HEC-2026-0001");
+  expect(screen.getByText("table.verifiedByOfficer")).toBeInTheDocument();
+  expect(screen.queryByText("table.notVerified")).not.toBeInTheDocument();
+});
+
+test("a self-reported case is labelled as NOT verified", async () => {
+  mockAdmin();
+  mockFetchAdminCases.mockResolvedValue(
+    makeResponse({ items: [makeItem({ submitted_by_officer: false })] }),
+  );
+  render(<AdminCasesPage />);
+  await screen.findByText("HEC-2026-0001");
+  expect(screen.getByText("table.notVerified")).toBeInTheDocument();
+});
+
+test("the warning is carried by text, not by colour alone", async () => {
+  mockAdmin();
+  // An approver with a colour-vision deficiency, or reading a printed case list, must still see
+  // that nobody verified the claim. WCAG 1.4.1: colour is never the only carrier of meaning.
+  mockFetchAdminCases.mockResolvedValue(
+    makeResponse({ items: [makeItem({ submitted_by_officer: false })] }),
+  );
+  render(<AdminCasesPage />);
+  await screen.findByText("HEC-2026-0001");
+  const badge = screen.getByText("table.notVerified");
+  expect(badge.textContent).toBeTruthy();
+});
+
+test("verified and unverified cases are distinguishable in one list", async () => {
+  mockAdmin();
+  // The realistic case: a district's queue holds both, and the difference must be visible while
+  // scanning rather than only after opening each one.
+  mockFetchAdminCases.mockResolvedValue(
+    makeResponse({
+      items: [
+        makeItem({ canonical_id: "HEC-2026-0001", offline_id: "off-1", submitted_by_officer: true }),
+        makeItem({ canonical_id: "HEC-2026-0002", offline_id: "off-2", submitted_by_officer: false }),
+      ],
+    }),
+  );
+  render(<AdminCasesPage />);
+  await screen.findByText("HEC-2026-0002");
+  expect(screen.getByText("table.verifiedByOfficer")).toBeInTheDocument();
+  expect(screen.getByText("table.notVerified")).toBeInTheDocument();
 });

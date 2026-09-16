@@ -119,6 +119,87 @@ export default async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // Divisional Secretariat routes (Story 8.5) — same shape as /officer and /admin: a separate
+  // top-level tree with no locale prefix, session-protected, English path with the locale coming
+  // from the NEXT_LOCALE cookie inside app/ds/layout.tsx.
+  //
+  // WITHOUT THIS BLOCK THE DS DASHBOARD IS UNREACHABLE. /ds/* falls through to intlMiddleware,
+  // which 307s it to /si/ds/dashboard — a route that does not exist under app/[locale] — so every
+  // request 404s. Story 8.5 added app/ds/ but not the middleware exemption its siblings have, and
+  // no test caught it because the page component renders correctly in isolation; only requesting
+  // the route through the running app reveals it.
+  const isDsRoute = lowerPath === "/ds" || lowerPath.startsWith("/ds/");
+  const isDsLogin = lowerPath === "/ds/login" || lowerPath.startsWith("/ds/login/");
+  if (isDsRoute && !isDsLogin) {
+    let response = NextResponse.next({ request });
+    const supabase = createServerSupabaseClient({
+      getAll: () => request.cookies.getAll(),
+      setAll: (cookiesToSet) => {
+        cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
+        response = NextResponse.next({ request });
+        cookiesToSet.forEach(({ name, value, options }) => response.cookies.set(name, value, options));
+      },
+    });
+    // getUser(), not getSession(): it revalidates against Supabase Auth rather than trusting a
+    // locally-decoded cookie. Role enforcement stays the backend's job (require_ds_officer())
+    // plus the login page's own check — this gate only establishes that someone is signed in.
+    let user = null;
+    try {
+      const result = await supabase.auth.getUser();
+      user = result.data.user;
+    } catch {
+      user = null;
+    }
+    if (!user) {
+      // Carry over cookie mutations setAll() already wrote (e.g. clearing an expired session),
+      // which a bare redirect would drop.
+      const redirect = NextResponse.redirect(new URL("/ds/login", request.url));
+      response.cookies.getAll().forEach((cookie) => redirect.cookies.set(cookie));
+      return redirect;
+    }
+    return response;
+  }
+  if (isDsRoute) {
+    return NextResponse.next();
+  }
+
+  // System Administrator routes (FR-11) — same shape again. Added at the same time as the tree
+  // itself, because /ds shipped without this block and 404'd for the whole life of Story 8.5:
+  // anything under app/ that is not app/[locale] needs an exemption here or intlMiddleware 307s
+  // it into the locale tree, where it has no route.
+  const isSystemRoute = lowerPath === "/system" || lowerPath.startsWith("/system/");
+  const isSystemLogin = lowerPath === "/system/login" || lowerPath.startsWith("/system/login/");
+  if (isSystemRoute && !isSystemLogin) {
+    let response = NextResponse.next({ request });
+    const supabase = createServerSupabaseClient({
+      getAll: () => request.cookies.getAll(),
+      setAll: (cookiesToSet) => {
+        cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
+        response = NextResponse.next({ request });
+        cookiesToSet.forEach(({ name, value, options }) => response.cookies.set(name, value, options));
+      },
+    });
+    // Establishes only that someone is signed in. The system_admin role itself is enforced by
+    // require_system_admin() on every provisioning call — a client-side check would be advisory,
+    // and this surface is the one where advisory is not good enough.
+    let user = null;
+    try {
+      const result = await supabase.auth.getUser();
+      user = result.data.user;
+    } catch {
+      user = null;
+    }
+    if (!user) {
+      const redirect = NextResponse.redirect(new URL("/system/login", request.url));
+      response.cookies.getAll().forEach((cookie) => redirect.cookies.set(cookie));
+      return redirect;
+    }
+    return response;
+  }
+  if (isSystemRoute) {
+    return NextResponse.next();
+  }
+
   // Citizen account routes (Story 4.0) — localized and session-protected. ONLY the "My Cases"
   // account view is gated; report/* and status/* stay public so anonymous reporting is unaffected.
   // Matches the locale-prefixed form (/si|/ta|/en/my-cases…); an unprefixed /my-cases is first

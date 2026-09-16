@@ -12,6 +12,15 @@ from typing import Any
 import pytest
 
 from app import create_app
+from app.infrastructure.security.nic_identity import nic_hmac
+
+# Story 8.4: SMS now resolves the citizen's household from the NIC in the message body.
+PEPPER = "test-pepper-not-a-real-secret"
+DISTRICT = "අනුරාධපුරය"
+DIVISION = "තලාව"
+# Every NIC these tests send, pre-registered. A test that wants the unregistered path clears
+# store["households_by_digest"].
+REGISTERED_NICS = ["200012345678", "901234567V", "199512345678"]
 
 OFFICER_MOBILE = "+94771234567"
 OFFICER_UID = "11111111-1111-4111-8111-111111111111"
@@ -29,7 +38,15 @@ class FakeCursor:
         return False
 
     def execute(self, sql: str, params: tuple[Any, ...] = ()):
-        if "pg_advisory_xact_lock" in sql:
+        if "FROM household_members m JOIN households h" in sql:
+            digest, status = params
+            hit = self.store["households_by_digest"].get(digest)
+            if hit and hit["status"] == status:
+                self._result = (hit["id"], hit["household_ref"], hit["district"],
+                                hit["ds_division"], hit["status"])
+            else:
+                self._result = None
+        elif "pg_advisory_xact_lock" in sql:
             self._result = None
         elif "SELECT hash FROM audit_log" in sql:
             self._result = (self.store["audit"][-1]["hash"],) if self.store["audit"] else None
@@ -56,6 +73,9 @@ class FakeCursor:
                 nic,
                 message_sid,
                 mobile,
+                household_id,
+                district,
+                ds_division,
             ) = params
             # ON CONFLICT (twilio_message_sid) DO NOTHING → no row when the sid already exists.
             if message_sid is not None and message_sid in self.store["cases_by_sid"]:
@@ -77,6 +97,9 @@ class FakeCursor:
                 "twilio_message_sid": message_sid,
                 "citizen_mobile_plain": mobile,
                 "status": "Submitted",
+                "household_id": household_id,
+                "district": district,
+                "ds_division": ds_division,
             }
             self.store["cases"].append(row)
             if message_sid is not None:
@@ -129,6 +152,16 @@ def store():
         "audit": [],
         "seq": 0,
         "next_id": 0,
+        "households_by_digest": {
+            nic_hmac(n, PEPPER): {
+                "id": i + 1,
+                "household_ref": "HH-2026-%04d" % (i + 1),
+                "district": DISTRICT,
+                "ds_division": DIVISION,
+                "status": "active",
+            }
+            for i, n in enumerate(REGISTERED_NICS)
+        },
     }
 
 
@@ -163,6 +196,7 @@ def client(monkeypatch, store, sent, estimate_spy):
             "TESTING": True,
             "DATABASE_URL": "postgresql://fake",
             "TWILIO_AUTH_TOKEN": "fake-token",
+            "NIC_PEPPER": PEPPER,
         }
     )
     monkeypatch.setattr("app.api.v1.sms._get_connection", lambda: FakeConn(store))
@@ -359,3 +393,51 @@ def test_4_token_message_still_valid_with_no_mobile(client, store):
     )
     assert res.status_code == 200
     assert store["cases"][0]["citizen_mobile_plain"] is None
+
+
+# --- Story 8.4: the FR-10.3 gate on the SMS channel -------------------------------------------
+
+
+def test_sms_from_an_unregistered_family_is_refused(client, store, sent):
+    store["households_by_digest"].clear()
+    res = client.post(
+        "/api/v1/sms/inbound", data=_form("REPORT 200012345678 7.29,80.63 CROP")
+    )
+    assert res.status_code == 200
+    # Every outcome on this endpoint is an HTTP 200 with an empty body; the message itself goes
+    # back to the officer as an SMS (Twilio retries non-2xx).
+    assert "not registered" in sent[0]["body"].lower()
+    assert store["cases"] == []
+
+
+def test_the_refusal_is_about_the_CITIZEN_not_the_officer(client, store, sent):
+    """Two different "not registered" conditions exist on this endpoint. An officer whose phone
+    is unknown must not be told the family is unregistered, and vice versa — the two need
+    different fixes by different people."""
+    store["households_by_digest"].clear()
+    client.post("/api/v1/sms/inbound", data=_form("REPORT 200012345678 7.29,80.63 CROP"))
+    body = sent[0]["body"]
+    assert "Divisional Secretariat" in body
+    assert "DWC officer" not in body
+
+
+def test_sms_case_inherits_district_and_division_from_the_household(client, store):
+    """Until Story 8.4 the SMS insert carried NO district or division at all, so every SMS case
+    was invisible to the division-scoped officer query (officer.py:61)."""
+    client.post("/api/v1/sms/inbound", data=_form("REPORT 200012345678 7.29,80.63 CROP"))
+    row = store["cases"][0]
+    assert row["district"] == DISTRICT
+    assert row["ds_division"] == DIVISION
+    assert row["household_id"] == 1
+
+
+def test_a_declared_member_can_report_not_only_the_registrant(client, store):
+    """resolve_by_nic matches declared members too: a son whose father registered the family is
+    covered by that registration."""
+    member_digest = nic_hmac("901234567V", PEPPER)
+    assert member_digest in store["households_by_digest"]
+    res = client.post(
+        "/api/v1/sms/inbound", data=_form("REPORT 901234567V 7.29,80.63 PROPERTY")
+    )
+    assert res.status_code == 200
+    assert len(store["cases"]) == 1

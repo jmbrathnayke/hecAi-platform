@@ -1,7 +1,7 @@
 "use client";
 // Step 1 of the incident form: citizen identity (NIC + mobile).
 // NIC and mobile are AES-GCM encrypted (NFR-3.1) BEFORE any IndexedDB write.
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { useRouter } from "@/navigation";
 import { StepIndicator } from "@/components/StepIndicator";
@@ -9,6 +9,7 @@ import { isValidNIC, isValidMobile } from "@/lib/validation";
 import { getOrCreateSessionKey, encryptField } from "@/lib/crypto";
 import { getCase, putCase } from "@/lib/indexeddb";
 import { getOrCreateDraftId } from "@/lib/draft";
+import { getMyHousehold } from "@/lib/households";
 
 export default function IdentityStep() {
   const t = useTranslations("report");
@@ -21,6 +22,26 @@ export default function IdentityStep() {
   const [mobileError, setMobileError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+
+  // FR-10.3 gate, visible half (Story 8.4). The backend refuses an unregistered submission
+  // with 403 not_registered; without this check a citizen would fill in four steps and take
+  // photographs at the damage site before being told they cannot file. Checked here, at the
+  // entrance, so the cost of being unregistered is one screen instead of the whole form.
+  const [gate, setGate] = useState<"checking" | "registered" | "unregistered">("checking");
+
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      const household = await getMyHousehold();
+      // getMyHousehold() returns null for 404, for no session, and for an unreachable API.
+      // All three land on the same screen deliberately: each ends with the citizen needing
+      // to register or sign in, and none lets the form usefully proceed.
+      if (active) setGate(household ? "registered" : "unregistered");
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   function validate(): boolean {
     const nicErr = isValidNIC(nic) ? null : t("step1.nicError");
@@ -62,6 +83,45 @@ export default function IdentityStep() {
     } finally {
       setSaving(false);
     }
+  }
+
+  if (gate === "checking") {
+    return (
+      <main
+        className="mx-auto flex w-full max-w-md flex-col items-center gap-design-4 px-design-5 py-design-7"
+        role="status"
+        aria-live="polite"
+      >
+        <span
+          className="h-8 w-8 animate-spin rounded-full border-2 border-border-default border-t-forest"
+          aria-hidden="true"
+        />
+        <p className="text-body text-ink-secondary">{t("gate.checking")}</p>
+      </main>
+    );
+  }
+
+  if (gate === "unregistered") {
+    return (
+      <main
+        className="mx-auto flex w-full max-w-md flex-col gap-design-6 px-design-5 py-design-6"
+        data-testid="registration-required"
+      >
+        <header>
+          <h1 className="text-title font-bold text-ink-primary">{t("gate.title")}</h1>
+        </header>
+        {/* A step, not a refusal — the citizen has done nothing wrong and there is exactly
+            one thing to do next. */}
+        <p className="text-body text-ink-primary">{t("gate.body")}</p>
+        <button
+          type="button"
+          onClick={() => router.push("/register")}
+          className="min-h-touch-target rounded-md bg-amber px-design-4 text-label font-semibold text-ink-on-amber"
+        >
+          {t("gate.register")}
+        </button>
+      </main>
+    );
   }
 
   return (

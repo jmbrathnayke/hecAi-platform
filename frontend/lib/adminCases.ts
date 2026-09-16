@@ -11,6 +11,16 @@ export interface AdminCaseListItem {
   submitted_at: string | null;
   updated_at: string | null;
   ai_confidence: number | null;
+  /**
+   * Whether a DWC field officer was physically present to see the damage.
+   *
+   * True only on the officer-assisted path: an officer went to the site, photographed the damage
+   * and reviewed the classification. False means the citizen submitted from their own device and
+   * nobody has verified that the damage is real, recent, theirs, or elephant-caused.
+   *
+   * This is the only field that distinguishes the two — `submitted_via` is "app" for both.
+   */
+  submitted_by_officer: boolean;
 }
 
 export interface AdminCaseKpis {

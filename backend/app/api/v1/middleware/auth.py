@@ -331,6 +331,52 @@ def require_admin():
     return decorator
 
 
+def require_ds_officer():
+    """Guard Divisional Secretariat routes (Story 8.5, FR-10.4/10.5, NFR-3.2).
+
+    A DS officer is scoped to ONE DS division — narrower than an officer's assigned_divisions
+    list, and a level below require_admin()'s district. The three coexist deliberately: the DWC
+    administrator oversees a district's pipeline, while the Divisional Secretariat authorises the
+    payment for its own division. Adding this role does not widen or narrow either of the others.
+
+    Mirrors require_admin()'s independent JWT validation and error-code conventions. The division
+    is read from `app_metadata` only — reading it from client-writable `user_metadata` would let
+    any authenticated citizen name their own division and read (and authorise payment on) another
+    division's cases, the same escalation class resolved for `system_admin` on 2026-08-11.
+    """
+    def decorator(f):
+        @functools.wraps(f)
+        def wrapper(*args, **kwargs):
+            claims, error = authenticated_claims()
+            if error:
+                return error
+
+            metadata = authz_metadata(claims)
+            if authz_role(claims) != "ds_officer":
+                return jsonify({"error": "forbidden"}), 403
+
+            ds_officer_id = claims.get("sub")
+            if not ds_officer_id:
+                # A validly-signed token missing `sub` is malformed — don't let a None actor id
+                # reach a payment-authorisation audit row.
+                return jsonify({"error": "invalid_token"}), 401
+
+            ds_division = metadata.get("ds_division")
+            if not isinstance(ds_division, str) or not ds_division.strip():
+                # Explicit 403 rather than falling through to `WHERE ds_division = NULL`, which
+                # matches zero rows and is indistinguishable from "your division has no cases".
+                # Same reasoning as admin.py's no_district_assigned (code review 2026-08-11).
+                return jsonify({"error": "no_division_assigned"}), 403
+
+            g.ds_officer_id = ds_officer_id
+            g.ds_division = ds_division.strip()
+            return f(*args, **kwargs)
+
+        return wrapper
+
+    return decorator
+
+
 def require_research():
     """Guard the researcher-scoped export (Story 7.3, FR-7.3). Mirrors require_admin()'s
     independent JWT validation and error-code conventions.
@@ -375,6 +421,51 @@ def require_research():
     return decorator
 
 
+def require_system_admin():
+    """Guard the user-provisioning API (FR-11).
+
+    Same role check as require_research() — both admit only `system_admin` — but kept separate
+    because they guard different kinds of action and should be able to diverge. require_research()
+    protects a bulk read of de-identified data; this protects the ability to CREATE accounts and
+    ASSIGN roles, which is the one operation in the platform that can manufacture authority. If a
+    future revision needs to narrow one of them (a read-only researcher, say, who must not be able
+    to mint an administrator), a shared guard would have to be split under pressure.
+
+    The role comes from `app_metadata`, which is writable only with the service-role key. That is
+    load-bearing here in a way it is nowhere else: if this guard read client-writable
+    `user_metadata`, any authenticated citizen could call auth.updateUser(), name themselves
+    system_admin, and then grant themselves an administrator role over any district. The 2026-08-11
+    fix recorded in require_research()'s docstring is what closed that path.
+
+    Sets g.system_admin_id for the audit metadata — every provisioning action records who took it.
+    """
+    def decorator(f):
+        @functools.wraps(f)
+        def wrapper(*args, **kwargs):
+            claims, error = authenticated_claims()
+            if error:
+                return error
+
+            if authz_role(claims) != "system_admin":
+                # An admin or ds_officer token must never reach this: a district administrator who
+                # could provision accounts could mint a second administrator for another district,
+                # which is privilege escalation dressed as an ordinary feature.
+                return jsonify({"error": "forbidden"}), 403
+
+            system_admin_id = claims.get("sub")
+            if not system_admin_id:
+                # A validly-signed token with no `sub` is malformed. Refusing here keeps a null
+                # actor out of the audit row for an action that grants authority.
+                return jsonify({"error": "invalid_token"}), 401
+
+            g.system_admin_id = system_admin_id
+            return f(*args, **kwargs)
+
+        return wrapper
+
+    return decorator
+
+
 def require_citizen():
     """Guard citizen-owned routes (Story 4.0). Mirrors require_officer()'s independent JWT
     validation, but a citizen is a plain authenticated Supabase user with NO staff role: any
@@ -391,7 +482,7 @@ def require_citizen():
             # `user_metadata` here would let a staff member hide their role to be treated as a
             # citizen — the mirror image of the escalation, and it would attach their staff
             # `sub` to citizen-owned rows.
-            if authz_role(claims) in ("officer", "admin", "system_admin"):
+            if authz_role(claims) in ("officer", "admin", "system_admin", "ds_officer"):
                 # A valid Supabase token, but staff — not a citizen. Never scope their cases here.
                 return jsonify({"error": "forbidden"}), 403
 

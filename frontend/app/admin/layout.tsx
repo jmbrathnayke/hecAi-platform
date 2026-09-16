@@ -4,6 +4,7 @@ import "../globals.css";
 import { fontVariables } from "@/lib/fonts";
 import { resolveStaffLocale, loadMessages } from "@/lib/serverLocale";
 import { AdminShell } from "@/components/admin/AdminShell";
+import { SWRegistrar } from "@/components/SWRegistrar";
 
 // Admin routes are a separate top-level tree from app/[locale] (no locale route prefix),
 // mirroring the officer tree. Next.js requires each top-level branch under app/ to reach its own
@@ -28,6 +29,11 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           attributes before hydration. Scoped to this element only — see app/[locale]/layout.tsx. */}
       <body className="font-sans" suppressHydrationWarning>
         <NextIntlClientProvider locale={locale} messages={messages}>
+          {/* Same reason as the officer tree: this is a separate root layout. Admin is an
+              online desk app, so the offline precache is not the point here — but a stale
+              Service Worker from an earlier production build controls the whole ORIGIN, and
+              without this the dev-mode teardown never runs on /admin/* either. */}
+          <SWRegistrar />
           <AdminShell>{children}</AdminShell>
         </NextIntlClientProvider>
       </body>

@@ -43,7 +43,8 @@ from app.domain.validation import MIN_REASON_LENGTH
 from app.infrastructure.audit import verify_chain, write_audit_log
 from app.infrastructure.export.report import build_pdf, stream_csv
 from app.infrastructure.ml.compensation import DISTRICT_REF_PATH
-from app.infrastructure.sms.notification_service import notify_status_change
+from app.infrastructure.notifications import notify_status_change_all
+from app.infrastructure.push.push_service import notify_staff_push
 
 admin_bp = Blueprint("admin", __name__)
 
@@ -180,7 +181,8 @@ def list_cases():
                     # sort column has duplicate values (code review fix).
                     cur.execute(
                         f"""SELECT c.canonical_id, c.offline_id, c.damage_category, c.status,
-                                   c.submitted_at, c.updated_at, il.confidence
+                                   c.submitted_at, c.updated_at, il.confidence,
+                                   c.submitted_by_officer
                               FROM cases c
                               LEFT JOIN LATERAL (
                                 SELECT confidence FROM inference_log
@@ -273,6 +275,15 @@ def list_cases():
             "submitted_at": r[4].isoformat() if r[4] else None,
             "updated_at": r[5].isoformat() if r[5] else None,
             "ai_confidence": float(r[6]) if r[6] is not None else None,
+            # WHO SAW THE DAMAGE. True only on the officer-assisted path (migration 007), where a
+            # DWC officer was physically present, photographed the damage and reviewed the
+            # classification. False means the citizen submitted from their own device and nobody
+            # has verified that the damage is real, recent, theirs, or elephant-caused.
+            #
+            # submitted_via cannot answer this: migration 009 sets it to 'app' for BOTH paths.
+            # Without this field the approver sees two identical rows and authorises the same
+            # amount for both — see R-18.
+            "submitted_by_officer": bool(r[7]),
         }
         for r in rows
     ]
@@ -335,7 +346,7 @@ def _load_case_detail(cur, offline_id, district, known_row=None, known_comp_row=
         cur.execute(
             """SELECT canonical_id, offline_id, damage_category, status,
                       gps_lat, gps_lng, submitted_at, updated_at, submitted_via,
-                      approved_amount, id
+                      approved_amount, id, submitted_by_officer
                  FROM cases WHERE offline_id = %s AND district = %s""",
             (offline_id, district),
         )
@@ -396,6 +407,9 @@ def _load_case_detail(cur, offline_id, district, known_row=None, known_comp_row=
         "updated_at": row[7].isoformat() if row[7] else None,
         "submitted_via": row[8],
         "approved_amount": float(row[9]) if row[9] is not None else None,
+        # See the list query's note: submitted_via is 'app' for both the citizen and the
+        # officer-assisted path, so it cannot tell the approver whether anyone saw the damage.
+        "submitted_by_officer": bool(row[11]),
     }
 
     ai_result = None
@@ -585,7 +599,8 @@ def post_case_action(offline_id):
                     cur.execute(
                         """SELECT canonical_id, offline_id, damage_category, status,
                                   gps_lat, gps_lng, submitted_at, updated_at, submitted_via,
-                                  approved_amount, id, citizen_mobile_plain
+                                  approved_amount, id, citizen_mobile_plain,
+                                  submitted_by_officer, ds_division_id
                              FROM cases WHERE offline_id = %s AND district = %s
                              FOR UPDATE""",
                         (offline_id, district),
@@ -645,18 +660,37 @@ def post_case_action(offline_id):
                         # FR-5.6: payment authorization record, created on approval only. No
                         # citizen-identity column (see the story's CRITICAL #3) -- case_id ->
                         # canonical_id is the practical reference this schema can produce.
+                        # FR-5.6 as amended by Story 8.6: the record now carries the household
+                        # reference and the MASKED account tail, copied here so the authorisation
+                        # is self-contained — a family that later changes its account must not
+                        # retroactively rewrite what an existing authorisation says was paid.
+                        # Never the full number: that stays encrypted on households and is read
+                        # at exactly one call site (ds.py's payment authorisation).
                         cur.execute(
-                            """INSERT INTO payment_authorizations (case_id, amount_lkr, authorized_by)
-                               VALUES (%s, %s, %s)""",
-                            (case_id, resolved_amount, g.admin_id),
+                            """INSERT INTO payment_authorizations
+                                 (case_id, amount_lkr, authorized_by,
+                                  household_id, bank_account_last4)
+                               SELECT %s, %s, %s, c.household_id, h.bank_account_last4
+                                 FROM cases c
+                                 LEFT JOIN households h ON h.id = c.household_id
+                                WHERE c.id = %s""",
+                            (case_id, resolved_amount, g.admin_id, case_id),
                         )
                         write_audit_log(
                             cur, case_id, "case_approved", g.admin_id,
                             {"amount_lkr": resolved_amount, "reason": reason},
                         )
-                        notify_status_change(
+                        notify_status_change_all(
                             cur, case_id, row[0], citizen_mobile_plain, "Approved", g.admin_id,
                             amount_lkr=resolved_amount,
+                        )
+                        # FR-6.4: approval is the exact moment the Divisional Secretariat acquires
+                        # work -- the DWC administrator approves, the DS office pays. Appended as
+                        # the 14th column rather than inserted, so every positional index above
+                        # (and the tests asserting on them) is unchanged.
+                        notify_staff_push(
+                            cur, case_id, "payment_pending", "ds_officer",
+                            row[13], row[0], g.admin_id,
                         )
                         new_status = "Approved"
                         new_approved_amount = resolved_amount
@@ -678,7 +712,7 @@ def post_case_action(offline_id):
                         # other action's optional reason.
                         metadata = {"reason": reason} if reason else {}
                         write_audit_log(cur, case_id, _ACTION_EVENT[action], g.admin_id, metadata)
-                        notify_status_change(
+                        notify_status_change_all(
                             cur, case_id, row[0], citizen_mobile_plain, target_status, g.admin_id,
                         )
                         new_status = target_status
@@ -693,6 +727,11 @@ def post_case_action(offline_id):
                         row[0], row[1], row[2], new_status,
                         row[4], row[5], row[6], new_updated_at,
                         row[8], new_approved_amount, row[10],
+                        # Carried through rather than defaulted. _load_case_detail reads index 11
+                        # as submitted_by_officer; omitting it would make every case look
+                        # unverified the moment an action was taken on it — the response would
+                        # contradict the list the admin was just looking at.
+                        row[12],
                     )
                     # Same response shape as GET .../cases/<offline_id> (Dev Notes Sec Response
                     # Shape Reuse) -- includes the action just written, since this call happens

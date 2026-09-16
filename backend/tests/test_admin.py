@@ -160,6 +160,9 @@ class FakeCursor:
                 (
                     c["canonical_id"], c["offline_id"], c["damage_category"], c["status"],
                     c["submitted_at"], c["updated_at"], c["confidence"],
+                    # Whether a DWC officer was physically present. Defaults False, which is the
+                    # citizen self-report case -- the one the approver most needs flagged.
+                    c.get("submitted_by_officer", False),
                 )
                 for c in page
             ]
@@ -231,6 +234,12 @@ class FakeCursor:
                     c.get("gps_lat"), c.get("gps_lng"), c["submitted_at"], c["updated_at"],
                     c.get("submitted_via", "app"), c.get("approved_amount"), c["id"],
                     c.get("citizen_mobile_plain"),
+                    c.get("submitted_by_officer", False),
+                    # 14th column, ds_division_id: post_case_action routes the DS officer's
+                    # payment-pending alert with it. The fake has to carry every column the real
+                    # SELECT returns -- a double that is shorter than the query it stands in for
+                    # turns a real IndexError into a passing test.
+                    c.get("ds_division_id"),
                 )
             else:
                 self._result = None
@@ -249,6 +258,7 @@ class FakeCursor:
                     c["canonical_id"], c["offline_id"], c["damage_category"], c["status"],
                     c.get("gps_lat"), c.get("gps_lng"), c["submitted_at"], c["updated_at"],
                     c.get("submitted_via", "app"), c.get("approved_amount"), c["id"],
+                    c.get("submitted_by_officer", False),
                 )
             else:
                 self._result = None
@@ -320,9 +330,24 @@ class FakeCursor:
                     self._result = (c["updated_at"],)
                     break
         elif "INSERT INTO payment_authorizations" in sql:
-            case_id, amount, authorized_by = params
+            # Story 8.6: now an INSERT ... SELECT that pulls household_id and the MASKED account
+            # tail from the case's household, so the authorisation is self-contained. The extra
+            # trailing case_id is the SELECT's WHERE parameter.
+            case_id, amount, authorized_by, _where_case_id = params
+            case = next(
+                (c for c in self.store["cases"] if c["id"] == case_id), {}
+            )
+            household_id = case.get("household_id")
+            household = self.store.get("households", {}).get(household_id, {})
             self.store["payment_authorizations"].append(
-                {"case_id": case_id, "amount_lkr": amount, "authorized_by": authorized_by}
+                {
+                    "case_id": case_id,
+                    "amount_lkr": amount,
+                    "authorized_by": authorized_by,
+                    "household_id": household_id,
+                    # NEVER the full number — only the tail is copied here.
+                    "bank_account_last4": household.get("bank_account_last4"),
+                }
             )
         elif "SELECT template FROM sms_templates" in sql:
             # Story 5.6: notify_status_change() always queries language='si' today (CRITICAL
@@ -517,6 +542,10 @@ def test_payload_has_no_pii_and_no_nic_column(client):
     assert set(first.keys()) == {
         "canonical_id", "offline_id", "damage_category", "status",
         "submitted_at", "updated_at", "ai_confidence",
+        # A boolean about the intake channel, not about the person. It says whether a DWC
+        # officer was present to see the damage, which the approver needs and which
+        # submitted_via cannot supply (migration 009 sets that to 'app' for both paths).
+        "submitted_by_officer",
     }
 
 
@@ -727,6 +756,12 @@ def test_case_detail_never_returns_citizen_nic_plain(client):
     assert set(body["case"].keys()) == {
         "canonical_id", "offline_id", "damage_category", "status", "gps_lat", "gps_lng",
         "submitted_at", "updated_at", "submitted_via", "approved_amount",
+        # submitted_by_officer describes HOW the claim arrived, not WHO made it. It carries no
+        # citizen identity and cannot be resolved to one -- it is a boolean about the process,
+        # which is why it is admissible in a payload this test otherwise keeps free of PII.
+        # The approver needs it: submitted_via is 'app' for both the citizen and the
+        # officer-assisted path, so nothing else here says whether anyone saw the damage.
+        "submitted_by_officer",
     }
 
 
@@ -940,8 +975,17 @@ def test_action_approve_defaults_to_rf_estimate_when_no_amount_given(client, sto
     body = res.get_json()
     assert body["case"]["status"] == "Approved"
     assert body["case"]["approved_amount"] == 45000.0
+    # Story 8.6 (FR-5.6): the record now also carries the household reference and the MASKED
+    # account tail. Both are None here — this fixture's case has no household, which is the
+    # pre-Epic-8 shape the nullable columns exist to keep valid.
     assert store["payment_authorizations"] == [
-        {"case_id": _CASE_1_ID, "amount_lkr": 45000.0, "authorized_by": "admin-1"}
+        {
+            "case_id": _CASE_1_ID,
+            "amount_lkr": 45000.0,
+            "authorized_by": "admin-1",
+            "household_id": None,
+            "bank_account_last4": None,
+        }
     ]
 
 

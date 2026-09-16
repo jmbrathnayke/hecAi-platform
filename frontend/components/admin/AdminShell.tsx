@@ -61,7 +61,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
           destination later scrolls instead of wrapping into a second bar. */}
       <nav
         aria-label={t("nav.aria")}
-        className="flex gap-design-1 overflow-x-auto border-b border-border-default bg-surface-raised px-design-3 py-design-2 lg:hidden"
+        className="flex gap-design-1 overflow-x-auto border-b border-border-subtle bg-surface-raised px-design-3 py-design-2 lg:hidden"
       >
         {LINKS.map((link) => (
           <Link

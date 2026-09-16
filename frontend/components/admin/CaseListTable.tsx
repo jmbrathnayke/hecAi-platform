@@ -27,6 +27,10 @@ const COLUMNS: { sortKey: SortColumn | null; labelKey: string }[] = [
   { sortKey: "canonical_id", labelKey: "colCanonicalId" },
   { sortKey: "damage_category", labelKey: "colDamageCategory" },
   { sortKey: null, labelKey: "colAiConfidence" },
+  // Placed immediately before Status, which is the column the approver acts on. An approver
+  // scanning this list is deciding whether to authorise money; whether anyone actually saw the
+  // damage belongs next to that decision, not at the far end of a horizontally scrolling table.
+  { sortKey: null, labelKey: "colVerification" },
   { sortKey: "status", labelKey: "colStatus" },
   { sortKey: "submitted_at", labelKey: "colSubmissionDate" },
   { sortKey: null, labelKey: "colDaysPending" },
@@ -150,6 +154,25 @@ export function CaseListTable({
               </td>
               <td className="px-design-3 py-design-2 text-ink-secondary">
                 {c.ai_confidence != null ? `${Math.round(c.ai_confidence * 100)}%` : "—"}
+              </td>
+              {/* Unverified is styled as a warning, verified as ordinary text. The asymmetry is
+                  deliberate: an officer-verified claim is the expected case and needs no emphasis,
+                  while an unverified one is the exception the approver must notice before
+                  authorising payment. Colour alone never carries it — the label states which.
+
+                  The badge is an amber TINT behind dark ink, not amber text: status-warning is
+                  #E9C46A, about 1.8:1 against white and unreadable as text. The tint carries the
+                  signal, ink-primary carries the contrast. */}
+              <td className="whitespace-nowrap px-design-3 py-design-2">
+                {c.submitted_by_officer ? (
+                  <span className="text-caption text-ink-secondary">
+                    {t("table.verifiedByOfficer")}
+                  </span>
+                ) : (
+                  <span className="rounded-full bg-status-warning/25 px-design-2 py-0.5 text-caption font-medium text-ink-primary">
+                    {t("table.notVerified")}
+                  </span>
+                )}
               </td>
               <td className="px-design-3 py-design-2">
                 <span

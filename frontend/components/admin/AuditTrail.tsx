@@ -95,7 +95,7 @@ export function AuditTrail({ trail }: AuditTrailProps) {
         {trail.map((entry) => (
           <div
             key={entry.id}
-            className="rounded-md border border-border-default bg-surface-raised p-design-3"
+            className="rounded-md border border-border-subtle bg-surface-raised shadow-card p-design-3"
           >
             <div className="flex flex-wrap items-center gap-design-2">
               <span className="text-label font-medium text-ink-primary">{entry.event}</span>

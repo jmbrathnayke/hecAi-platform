@@ -212,3 +212,35 @@ test("a client that cannot be constructed fails closed to the login page, not an
 
   expect(res.headers.get("location")).toBe("http://localhost/admin/login?error=unreachable");
 });
+
+// ============================================================ every staff tree must be listed
+//
+// loginPathFor() enumerates the staff trees, and a tree missing from it falls through to the
+// CITIZEN login. A Divisional Secretariat officer whose sign-in failed was therefore deposited on
+// /en/login — a page whose only control emails a one-time code to a citizen account, with no route
+// back to the portal they were entering. /ds was absent for the whole life of Story 8.5.
+//
+// This is the third place that enumerates the trees, after middleware.ts and the login pages. The
+// parametrised form is deliberate: adding a tree to the route without adding it here fails.
+test.each([
+  ["/admin/cases", "http://localhost/admin/login?error=exchange_failed"],
+  ["/officer/dashboard", "http://localhost/officer/login?error=exchange_failed"],
+  ["/ds/dashboard", "http://localhost/ds/login?error=exchange_failed"],
+  ["/system/users", "http://localhost/system/login?error=exchange_failed"],
+])("a failed exchange for %s bounces to its OWN login page", async (next, expected) => {
+  mockExchange.mockResolvedValue({ error: { message: "invalid code" } });
+  const req = new NextRequest(
+    new URL(`http://localhost/auth/callback?code=stale&next=${encodeURIComponent(next)}`),
+  );
+  const res = await GET(req);
+  expect(res.headers.get("location")).toBe(expected);
+});
+
+test("a provider error for a system destination returns to /system/login", async () => {
+  const req = new NextRequest(
+    new URL("http://localhost/auth/callback?error=access_denied&next=%2Fsystem%2Fusers"),
+  );
+  const res = await GET(req);
+  expect(res.headers.get("location")).toBe("http://localhost/system/login?error=access_denied");
+  expect(mockExchange).not.toHaveBeenCalled();
+});

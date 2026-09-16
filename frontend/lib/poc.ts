@@ -22,6 +22,10 @@ export interface PoCRecord {
   // District/DS-division picker (Story 5.2 Task 7) — optional on every path, undefined
   // (not null) when absent so the existing toPoCRecord byte-shape tests stay unaffected.
   district?: string;
+  /** Story 8.5. The registered household this case is filed against. Required by the
+   *  FR-10.3 submit gate on the officer-assisted path; absent on the citizen path, where
+   *  the backend resolves the household from the JWT instead. */
+  household_ref?: string;
   ds_division?: string;
   // AI severity (Story 5.2 Task 8) — only ever present on officer-classified drafts;
   // citizen self-service drafts have no AI classification step and never set this.
@@ -67,6 +71,8 @@ export function toPoCRecord(
     submitter_identity_hash: identityHash,
     sync_status: draft.sync_status === "synced" ? "synced" : "pending",
     district: typeof draft.district === "string" ? draft.district : undefined,
+    household_ref:
+      typeof draft.household_ref === "string" ? draft.household_ref : undefined,
     ds_division: typeof draft.ds_division === "string" ? draft.ds_division : undefined,
     ai_severity: typeof draft.ai_severity === "string" ? draft.ai_severity : undefined,
   };
@@ -125,6 +131,11 @@ export function buildCasePayload(record: PoCRecord): Record<string, unknown> {
   // District/DS-division (Story 5.2 Task 7) and AI severity (Task 8) — additive, only
   // included when present so the anonymous citizen request body stays unchanged when
   // neither was captured.
+  // Story 8.4/8.5: the gate needs this on the officer-assisted path. district/ds_division
+  // below are now ignored by the backend (it copies them from the household, FR-10.6) but
+  // are still sent — a queued draft from before Epic 8 carries them, and the shape of this
+  // payload is shared with the sync queue.
+  if (record.household_ref) body.household_ref = record.household_ref;
   if (record.district) body.district = record.district;
   if (record.ds_division) body.ds_division = record.ds_division;
   if (record.ai_severity) body.ai_severity = record.ai_severity;

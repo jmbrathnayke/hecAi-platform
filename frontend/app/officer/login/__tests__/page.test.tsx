@@ -178,3 +178,20 @@ test("unmounting before signInWithPassword resolves does not throw or update sta
   // component's mountedRef guard were missing (Epic 2 retro lesson).
   expect(mockPush).not.toHaveBeenCalled();
 });
+
+// ============================================================ account chooser (security)
+//
+// Without prompt=select_account, Google silently reuses whichever account the browser is already
+// signed into and never asks. On a shared device the next officer signs in as the previous one,
+// every audit_log row names the wrong person, and nothing on screen reveals it — the failure is
+// invisible because it looks exactly like success. In a system whose contribution is a
+// tamper-evident audit trail, that is the identity mistake that must not be possible.
+test("Google sign-in always forces the account chooser", async () => {
+  render(<OfficerLoginPage />);
+  fireEvent.click(screen.getByRole("button", { name: "login.google" }));
+  await waitFor(() => expect(mockSignInWithOAuth).toHaveBeenCalled());
+  const options = mockSignInWithOAuth.mock.calls[0][0].options as {
+    queryParams?: Record<string, string>;
+  };
+  expect(options.queryParams?.prompt).toBe("select_account");
+});

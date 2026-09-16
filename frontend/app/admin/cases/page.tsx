@@ -21,6 +21,7 @@ import { AdminKpiCards } from "@/components/admin/AdminKpiCards";
 import { CaseDetailPanel } from "@/components/admin/CaseDetailPanel";
 import { ExportButton } from "@/components/admin/ExportButton";
 import { LanguageSelectorCookie } from "@/components/LanguageSelectorCookie";
+import PushNotificationToggle from "@/components/PushNotificationToggle";
 
 type LoadState = "loading" | "error" | "ready";
 const PAGE_SIZE = 20;
@@ -250,6 +251,9 @@ function AdminCasesPageContent() {
           </div>
         </header>
 
+        {/* FR-6.4: a submitted case in this district raises an alert here. */}
+        <PushNotificationToggle variant="staff" />
+
         <AdminKpiCards kpis={data?.kpis ?? null} loading={state === "loading" && !data} />
 
         <div className="flex flex-wrap items-end justify-between gap-design-3">
@@ -297,7 +301,7 @@ function AdminCasesPageContent() {
               {/* Card wrapper (mockup): the table is a rounded, bordered surface and the
                   horizontal scroll happens INSIDE it, so the scrollbar belongs to the card
                   rather than to the page column. */}
-              <div className="overflow-x-auto rounded-md border border-border-default bg-surface-raised">
+              <div className="overflow-x-auto rounded-md border border-border-subtle bg-surface-raised shadow-card">
                 <CaseListTable
                   cases={data.items}
                   onSort={handleSort}

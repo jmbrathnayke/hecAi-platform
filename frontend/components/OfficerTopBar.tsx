@@ -35,7 +35,7 @@ export function OfficerTopBar({ label, totalSteps, currentStep = 0, action }: Of
   return (
     <div
       data-testid="officer-top-bar"
-      className="flex items-center justify-between gap-design-3 border-b border-border-default bg-surface-raised px-design-5 py-design-3"
+      className="flex items-center justify-between gap-design-3 border-b border-border-subtle bg-surface-raised px-design-5 py-design-3"
     >
       <h1 className="text-label font-semibold text-ink-primary">{label}</h1>
 

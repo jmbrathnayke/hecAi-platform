@@ -22,6 +22,12 @@
     "reconnected": "Back online — syncing your reports"
   },
   "report": {
+    "gate": {
+      "checking": "Checking your registration…",
+      "title": "Register your family first",
+      "body": "Before you can report an incident, one person from your family needs to be registered. It only takes a few minutes, and you only do it once.",
+      "register": "Register my family"
+    },
     "steps": {
       "identity": "Identity",
       "location": "Location",
@@ -79,6 +85,92 @@
       "submit": "Submit Report"
     }
   },
+  "register": {
+    "steps": {
+      "registrant": "You",
+      "family": "Family",
+      "area": "Area",
+      "bank": "Bank"
+    },
+    "step1": {
+      "title": "Register your family",
+      "intro": "Only one person from each family registers. Start with your own ID number.",
+      "nic": "Your NIC number",
+      "fullName": "Your full name",
+      "nicError": "Enter a valid NIC number (9 digits and V, or 12 digits)."
+    },
+    "step2": {
+      "title": "Who is in your family?",
+      "intro": "Add the people who live in your household.",
+      "why": "Only one person from a family registers. This is so your family is not paid twice for the same incident.",
+      "nic": "NIC number",
+      "fullName": "Full name",
+      "memberN": "Family member {n}",
+      "addMember": "Add a family member",
+      "remove": "Remove",
+      "nicError": "One of the NIC numbers is not valid.",
+      "duplicateError": "The same NIC number is listed twice."
+    },
+    "step3": {
+      "title": "Where do you live?",
+      "intro": "This decides which officers and which Divisional Secretariat office handle your claims.",
+      "districtLabel": "District",
+      "districtPlaceholder": "Select your district",
+      "dsDivisionLabel": "Divisional Secretariat division",
+      "dsDivisionPlaceholder": "Select your division",
+      "gnLabel": "Grama Niladhari division (optional)",
+      "areaError": "Please select your district and division."
+    },
+    "step4": {
+      "title": "Bank account (optional)",
+      "intro": "If you give an account, the Divisional Secretariat can pay compensation into it directly.",
+      "optional": "You can skip this. The Divisional Secretariat office can add your account later.",
+      "accountNumber": "Account number",
+      "bankName": "Bank",
+      "branch": "Branch",
+      "contactEmail": "Email address",
+      "contactEmailHint": "We will email you when your claim status changes. You can leave this blank."
+    },
+    "error": {
+      "alreadyRegistered": "You have already registered a household.",
+      "nicTakenRegistrant": "Your family is already registered. Talk to the Divisional Secretariat office to be added to your family registration.",
+      "nicTakenMember": "One of the ID numbers you entered is already registered with another family. Please check it, or talk to the Divisional Secretariat office.",
+      "invalidNic": "That NIC number is not valid.",
+      "invalidDivision": "That district and division combination does not exist.",
+      "duplicateInForm": "The same person is listed twice.",
+      "invalidForm": "Some of the details are missing or not valid.",
+      "noSession": "You are not signed in.",
+      "forbidden": "This account cannot register a household.",
+      "config": "This app is not configured to sign you in. Please contact support.",
+      "network": "Could not reach the server. Check your connection.",
+      "server": "The server could not complete your registration.",
+      "invalidBank": "Please check the account number."
+    },
+    "conflict": {
+      "titleFamily": "Your family is already registered",
+      "titleYou": "You have already registered your family",
+      "refLabel": "Your household number",
+      "why": "Only one person from each family registers, so your family is not paid twice for the same loss.",
+      "whatToDo": "Talk to the Divisional Secretariat office to be added to your family registration — or to move it to your name if the registered person has died.",
+      "checkStatus": "Check claim status",
+      "reportIncident": "Report an incident",
+      "goHome": "Go to home"
+    },
+    "done": {
+      "label": "Your family is registered",
+      "body": "Keep this number. You can now report an incident.",
+      "reportIncident": "Report an incident"
+    },
+    "next": "Next",
+    "back": "Back",
+    "submit": "Register",
+    "submitting": "Registering…",
+    "retry": "Try again",
+    "stepOf": "Step {current} of {total}",
+    "privacyNic": "Your ID number is turned into a code the moment it reaches us. The number itself is never stored.",
+    "privacyBank": "Your account number is encrypted. It can be read only by the Divisional Secretariat, at the moment it releases your payment.",
+    "secureLabel": "Protected"
+  },
   "poc": {
     "title": "Proof of Claim",
     "canonicalLabel": "Reference Number",
@@ -116,11 +208,26 @@
       "Approved": "Approved",
       "Rejected": "Rejected",
       "PaymentProcessed": "Payment Processed"
+    },
+    "serviceName": "Department of Wildlife Conservation",
+    "serviceTag": "Human–Elephant Conflict compensation",
+    "intro": "Enter the reference number printed on your Proof of Claim. You do not need an account.",
+    "progressTitle": "Claim progress",
+    "emptyTitle": "No claim shown yet",
+    "emptyBody": "Enter your reference number above, or scan the QR code on your Proof of Claim.",
+    "copy": "Copy",
+    "copied": "Copied",
+    "nextStep": {
+      "Submitted": "Your report has been received. A wildlife officer will assess the damage.",
+      "UnderReview": "An officer is assessing your claim. No action is needed from you.",
+      "Approved": "Your claim has been approved. The Divisional Secretariat will release payment to your registered bank account.",
+      "Rejected": "This claim was not approved. Your Divisional Secretariat office can explain the decision.",
+      "PaymentProcessed": "Payment has been released to your registered bank account."
     }
   },
   "login": {
     "title": "Sign in",
-    "subtitle": "Sign in with your mobile number to see all of your reports in one place. You can also report without an account.",
+    "subtitle": "Sign in to see all your reports in one place. You can also report without an account.",
     "phone": "Mobile number",
     "phonePlaceholder": "+9477XXXXXXX",
     "sendCode": "Send code",
@@ -130,8 +237,18 @@
     "verify": "Verify & sign in",
     "changeNumber": "Change number",
     "sendError": "Couldn’t send the code. Check the number and try again.",
+    "invalidPhone": "That does not look like a Sri Lankan mobile number. Enter it as 07X XXX XXXX.",
     "verifyError": "That code didn’t work. Please try again.",
-    "networkError": "Couldn’t reach the sign-in service. Please try again."
+    "networkError": "Couldn’t reach the sign-in service. Please try again.",
+    "channelLabel": "How to receive your code",
+    "useEmail": "Email",
+    "usePhone": "SMS",
+    "email": "Email address",
+    "emailPlaceholder": "you@example.com",
+    "sendLink": "Send sign-in link",
+    "linkSent": "We sent a sign-in link to your email.",
+    "linkHint": "Open your inbox and click the link. You can open it on your phone — it will sign you in here.",
+    "changeEmail": "Use a different email"
   },
   "myCases": {
     "title": "My Cases",
@@ -139,7 +256,25 @@
     "error": "Couldn’t load your cases.",
     "retry": "Retry",
     "empty": "You have no reports yet.",
-    "signOut": "Sign out"
+    "signOut": "Sign out",
+    "subtitle": "Every report you have submitted, and where each one has reached.",
+    "signedOutTitle": "You are signed out",
+    "signedOutBody": "Sign in to see the claims linked to your account. You can also check any claim with its reference number.",
+    "expiredTitle": "Your session has expired",
+    "expiredBody": "Sign in again to see your claims.",
+    "serverTitle": "We could not reach the service",
+    "serverBody": "This is a problem at our end, not with your claim. Please try again.",
+    "networkTitle": "No connection",
+    "networkBody": "Check your internet connection and try again.",
+    "signIn": "Sign in",
+    "checkByReference": "Check a claim by reference number",
+    "emptyTitle": "No reports yet",
+    "submittedOn": "Submitted",
+    "category": {
+      "crop": "Crop damage",
+      "property": "Property damage",
+      "combined": "Crop and property damage"
+    }
   },
   "officer": {
     "languageLabel": "Language",
@@ -152,7 +287,18 @@
       "filterGroupLabel": "Filter by status",
       "filterAll": "All",
       "loading": "Loading your cases…",
-      "loadError": "Couldn’t load your cases.",
+      "error": {
+        "config": "This app has no Supabase configuration, so it cannot sign you in. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY, then restart it.",
+        "noSession": "You are not signed in.",
+        "signedOut": "Your session has expired.",
+        "forbidden": "This account does not have officer access. An administrator must grant it the officer role, and you must sign in again afterwards.",
+        "serverMisconfigured": "The server could not verify your sign-in. This is a server problem, not your account — try again in a moment.",
+        "server": "The server could not load your cases.",
+        "network": "Could not reach the server. Check your connection.",
+        "unknown": "Couldn’t load your cases.",
+        "detail": "HTTP {status} · {code}",
+        "signIn": "Sign in again"
+      },
       "retry": "Retry",
       "empty": "No cases in your scope yet.",
       "pendingId": "(pending id)",
@@ -252,7 +398,9 @@
       "reviewNotes": "Field notes",
       "submitError": "Could not complete the submission. Please try again.",
       "submitting": "Submitting…",
-      "submit": "Submit report"
+      "submit": "Submit report",
+      "householdNotRegistered": "This family is not registered. They must register at the Divisional Secretariat office before a claim can be filed.",
+      "householdLookupFailed": "Could not check the registration. Check your connection and try again."
     },
     "submitPoc": {
       "title": "Proof of Claim issued",
@@ -333,6 +481,59 @@
     "navClassify": "Classify",
     "navQueue": "Queue"
   },
+  "ds": {
+    "login": {
+      "title": "Divisional Secretariat",
+      "google": "Sign in with Google",
+      "or": "or",
+      "emailPlaceholder": "Divisional Secretariat email address",
+      "passwordPlaceholder": "Password",
+      "signIn": "Sign In",
+      "networkError": "Could not reach the sign-in service. Check your connection and try again.",
+      "errorAccessDenied": "Sign-in was cancelled. Please try again.",
+      "errorMissingCode": "That sign-in link is incomplete. Please start again from this page.",
+      "errorExchangeFailed": "Your sign-in link has expired or was already used. Please try again.",
+      "errorProvider": "Sign-in failed. Please try again."
+    },
+    "title": "Divisional Secretariat",
+    "divisionLabel": "Division",
+    "loading": "Loading cases…",
+    "empty": "No cases in your division yet.",
+    "retry": "Try again",
+    "household": "Household",
+    "noHousehold": "Not linked to a household",
+    "filterAll": "All",
+    "error": {
+      "forbidden": "This account does not have Divisional Secretariat access.",
+      "noDivision": "No division is assigned to this account. An administrator must assign one.",
+      "signedOut": "Your session has expired.",
+      "server": "The server could not load your cases.",
+      "network": "Could not reach the server. Check your connection.",
+      "detail": "HTTP {status} · {code}"
+    },
+    "payment": {
+      "title": "Authorize payment",
+      "reveal": "Show account and authorize",
+      "revealing": "Authorizing…",
+      "warning": "The account number is shown only here, and every time it is shown is recorded.",
+      "accountNumber": "Account number",
+      "bankName": "Bank",
+      "branch": "Branch",
+      "accountHolder": "Account holder",
+      "amount": "Approved amount",
+      "authorizedAt": "Authorized",
+      "close": "Close",
+      "error": {
+        "notFound": "That case is not in your division.",
+        "notApproved": "This case has not been approved yet. The DWC administrator approves it before payment.",
+        "noHousehold": "This case is not linked to a registered household, so it cannot be paid.",
+        "noBankDetails": "This family has not given bank details. Ask them to provide an account.",
+        "unreadable": "The stored bank details could not be read. Contact the system administrator — do not ask the family to re-enter them.",
+        "server": "The server could not authorize this payment.",
+        "network": "Could not reach the server. Check your connection."
+      }
+    }
+  },
   "admin": {
     "languageLabel": "Language",
     "login": {
@@ -381,7 +582,10 @@
       "colStatus": "Status",
       "colSubmissionDate": "Submission Date",
       "colDaysPending": "Days Pending",
-      "sortAria": "Sort by {column}"
+      "sortAria": "Sort by {column}",
+      "colVerification": "Verification",
+      "verifiedByOfficer": "Officer verified",
+      "notVerified": "Not verified"
     },
     "filter": {
       "formAria": "Filter cases",
@@ -410,7 +614,8 @@
       "channel": "Channel",
       "damageCategory": "Damage Category",
       "submitted": "Submitted",
-      "location": "Location"
+      "location": "Location",
+      "verification": "Verification"
     },
     "action": {
       "heading": "Actions",
@@ -509,6 +714,91 @@
       "sectionAdmin": "Administration",
       "openMenu": "Open navigation menu",
       "closeMenu": "Close navigation menu"
+    }
+  },
+  "notifications": {
+    "title": "Notifications on this device",
+    "hint": "Get a notification on this phone when your claim status changes.",
+    "enabledHint": "Notifications are on for this device.",
+    "enable": "Turn on notifications",
+    "disable": "Turn off notifications",
+    "working": "Please wait…",
+    "blocked": "Notifications are blocked in your browser settings for this site. You can still check your claim status at any time using your reference number.",
+    "staffHint": "Get a notification on this device when a case needs your attention.",
+    "staffBlocked": "Notifications are blocked in your browser settings for this site. Cases still appear on your dashboard."
+  },
+  "system": {
+    "title": "System Administration",
+    "subtitle": "Create, update and remove staff accounts. Each account holds one role and one scope.",
+    "loading": "Loading accounts…",
+    "empty": "No staff accounts yet.",
+    "working": "Please wait…",
+    "saved": "Account updated.",
+    "deleted": "Account removed.",
+    "confirmDelete": "Remove {email}? Their past actions stay in the audit trail.",
+    "role": {
+      "officer": "Wildlife Field Officer",
+      "admin": "DWC Administrator",
+      "ds_officer": "Divisional Secretariat Officer",
+      "system_admin": "System Administrator"
+    },
+    "form": {
+      "createTitle": "Create a staff account",
+      "editTitle": "Edit {email}",
+      "email": "Email address",
+      "role": "Role",
+      "scope": {
+        "officer": "Assigned DS divisions",
+        "admin": "District",
+        "ds_officer": "DS division"
+      },
+      "scopeHint": {
+        "officer": "Type to search, then Add. Choose as many divisions as the officer covers.",
+        "admin": "One district. An administrator sees every case in it.",
+        "ds_officer": "One division. The office authorises payment for this division only."
+      },
+      "add": "Add"
+    },
+    "table": {
+      "email": "Email",
+      "role": "Role",
+      "scope": "Scope",
+      "lastSignIn": "Last sign-in",
+      "actions": "Actions",
+      "never": "Never"
+    },
+    "action": {
+      "create": "Create account",
+      "save": "Save changes",
+      "cancel": "Cancel",
+      "edit": "Edit",
+      "delete": "Remove"
+    },
+    "password": {
+      "title": "Temporary password",
+      "hint": "Shown once. Give it to the account holder and ask them to change it at first sign-in. It is not stored anywhere."
+    },
+    "error": {
+      "forbidden": "This account does not have System Administrator access.",
+      "unavailable": "Account provisioning is not configured on this server.",
+      "duplicate": "An account with that email address already exists.",
+      "invalid": "That scope is not valid. Check the district or division name.",
+      "self": "You cannot remove or demote your own account.",
+      "generic": "The server could not complete that request.",
+      "unknownDivision": "‘{name}’ is not a DS division. Choose one from the list."
+    },
+    "login": {
+      "title": "System Administration",
+      "google": "Sign in with Google",
+      "or": "or",
+      "emailPlaceholder": "Email address",
+      "passwordPlaceholder": "Password",
+      "signIn": "Sign In",
+      "networkError": "Could not reach the sign-in service. Check your connection and try again.",
+      "errorAccessDenied": "Sign-in was cancelled. Please try again.",
+      "errorMissingCode": "That sign-in link is incomplete. Please start again from this page.",
+      "errorExchangeFailed": "Your sign-in link has expired or was already used. Please try again.",
+      "errorProvider": "Sign-in failed. Please try again."
     }
   }
 }

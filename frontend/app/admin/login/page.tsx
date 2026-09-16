@@ -86,6 +86,10 @@ function AdminLoginPageContent() {
         // role check above is unchanged.
         options: {
           redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent("/admin/cases")}`,
+          // Always show Google's account chooser — see app/ds/login for the full reasoning.
+          // This role approves compensation, so a silently reused session would attribute a
+          // payment decision to an administrator who did not make it.
+          queryParams: { prompt: "select_account" },
         },
       });
       if (!mountedRef.current) return;

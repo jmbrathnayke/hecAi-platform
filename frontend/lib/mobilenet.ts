@@ -46,6 +46,40 @@ export class ModelNotAvailableError extends Error {
 let modelInstance: GraphModel | null = null;
 let loadPromise: Promise<GraphModel> | null = null;
 
+/**
+ * Delete every cached `/models/mobilenetv2/` entry from all Cache Storage buckets.
+ * Returns true if anything was actually removed.
+ *
+ * WHY THIS IS NEEDED. The Service Worker precaches model.json and the weight shards
+ * (next.config.ts additionalPrecacheEntries). A device that visited the app before the model was
+ * re-exported holds the OLD entries, and the SW answers from cache — so the fixed file on the
+ * server is never fetched and the load keeps failing with the officer none the wiser. This was
+ * observed on a real profile: the browser's SW cache still contained the `layers-model` /
+ * `batch_shape` export long after the server was serving `graph-model`.
+ *
+ * Purging lets the retry fall through to the network. Safe to call when offline: the delete
+ * succeeds, the retry then fails, and the caller reports the same error it would have anyway.
+ */
+async function purgeCachedModel(): Promise<boolean> {
+  if (typeof caches === "undefined") return false;
+  let purged = false;
+  try {
+    for (const name of await caches.keys()) {
+      const cache = await caches.open(name);
+      for (const request of await cache.keys()) {
+        if (request.url.includes("/models/mobilenetv2/")) {
+          purged = (await cache.delete(request)) || purged;
+        }
+      }
+    }
+  } catch {
+    // Cache Storage can throw in private browsing or when storage is evicted mid-iteration.
+    // A failed purge just means the retry is pointless, not that anything is broken.
+    return purged;
+  }
+  return purged;
+}
+
 export function loadModel(): Promise<GraphModel> {
   if (modelInstance) return Promise.resolve(modelInstance);
   if (loadPromise) return loadPromise;
@@ -63,7 +97,21 @@ export function loadModel(): Promise<GraphModel> {
       // @tensorflow/tfjs wholesale and never touch a real weight file. The graph-model export
       // is the supported Keras 3 path; scripts/tfjs-bench/verify-model.mjs asserts it
       // reproduces the Keras probabilities (argmax 8/8, max |Δp| 2e-6).
-      const model = await tf.loadGraphModel(MODEL_URL);
+      let model: GraphModel;
+      try {
+        model = await tf.loadGraphModel(MODEL_URL);
+      } catch (first) {
+        // A stale Service Worker cache is the most likely reason a model that parses on the
+        // server fails on the device — see purgeCachedModel(). Retry exactly once, and only if
+        // there was actually something to purge, so a genuinely offline device still fails fast
+        // instead of loading twice.
+        if (!(await purgeCachedModel())) throw first;
+        console.warn(
+          "[mobilenet] model load failed; purged stale cached model and retrying once",
+          first,
+        );
+        model = await tf.loadGraphModel(MODEL_URL);
+      }
       modelInstance = model;
       return model;
     } catch (err) {

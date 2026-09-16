@@ -3,6 +3,7 @@ import { NextIntlClientProvider } from "next-intl";
 import "../globals.css";
 import { SyncStatusBar } from "@/components/SyncStatusBar";
 import { OfficerBottomNav } from "@/components/OfficerBottomNav";
+import { SWRegistrar } from "@/components/SWRegistrar";
 import { fontVariables } from "@/lib/fonts";
 import { resolveStaffLocale, loadMessages } from "@/lib/serverLocale";
 
@@ -29,6 +30,14 @@ export default async function OfficerLayout({ children }: { children: React.Reac
           attributes before hydration. Scoped to this element only — see app/[locale]/layout.tsx. */}
       <body className="flex min-h-dvh flex-col font-sans" suppressHydrationWarning>
         <NextIntlClientProvider locale={locale} messages={messages}>
+          {/* Mounted here as well as in app/[locale]/layout.tsx. This is a SEPARATE root layout,
+              so anything mounted only there never runs on /officer/* — and the officer tree is
+              precisely the offline-first one. Without this an officer who logs in at
+              /officer/login and stays inside /officer/* never registers the Service Worker, so
+              the MobileNetV2 precache that FR-2.5 depends on never happens and IndexedDB is
+              never initialised. It also means the dev-mode teardown of a stale worker never
+              fired on the pages where the stale model was actually being served. */}
+          <SWRegistrar />
           <SyncStatusBar />
           <div className="flex flex-1 flex-col">{children}</div>
           <OfficerBottomNav />

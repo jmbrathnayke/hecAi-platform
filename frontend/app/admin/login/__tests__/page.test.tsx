@@ -182,3 +182,20 @@ test("an unrecognized callback error code is not reflected back to the page", as
   expect(alert).toHaveTextContent("login.errorProvider");
   expect(alert).not.toHaveTextContent("077-1234567");
 });
+
+// ============================================================ account chooser (security)
+//
+// Without prompt=select_account, Google silently reuses whichever account the browser is already
+// signed into and never asks. On a shared device the next admin signs in as the previous one,
+// every audit_log row names the wrong person, and nothing on screen reveals it — the failure is
+// invisible because it looks exactly like success. In a system whose contribution is a
+// tamper-evident audit trail, that is the identity mistake that must not be possible.
+test("Google sign-in always forces the account chooser", async () => {
+  render(<AdminLoginPage />);
+  fireEvent.click(screen.getByRole("button", { name: "login.google" }));
+  await waitFor(() => expect(mockSignInWithOAuth).toHaveBeenCalled());
+  const options = mockSignInWithOAuth.mock.calls[0][0].options as {
+    queryParams?: Record<string, string>;
+  };
+  expect(options.queryParams?.prompt).toBe("select_account");
+});

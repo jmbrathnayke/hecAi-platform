@@ -30,7 +30,7 @@ function KpiCard({
 }) {
   return (
     <div
-      className={`rounded-md border border-border-default bg-surface-raised p-design-4 ${className}`}
+      className={`rounded-md border border-border-subtle bg-surface-raised shadow-card p-design-4 ${className}`}
     >
       <div className="text-label text-ink-secondary">{label}</div>
       <div className="mt-design-1 text-title text-ink-primary">{value}</div>
@@ -59,7 +59,7 @@ function StatusBreakdownValue({ entries }: { entries: [string, number][] }) {
 
 function KpiSkeleton() {
   return (
-    <div className="rounded-md border border-border-default bg-surface-raised p-design-4">
+    <div className="rounded-md border border-border-subtle bg-surface-raised shadow-card p-design-4">
       <div className="h-4 w-24 animate-pulse rounded bg-surface-tint" />
       <div className="mt-design-2 h-6 w-16 animate-pulse rounded bg-surface-tint" />
     </div>

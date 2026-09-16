@@ -143,8 +143,9 @@ export default function OfficerClassifyPage() {
         const quality = await assessImageQuality(file);
         if (!mountedRef.current) return;
         if (quality.blurry || quality.poorExposure) setQualityWarning(true);
-      } catch {
+      } catch (err) {
         // Undecodable/non-image file — surface as an error, nothing to classify.
+        console.error("[classify] image quality check failed; file is not decodable", err);
         if (mountedRef.current) setStatus("error");
         return;
       }
@@ -171,7 +172,16 @@ export default function OfficerClassifyPage() {
       addThumbnail(file);
       setResult(classification);
       setStatus("result");
-    } catch {
+    } catch (err) {
+      // "Could not classify this photo. Please retake it and try again." is shown for every
+      // failure in this block — model load, inference, IndexedDB write. Retaking the photo fixes
+      // none of those, so without the cause the copy actively misdirects. `cause` carries the
+      // underlying tfjs error when it came from ModelNotAvailableError.
+      console.error(
+        "[classify] classification failed",
+        { online: navigator.onLine },
+        err instanceof Error ? (err.cause ?? err) : err,
+      );
       if (mountedRef.current) setStatus("error");
     } finally {
       inFlightRef.current = false;
@@ -264,7 +274,7 @@ export default function OfficerClassifyPage() {
         />
 
         {/* Instruction strip (mockup): what to shoot, and how many are banked so far. */}
-        <div className="border-b border-border-default bg-surface-raised px-design-5 py-design-3 text-center">
+        <div className="border-b border-border-subtle bg-surface-raised px-design-5 py-design-3 text-center">
           <p className="text-label text-ink-secondary">
             <span aria-hidden="true">📸 </span>
             {atMax ? t("camera.maxReached", { max: MAX_PHOTOS }) : t("camera.instruction")}

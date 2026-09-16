@@ -191,3 +191,91 @@ test("cookies written via setAll() during a failed getUser() still propagate ont
   // Before the fix, returning a bare NextResponse.redirect() here would silently drop this.
   expect(res.cookies.get("sb-refreshed")?.value).toBe("");
 });
+
+// ============================================================ Divisional Secretariat (Story 8.5)
+//
+// REGRESSION GUARD. Story 8.5 shipped app/ds/layout.tsx and app/ds/dashboard/page.tsx but no
+// middleware exemption, so every /ds/* request fell through to intlMiddleware, was 307'd to
+// /si/ds/dashboard — a path with no route under app/[locale] — and 404'd. The dashboard was
+// unreachable for the entire life of the story, and no test caught it: the page component renders
+// correctly in isolation, and only requesting the route through a running server reveals it.
+//
+// These assert the same contract the officer block has, so the two cannot drift apart again.
+
+test("unauthenticated DS route redirects to /ds/login, NOT into the locale tree", async () => {
+  mockGetUser.mockResolvedValue({ data: { user: null } });
+  const req = new NextRequest(new URL("http://localhost/ds/dashboard"));
+  const res = await middleware(req);
+  expect(res.status).toBe(307);
+  // The bug produced http://localhost/si/ds/dashboard here.
+  expect(res.headers.get("location")).toBe("http://localhost/ds/login");
+});
+
+test("the DS route never reaches the intl middleware", async () => {
+  // This is the assertion that would have caught the original defect.
+  mockGetUser.mockResolvedValue({ data: { user: { id: "ds-1" } } });
+  const req = new NextRequest(new URL("http://localhost/ds/dashboard"));
+  await middleware(req);
+  expect(innerIntlMiddleware()).not.toHaveBeenCalled();
+});
+
+test("authenticated DS route passes through", async () => {
+  mockGetUser.mockResolvedValue({ data: { user: { id: "ds-1" } } });
+  const req = new NextRequest(new URL("http://localhost/ds/dashboard"));
+  const res = await middleware(req);
+  expect(res.status).toBe(200);
+});
+
+test("/ds/login itself is not protected (no redirect loop)", async () => {
+  const req = new NextRequest(new URL("http://localhost/ds/login"));
+  const res = await middleware(req);
+  expect(res.status).toBe(200);
+  expect(mockGetUser).not.toHaveBeenCalled();
+});
+
+test("/dsx (boundary, not a DS route) is not treated as protected", async () => {
+  // Same boundary discipline as /officerx: a prefix match without the separator would gate
+  // unrelated paths and, worse, exempt them from localisation.
+  const req = new NextRequest(new URL("http://localhost/dsx"));
+  await middleware(req);
+  expect(mockGetUser).not.toHaveBeenCalled();
+  expect(innerIntlMiddleware()).toHaveBeenCalled();
+});
+
+// ============================================================ System Administration (FR-11)
+//
+// Added with the tree, not after it. /ds shipped without its exemption and 404'd for the whole
+// life of Story 8.5; these assertions exist so /system cannot repeat that.
+
+test("unauthenticated system route redirects to /system/login, NOT into the locale tree", async () => {
+  mockGetUser.mockResolvedValue({ data: { user: null } });
+  const req = new NextRequest(new URL("http://localhost/system/users"));
+  const res = await middleware(req);
+  expect(res.status).toBe(307);
+  expect(res.headers.get("location")).toBe("http://localhost/system/login");
+});
+
+test("the system route never reaches the intl middleware", async () => {
+  mockGetUser.mockResolvedValue({ data: { user: { id: "sys-1" } } });
+  const req = new NextRequest(new URL("http://localhost/system/users"));
+  await middleware(req);
+  expect(innerIntlMiddleware()).not.toHaveBeenCalled();
+});
+
+test("authenticated system route passes through", async () => {
+  mockGetUser.mockResolvedValue({ data: { user: { id: "sys-1" } } });
+  const res = await middleware(new NextRequest(new URL("http://localhost/system/users")));
+  expect(res.status).toBe(200);
+});
+
+test("/system/login itself is not protected (no redirect loop)", async () => {
+  const res = await middleware(new NextRequest(new URL("http://localhost/system/login")));
+  expect(res.status).toBe(200);
+  expect(mockGetUser).not.toHaveBeenCalled();
+});
+
+test("/systemx (boundary) is not treated as a system route", async () => {
+  await middleware(new NextRequest(new URL("http://localhost/systemx")));
+  expect(mockGetUser).not.toHaveBeenCalled();
+  expect(innerIntlMiddleware()).toHaveBeenCalled();
+});

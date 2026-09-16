@@ -82,6 +82,10 @@ function OfficerLoginPageContent() {
         // session and bounced the officer back here with the code discarded.
         options: {
           redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent("/officer/dashboard")}`,
+          // Always show Google's account chooser — see app/ds/login for the full reasoning.
+          // Field officers share devices more than any other role here, so a silent reuse of the
+          // previous officer's session would misattribute submissions and AI overrides alike.
+          queryParams: { prompt: "select_account" },
         },
       });
       if (!mountedRef.current) return;

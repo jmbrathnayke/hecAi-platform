@@ -11,7 +11,9 @@ import psycopg2
 from flask import Blueprint, current_app, jsonify, request
 
 from app.api.v1.middleware.auth import authenticated_claims, authz_role
+from app.infrastructure import registry
 from app.infrastructure.audit import write_audit_log
+from app.infrastructure.push.push_service import notify_staff_push
 from app.infrastructure.ml import compensation
 
 cases_bp = Blueprint("cases", __name__)
@@ -90,13 +92,13 @@ def submit_case():
     if not year.isdigit():
         year = str(datetime.now(timezone.utc).year)
 
-    # District/DS-division picker (Story 5.2 Task 7) and AI severity (Task 8) -- both
-    # optional, additive fields; absent on every submission that predates the picker or
-    # never had an AI classification step (e.g. every citizen self-service case).
-    district = body.get("district")
-    district = district if isinstance(district, str) and district else None
-    ds_division = body.get("ds_division")
-    ds_division = ds_division if isinstance(ds_division, str) and ds_division else None
+    # District / DS division are NO LONGER read from the body (Story 8.4, FR-10.6). They are
+    # copied from the registered household inside the transaction below, so a case can never be
+    # stored with a division the client chose, mistyped, or omitted. The old picker fields are
+    # ignored rather than rejected: an offline client built before Epic 8 still sends them, and
+    # failing those submissions outright would lose reports that are otherwise perfectly valid.
+    district = None
+    ds_division = None
     ai_severity = body.get("ai_severity")
     ai_severity = ai_severity if isinstance(ai_severity, str) and ai_severity else None
 
@@ -117,6 +119,30 @@ def submit_case():
                 if existing:
                     return jsonify({"canonical_id": existing[0], "offline_id": offline_id}), 200
 
+                # --- FR-10.3 registration gate (Story 8.4) --------------------------------
+                # Resolved INSIDE the transaction, so a household cannot be revoked between the
+                # check and the insert. Placed AFTER the idempotency fast path on purpose: a
+                # retry of an already-accepted case must keep returning its canonical id even if
+                # the household has since been transferred or revoked.
+                if submitted_by_officer:
+                    # The officer is holding the citizen's card and has looked the family up;
+                    # the reference travels in the body. Their own id still comes from the JWT.
+                    household = registry.resolve_by_ref(cur, body.get("household_ref"))
+                else:
+                    # Never from the body — a client that could name its own household could file
+                    # cases against someone else's registration.
+                    household = registry.resolve_by_registrant(cur, citizen_id)
+
+                if not household:
+                    # 403, not 400: the request is well-formed and the caller is authenticated;
+                    # what is missing is a registration, and no amount of editing this payload
+                    # fixes that. The client sends them to /register.
+                    return jsonify({"error": "not_registered"}), 403
+
+                household_id = household["id"]
+                district = household["district"]
+                ds_division = household["ds_division"]
+
                 cur.execute("SELECT nextval('hec_canonical_seq')")
                 seq = cur.fetchone()[0]
                 canonical_id = f"HEC-{year}-{seq:04d}"
@@ -128,8 +154,8 @@ def submit_case():
                          (offline_id, canonical_id, damage_category,
                           gps_lat, gps_lng, submitter_identity_hash,
                           officer_id, submitted_by_officer, citizen_id,
-                          district, ds_division_id, locale)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                          district, ds_division_id, locale, household_id)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                        ON CONFLICT (offline_id) DO NOTHING
                        RETURNING id""",
                     (
@@ -145,6 +171,10 @@ def submit_case():
                         district,
                         ds_division,
                         locale,
+                        # Appended rather than inserted mid-list so every existing positional
+                        # index in this statement — and in the tests that assert on them — is
+                        # unchanged.
+                        household_id,
                     ),
                 )
                 row = cur.fetchone()
@@ -162,6 +192,16 @@ def submit_case():
                     cur, case_id, damage_category, ds_division, datetime.now(timezone.utc),
                     district=district, ai_severity=ai_severity,
                 )
+                # FR-6.4: a submitted case is work arriving for two roles at once -- the field
+                # officers covering the division, and the administrator responsible for the
+                # district. Both are best-effort: notify_staff_push never raises, which matters
+                # more here than anywhere else in the platform, because an exception inside this
+                # transaction would roll back the citizen's SUBMISSION rather than merely the
+                # announcement of it.
+                notify_staff_push(cur, case_id, "case_submitted", "officer",
+                                  ds_division, canonical_id, claims.get("sub"))
+                notify_staff_push(cur, case_id, "case_submitted", "admin",
+                                  district, canonical_id, claims.get("sub"))
         return jsonify({"canonical_id": canonical_id, "offline_id": offline_id}), 201
     finally:
         conn.close()

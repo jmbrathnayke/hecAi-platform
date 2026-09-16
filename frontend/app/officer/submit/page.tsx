@@ -24,6 +24,7 @@ import { assessImageQuality } from "@/lib/imageQuality";
 import { classifyImage, type ClassId, type ClassificationResult } from "@/lib/mobilenet";
 import { deriveCaseCategory } from "@/lib/classification";
 import { buildPoC, submitCaseOnline } from "@/lib/poc";
+import { lookupHousehold } from "@/lib/households";
 import { createClient } from "@/lib/supabase";
 import { AIResultCard } from "@/components/AIResultCard";
 import { OverrideForm } from "@/components/OverrideForm";
@@ -208,6 +209,28 @@ export default function OfficerSubmitPage() {
     setSaving(true);
     setIdentityError(null);
     try {
+      // FR-10.3 gate on the officer-assisted path (Story 8.5). The officer is standing with the
+      // citizen and their card; resolving the household HERE means an unregistered family is
+      // found out in the first seconds, not after the officer has photographed the damage and
+      // walked away. The backend would refuse that submission with 403 not_registered.
+      //
+      // The officer app cannot derive the reference itself: it encrypts the NIC with a
+      // non-extractable device key, so only the server can match it to a household.
+      const lookup = await lookupHousehold(nic.trim());
+      if (!mountedRef.current) return;
+      if (lookup.status === "not-registered") {
+        setIdentityError(t("submit.householdNotRegistered"));
+        setSaving(false);
+        return;
+      }
+      if (lookup.status === "error") {
+        // Deliberately NOT reported as "not registered": on a network blip that would send a
+        // properly registered family to the DS office to fix nothing.
+        setIdentityError(t("submit.householdLookupFailed"));
+        setSaving(false);
+        return;
+      }
+
       const key = await getOrCreateSessionKey();
       const nicEnc = await encryptField(nic.trim(), key);
       const mobileEnc = await encryptField(mobile.trim(), key);
@@ -215,6 +238,9 @@ export default function OfficerSubmitPage() {
 
       const draftId = getOrCreateDraftId();
       await updateDraft(draftId, {
+        // The reference, not the NIC — this is what travels to the submit endpoint. The NIC
+        // itself stays encrypted, exactly as before.
+        household_ref: lookup.household.household_ref,
         reporter_nic_ciphertext: nicEnc.ciphertext,
         reporter_nic_iv: nicEnc.iv,
         reporter_mobile_ciphertext: mobileEnc.ciphertext,
@@ -442,7 +468,7 @@ export default function OfficerSubmitPage() {
               onBack={() => setStep("damage")}
               fileInputTestId="submit-file-input"
             />
-            <div className="border-b border-border-default bg-surface-raised px-design-5 py-design-3 text-center">
+            <div className="border-b border-border-subtle bg-surface-raised px-design-5 py-design-3 text-center">
               <p className="text-label text-ink-secondary">
                 <span aria-hidden="true">📸 </span>
                 {thumbnails.length >= MAX_PHOTOS
@@ -692,7 +718,7 @@ export default function OfficerSubmitPage() {
 
         {step === "review" && (
           <div className="space-y-design-4">
-            <dl className="space-y-design-2 rounded-md border border-border-default bg-surface-raised p-design-4">
+            <dl className="space-y-design-2 rounded-md border border-border-subtle bg-surface-raised shadow-card p-design-4">
               <div className="flex justify-between gap-design-3">
                 <dt className="text-label text-ink-secondary">{t("submit.reviewDamage")}</dt>
                 <dd className="text-label text-ink-primary">{damage ? tReport(`step3.${damage}`) : "—"}</dd>

@@ -57,6 +57,12 @@ def create_app(config=None):
     # the derived value, so it is documented in .env.example alongside SUPABASE_URL rather than
     # existing only in this source file.
     supabase_url = _https_url(os.getenv("SUPABASE_URL"), "SUPABASE_URL")
+    # Stored, not just derived from. Until FR-11 this value existed only as a local used to build
+    # the JWKS URL and the issuer, so `current_app.config["SUPABASE_URL"]` was always None and the
+    # provisioning API refused with "not configured" on a correctly configured machine. The
+    # already-validated local is reused rather than re-reading the environment, so provisioning
+    # inherits _https_url()'s scheme check and cannot be pointed at a plaintext host.
+    app.config["SUPABASE_URL"] = supabase_url
     app.config["SUPABASE_JWKS_URL"] = _https_url(
         os.getenv("SUPABASE_JWKS_URL"), "SUPABASE_JWKS_URL"
     ) or (
@@ -69,12 +75,59 @@ def create_app(config=None):
         f"{supabase_url.rstrip('/')}/auth/v1" if supabase_url else None
     )
 
+    # Household registry pepper (Story 8.1, FR-10.2). Keys the HMAC that makes one NIC produce
+    # one stable digest, which is what the UNIQUE index in migration 024 enforces against.
+    #
+    # No default, deliberately. A fallback value would let registration succeed with digests
+    # anyone reading this repository could recompute, and the failure would stay invisible until
+    # someone audited the database — so nic_identity.py raises NicPepperMissing and the caller
+    # returns 500 `server_misconfigured`, the same treatment auth.py gives an unreachable JWKS.
+    #
+    # ROTATING THIS INVALIDATES THE WHOLE REGISTRY. Every digest changes, no stored value can be
+    # re-derived, and every household would have to register again. There is no recovery path by
+    # design (a reversible one would defeat the pepper). Risk R-13; back it up with the same
+    # custody as DATABASE_URL.
+    app.config["NIC_PEPPER"] = os.getenv("NIC_PEPPER")
+
+    # Bank-detail encryption key (Story 8.6, FR-10.4). Fernet, server-side — the Divisional
+    # Secretariat must READ an account number to pay it, so unlike the NIC this is reversible
+    # encryption and unlike the client's AES-GCM key it cannot be per-device.
+    #
+    # No default, same as NIC_PEPPER: bank_crypto raises BankKeyMissing rather than storing
+    # an account number in the clear, and the caller returns 500 server_misconfigured.
+    # Registration simply refuses the optional bank step; the rest of registration works.
+    #
+    # Unlike NIC_PEPPER this CAN be rotated (the ciphertext is reversible), but doing so is a
+    # decrypt-old/encrypt-new migration over every row, and no such script exists yet.
+    app.config["BANK_DETAILS_KEY"] = os.getenv("BANK_DETAILS_KEY")
+
     # Twilio SMS fallback (Story 3.6). Absent in tests (mocked) and until the DWC Twilio number
     # is provisioned; the webhook fails signature validation closed when TWILIO_AUTH_TOKEN is unset.
     app.config["TWILIO_ACCOUNT_SID"] = os.getenv("TWILIO_ACCOUNT_SID")
     app.config["TWILIO_AUTH_TOKEN"] = os.getenv("TWILIO_AUTH_TOKEN")
     app.config["TWILIO_FROM_NUMBER"] = os.getenv("TWILIO_FROM_NUMBER")
     app.config["TWILIO_PUBLIC_WEBHOOK_URL"] = os.getenv("TWILIO_PUBLIC_WEBHOOK_URL")
+
+    # SendGrid email notifications. Absent in tests (mocked) and in any deployment that has not
+    # provisioned email; sendgrid_client.send_email() treats an unset key as "not configured" and
+    # returns False rather than raising, so an unconfigured install degrades to the public status
+    # page instead of failing a case action.
+    # Supabase Auth Admin API. Required only by the staff-provisioning API (FR-11): app_metadata
+    # is writable with this key alone, which is precisely what makes the role claim trustworthy —
+    # a citizen cannot call auth.updateUser() and name themselves an administrator. Absent, that
+    # API returns 503 rather than degrading to something that appears to work.
+    app.config["SUPABASE_SERVICE_ROLE_KEY"] = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+
+    app.config["SENDGRID_API_KEY"] = os.getenv("SENDGRID_API_KEY")
+    app.config["SENDGRID_FROM_EMAIL"] = os.getenv("SENDGRID_FROM_EMAIL")
+    app.config["SENDGRID_FROM_NAME"] = os.getenv("SENDGRID_FROM_NAME")
+
+    # Web Push (VAPID). Self-generated keypair, no vendor account and no registered business
+    # entity -- unlike SMS. The private key signs push requests; the public key is handed to the
+    # browser at subscribe time. Unset means the subscribe endpoint reports push unavailable.
+    app.config["VAPID_PUBLIC_KEY"] = os.getenv("VAPID_PUBLIC_KEY")
+    app.config["VAPID_PRIVATE_KEY"] = os.getenv("VAPID_PRIVATE_KEY")
+    app.config["VAPID_SUBJECT"] = os.getenv("VAPID_SUBJECT", "mailto:admin@hec-platform.lk")
 
     if config:
         app.config.from_mapping(config)
@@ -104,6 +157,10 @@ def create_app(config=None):
     from app.api.v1.sync import sync_bp
     from app.api.v1.admin import admin_bp
     from app.api.v1.research import research_bp
+    from app.api.v1.households import households_bp
+    from app.api.v1.ds import ds_bp
+    from app.api.v1.notifications import notifications_bp
+    from app.api.v1.users import users_bp
 
     app.register_blueprint(health_bp, url_prefix="/api/v1")
     app.register_blueprint(cases_bp, url_prefix="/api/v1")
@@ -115,5 +172,9 @@ def create_app(config=None):
     app.register_blueprint(sync_bp, url_prefix="/api/v1/sync")
     app.register_blueprint(admin_bp, url_prefix="/api/v1")
     app.register_blueprint(research_bp, url_prefix="/api/v1")
+    app.register_blueprint(households_bp, url_prefix="/api/v1")
+    app.register_blueprint(ds_bp, url_prefix="/api/v1")
+    app.register_blueprint(notifications_bp, url_prefix="/api/v1")
+    app.register_blueprint(users_bp, url_prefix="/api/v1")
 
     return app
