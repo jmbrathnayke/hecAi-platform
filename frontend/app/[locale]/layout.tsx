@@ -5,6 +5,7 @@ import { getMessages } from "next-intl/server";
 import { SWRegistrar } from "@/components/SWRegistrar";
 import { OfflineBanner } from "@/components/OfflineBanner";
 import { CitizenBottomNav } from "@/components/CitizenBottomNav";
+import { CitizenSyncRunner } from "@/components/CitizenSyncRunner";
 import { fontVariables } from "@/lib/fonts";
 import { routing } from "@/routing";
 import "../globals.css";
@@ -48,6 +49,8 @@ export default async function LocaleLayout({
         <SWRegistrar />
         <NextIntlClientProvider messages={messages}>
           <OfflineBanner />
+          {/* Delivers citizen reports made offline once the connection returns. */}
+          <CitizenSyncRunner />
           <div className="flex flex-1 flex-col">{children}</div>
           <CitizenBottomNav />
         </NextIntlClientProvider>

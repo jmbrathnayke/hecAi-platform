@@ -40,6 +40,7 @@ from flask import Blueprint, Response, current_app, g, jsonify, request, stream_
 
 from app.api.v1.middleware.auth import require_admin
 from app.domain.validation import MIN_REASON_LENGTH
+from app.domain.workflow import workflow_stage
 from app.infrastructure.audit import verify_chain, write_audit_log
 from app.infrastructure.export.report import build_pdf, stream_csv
 from app.infrastructure.ml.compensation import DISTRICT_REF_PATH
@@ -127,6 +128,22 @@ def _build_conditions(district, args):
     if division:
         conditions.append("c.ds_division_id = %s")
         params.append(division)
+    # Workflow organisation (final governance workflow): the exact case a notification points at,
+    # the responsible officer, and whether an officer has verified the case yet. Each keeps the
+    # `c.<expr> = %s` shape documented above, so the list, the KPIs and the export stay aligned.
+    reference = args.get("ref")
+    if reference:
+        conditions.append("c.canonical_id = %s")
+        params.append(reference.strip().upper())
+    officer = args.get("officer")
+    if officer:
+        conditions.append("COALESCE(c.assigned_officer_id, c.officer_id) = %s")
+        params.append(officer)
+    assessment = args.get("assessment")
+    if assessment in ("assessed", "pending"):
+        conditions.append(
+            "(c.officer_assessed_at IS NOT NULL OR COALESCE(c.submitted_by_officer, FALSE)) = %s")
+        params.append(assessment == "assessed")
 
     return conditions, params
 
@@ -182,7 +199,9 @@ def list_cases():
                     cur.execute(
                         f"""SELECT c.canonical_id, c.offline_id, c.damage_category, c.status,
                                    c.submitted_at, c.updated_at, il.confidence,
-                                   c.submitted_by_officer
+                                   c.submitted_by_officer, c.ds_division_id,
+                                   COALESCE(c.assigned_officer_id, c.officer_id),
+                                   c.officer_assessed_at, c.ds_final_amount
                               FROM cases c
                               LEFT JOIN LATERAL (
                                 SELECT confidence FROM inference_log
@@ -284,6 +303,12 @@ def list_cases():
             # Without this field the approver sees two identical rows and authorises the same
             # amount for both — see R-18.
             "submitted_by_officer": bool(r[7]),
+            # Organisation by area and accountability: the DS division, the officer responsible
+            # for the case, and how far it has travelled through the human checkpoints.
+            "ds_division": r[8],
+            "responsible_officer_id": r[9],
+            "officer_assessed": bool(r[10]) or bool(r[7]),
+            "ds_final_decided": r[11] is not None,
         }
         for r in rows
     ]
@@ -452,11 +477,44 @@ def _load_case_detail(cur, offline_id, district, known_row=None, known_comp_row=
         for r in audit_rows
     ]
 
+    # Workflow checkpoints (migration 033). A separate, narrow read rather than more columns on the
+    # SELECT above, whose positional shape the action path (and its test double) share.
+    cur.execute(
+        """SELECT district, ds_division_id, assigned_officer_id, officer_id,
+                  officer_review_started_at, officer_assessed_at, officer_assessed_by,
+                  ds_final_amount, ds_final_reason, ds_final_at
+             FROM cases WHERE id = %s""",
+        (case_id,),
+    )
+    wf = cur.fetchone() or (None,) * 10
+
+    def _ts(value):
+        return value.isoformat() if value else None
+
+    workflow = {
+        "stage": workflow_stage(case["status"], wf[4], wf[5], wf[9], case["submitted_by_officer"]),
+        "district": wf[0],
+        "ds_division": wf[1],
+        "responsible_officer_id": wf[2] or wf[3],
+        "officer_review_started_at": _ts(wf[4]),
+        "officer_assessed_at": _ts(wf[5]),
+        "officer_assessed_by": wf[6],
+        "officer_assessed": wf[5] is not None or case["submitted_by_officer"],
+        # The Divisional Secretariat's final human decision. The AI-assisted estimate above is
+        # decision support only and is never the payable amount.
+        "ds_final_amount": float(wf[7]) if wf[7] is not None else None,
+        "ds_final_reason": wf[8],
+        "ds_final_at": _ts(wf[9]),
+    }
+    if compensation is not None:
+        compensation["is_final_decision"] = False
+
     return case_id, {
         "case": case,
         "ai_result": ai_result,
         "compensation": compensation,
         "audit_trail": audit_trail,
+        "workflow": workflow,
     }
 
 
@@ -623,6 +681,19 @@ def post_case_action(offline_id):
                     # the post-write _load_case_detail call can reuse the compensation row
                     # already fetched here instead of re-querying it a second time.
                     known_comp_row = _NOT_FETCHED
+
+                    if action == "approve" and not row[12]:
+                        # Human verification before administrative approval. A citizen's own report
+                        # has been seen by nobody from DWC until a field officer verifies it and
+                        # records the on-device assessment (officer_cases.py). Approving it before
+                        # that would forward an unverified claim to the Divisional Secretariat.
+                        # Officer-assisted cases (row[12]) were verified at submission. Reject,
+                        # request_info and escalate stay available at any point.
+                        cur.execute("SELECT officer_assessed_at FROM cases WHERE id = %s",
+                                    (case_id,))
+                        assessed = cur.fetchone()
+                        if not assessed or assessed[0] is None:
+                            return jsonify({"error": "officer_assessment_required"}), 409
 
                     if action == "approve":
                         # Same query shape as _load_case_detail's compensation SELECT

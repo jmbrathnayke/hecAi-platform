@@ -306,6 +306,16 @@ export default function OfficerDashboardPage() {
                     <span>{t("dashboard.via", { channel: c.submitted_via ?? "app" })}</span>
                     <span>{formatDate(c.submitted_at, locale)}</span>
                   </dl>
+                  {/* The review page is where a "new report" notification lands; the list reaches
+                      the same page so an officer who dismissed the notification is not stuck. */}
+                  {c.canonical_id && (
+                    <Link
+                      href={`/officer/cases/${encodeURIComponent(c.canonical_id)}`}
+                      className="mt-design-2 inline-flex min-h-touch-target items-center text-label font-semibold text-forest underline"
+                    >
+                      {t("dashboard.openCase")}
+                    </Link>
+                  )}
                 </li>
               ))}
             </ul>

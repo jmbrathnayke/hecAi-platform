@@ -152,6 +152,7 @@ def create_app(config=None):
     from app.api.v1.status import status_bp
     from app.api.v1.inference import inference_bp
     from app.api.v1.officer import officer_bp
+    from app.api.v1.officer_cases import officer_cases_bp
     from app.api.v1.sms import sms_bp
     from app.api.v1.citizen import citizen_bp
     from app.api.v1.sync import sync_bp
@@ -167,6 +168,7 @@ def create_app(config=None):
     app.register_blueprint(status_bp, url_prefix="/api/v1/cases/status")
     app.register_blueprint(inference_bp, url_prefix="/api/v1")
     app.register_blueprint(officer_bp, url_prefix="/api/v1")
+    app.register_blueprint(officer_cases_bp, url_prefix="/api/v1")
     app.register_blueprint(sms_bp, url_prefix="/api/v1")
     app.register_blueprint(citizen_bp, url_prefix="/api/v1")
     app.register_blueprint(sync_bp, url_prefix="/api/v1/sync")

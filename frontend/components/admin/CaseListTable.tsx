@@ -164,7 +164,9 @@ export function CaseListTable({
                   #E9C46A, about 1.8:1 against white and unreadable as text. The tint carries the
                   signal, ink-primary carries the contrast. */}
               <td className="whitespace-nowrap px-design-3 py-design-2">
-                {c.submitted_by_officer ? (
+                {/* Verified = officer-assisted at submission, or a field officer has since recorded
+                    an assessment of the citizen's report (final governance workflow). */}
+                {(c.officer_assessed ?? c.submitted_by_officer) ? (
                   <span className="text-caption text-ink-secondary">
                     {t("table.verifiedByOfficer")}
                   </span>

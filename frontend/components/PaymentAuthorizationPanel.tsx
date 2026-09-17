@@ -25,6 +25,8 @@ function failureKey(f: PaymentFailure): string {
       return "payment.error.notFound";
     case "not-approved":
       return "payment.error.notApproved";
+    case "final-decision-required":
+      return "payment.error.finalDecisionRequired";
     case "no-household":
       return "payment.error.noHousehold";
     case "no-bank-details":
@@ -113,7 +115,7 @@ export function PaymentAuthorizationPanel({ canonicalId, t, onClose }: Props) {
             </div>
           )}
           <div>
-            <dt className="text-caption text-ink-secondary">{t("payment.amount")}</dt>
+            <dt className="text-caption text-ink-secondary">{t("payment.finalAmount")}</dt>
             <dd className="text-body font-semibold text-ink-primary">
               {auth.amount_lkr === null ? "—" : `Rs. ${auth.amount_lkr.toLocaleString()}`}
             </dd>

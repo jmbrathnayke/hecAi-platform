@@ -58,6 +58,8 @@ def _case(
     gps_lng=None,
     submitted_via="app",
     citizen_mobile_plain=None,
+    officer_assessed_at=datetime(2026, 7, 8, 11, 0, 0),
+    assigned_officer_id="officer-1",
 ):
     return {
         # Parsed from the HEC-YYYY-NNNN suffix -- guarantees uniqueness across all fixture
@@ -89,6 +91,18 @@ def _case(
         # Story 5.6: NULL for every case except ones from the extended SMS-fallback grammar --
         # never returned by any read endpoint (write-only, same convention as citizen_nic_plain).
         "citizen_mobile_plain": citizen_mobile_plain,
+        # Migration 033 workflow checkpoints. Assessed by default: most tests here exercise the
+        # administrator's decision logic, which (since the final governance workflow) runs only
+        # after a field officer has verified a citizen's case. The unassessed path is tested
+        # explicitly below.
+        "officer_assessed_at": officer_assessed_at,
+        "assigned_officer_id": assigned_officer_id,
+        "officer_id": None,
+        "officer_review_started_at": officer_assessed_at,
+        "officer_assessed_by": assigned_officer_id if officer_assessed_at else None,
+        "ds_final_amount": None,
+        "ds_final_reason": None,
+        "ds_final_at": None,
     }
 
 
@@ -163,6 +177,11 @@ class FakeCursor:
                     # Whether a DWC officer was physically present. Defaults False, which is the
                     # citizen self-report case -- the one the approver most needs flagged.
                     c.get("submitted_by_officer", False),
+                    # Migration 033 organisation columns.
+                    c.get("ds_division_id"),
+                    c.get("assigned_officer_id") or c.get("officer_id"),
+                    c.get("officer_assessed_at"),
+                    c.get("ds_final_amount"),
                 )
                 for c in page
             ]
@@ -217,6 +236,20 @@ class FakeCursor:
                     "prev_hash": prev_hash,
                 }
             )
+        elif "SELECT district, ds_division_id, assigned_officer_id" in sql:
+            # _load_case_detail's workflow read (migration 033).
+            (case_id,) = params
+            c = next((c for c in self.store["cases"] if c["id"] == case_id), None)
+            self._result = None if c is None else (
+                c["district"], c.get("ds_division_id"), c.get("assigned_officer_id"),
+                c.get("officer_id"), c.get("officer_review_started_at"),
+                c.get("officer_assessed_at"), c.get("officer_assessed_by"),
+                c.get("ds_final_amount"), c.get("ds_final_reason"), c.get("ds_final_at"),
+            )
+        elif "SELECT officer_assessed_at FROM cases WHERE id" in sql:
+            (case_id,) = params
+            c = next((c for c in self.store["cases"] if c["id"] == case_id), None)
+            self._result = None if c is None else (c.get("officer_assessed_at"),)
         elif "FROM cases WHERE offline_id" in sql and "FOR UPDATE" in sql:
             # Story 5.6: post_case_action's own copy of the cases SELECT (FOR UPDATE-locked,
             # distinct query text from _load_case_detail's below since Story 5.5's code review
@@ -416,6 +449,19 @@ class FakeCursor:
         division = args.get("division")
         if division:
             rows = [c for c in rows if c["ds_division_id"] == division]
+        reference = args.get("ref")
+        if reference:
+            rows = [c for c in rows if c["canonical_id"] == reference.strip().upper()]
+        officer = args.get("officer")
+        if officer:
+            rows = [c for c in rows
+                    if (c.get("assigned_officer_id") or c.get("officer_id")) == officer]
+        assessment = args.get("assessment")
+        if assessment in ("assessed", "pending"):
+            want = assessment == "assessed"
+            rows = [c for c in rows
+                    if (c.get("officer_assessed_at") is not None
+                        or bool(c.get("submitted_by_officer"))) == want]
         return rows
 
     def fetchall(self):
@@ -546,6 +592,9 @@ def test_payload_has_no_pii_and_no_nic_column(client):
         # officer was present to see the damage, which the approver needs and which
         # submitted_via cannot supply (migration 009 sets that to 'app' for both paths).
         "submitted_by_officer",
+        # Migration 033 organisation fields: a public area name, a staff account id (already the
+        # audit_log actor on every staff action) and two workflow booleans -- none about the family.
+        "ds_division", "responsible_officer_id", "officer_assessed", "ds_final_decided",
     }
 
 
@@ -738,7 +787,7 @@ def test_case_detail_happy_path_shape(client):
     res = client.get(f"/api/v1/admin/cases/{_CASE_1_OFFLINE_ID}", headers=_auth())
     assert res.status_code == 200
     body = res.get_json()
-    assert set(body.keys()) == {"case", "ai_result", "compensation", "audit_trail"}
+    assert set(body.keys()) == {"case", "ai_result", "compensation", "audit_trail", "workflow"}
     assert body["case"]["canonical_id"] == "HEC-2026-0001"
     assert body["case"]["offline_id"] == _CASE_1_OFFLINE_ID
     assert body["case"]["submitted_via"] == "app"
@@ -1341,3 +1390,77 @@ def test_put_compensation_cap_no_district_assigned_403(client):
     )
     assert res.status_code == 403
     assert res.get_json()["error"] == "no_district_assigned"
+
+
+# ======================================================================= final governance workflow
+#
+# The administrator reviews an officer-verified case and forwards it to the Divisional Secretariat.
+# A citizen's own report that no DWC officer has verified cannot be approved; the administrator can
+# still reject it, ask for information or escalate it.
+
+def _unassessed_citizen_case(store):
+    case = _case("HEC-2026-0777", DISTRICT_A, status="Submitted", officer_assessed_at=None,
+                 assigned_officer_id=None, ds_division_id="Galnewa")
+    store["cases"].append(case)
+    store["compensation_estimates"].append(_compensation_row(case["id"]))
+    return case
+
+
+def test_approving_an_unverified_citizen_case_is_refused(client, store):
+    case = _unassessed_citizen_case(store)
+    res = client.post(f"/api/v1/admin/cases/{case['offline_id']}/action",
+                      json={"action": "approve"}, headers=_auth())
+    assert res.status_code == 409
+    assert res.get_json()["error"] == "officer_assessment_required"
+    assert case["status"] == "Submitted"
+    assert not any(a["event"] == "case_approved" for a in store["audit"])
+
+
+def test_an_unverified_citizen_case_can_still_be_rejected(client, store):
+    case = _unassessed_citizen_case(store)
+    res = client.post(f"/api/v1/admin/cases/{case['offline_id']}/action",
+                      json={"action": "reject", "reason": "Duplicate of an earlier report."},
+                      headers=_auth())
+    assert res.status_code == 200
+    assert case["status"] == "Rejected"
+
+
+def test_an_officer_assisted_case_needs_no_separate_assessment(client, store):
+    case = _unassessed_citizen_case(store)
+    case["submitted_by_officer"] = True
+    res = client.post(f"/api/v1/admin/cases/{case['offline_id']}/action",
+                      json={"action": "approve"}, headers=_auth())
+    assert res.status_code == 200
+    assert case["status"] == "Approved"
+
+
+def test_the_detail_shows_the_officer_assessment_and_labels_the_estimate(client, store):
+    case = next(c for c in store["cases"] if c["district"] == DISTRICT_A)
+    store["compensation_estimates"].append(_compensation_row(case["id"]))
+    body = client.get(f"/api/v1/admin/cases/{case['offline_id']}", headers=_auth()).get_json()
+    wf = body["workflow"]
+    assert wf["officer_assessed"] is True
+    assert wf["responsible_officer_id"] == "officer-1"
+    assert wf["ds_final_amount"] is None
+    if body["compensation"] is not None:
+        assert body["compensation"]["is_final_decision"] is False
+
+
+@pytest.mark.parametrize("query,expect", [
+    ("assessment=assessed", {"HEC-2026-0001", "HEC-2026-0002"}),
+    ("assessment=pending", {"HEC-2026-0777"}),
+    ("ref=hec-2026-0777", {"HEC-2026-0777"}),
+    ("officer=officer-1", {"HEC-2026-0001", "HEC-2026-0002"}),
+])
+def test_cases_can_be_organised_by_assessment_reference_and_officer(client, store, query, expect):
+    _unassessed_citizen_case(store)
+    res = client.get(f"/api/v1/admin/cases?{query}&limit=50", headers=_auth())
+    got = {c["canonical_id"] for c in res.get_json()["items"]}
+    assert expect <= got
+    if query.startswith(("assessment=pending", "ref=")):
+        assert got == expect
+
+
+def test_list_items_carry_division_and_responsible_officer(client, store):
+    items = client.get("/api/v1/admin/cases?limit=50", headers=_auth()).get_json()["items"]
+    assert all("ds_division" in c and "responsible_officer_id" in c for c in items)

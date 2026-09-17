@@ -30,6 +30,12 @@ export interface PoCRecord {
   // AI severity (Story 5.2 Task 8) — only ever present on officer-classified drafts;
   // citizen self-service drafts have no AI classification step and never set this.
   ai_severity?: string;
+  /**
+   * Final governance workflow. The officer's on-device MobileNetV2 result (and override, if any)
+   * for an officer-assisted draft, in the research log's field names. Sent only on the officer
+   * path; the backend records it in inference_log and marks the case officer-assessed.
+   */
+  ai_classification?: Record<string, unknown>;
 }
 
 export interface SubmitResult {
@@ -75,6 +81,36 @@ export function toPoCRecord(
       typeof draft.household_ref === "string" ? draft.household_ref : undefined,
     ds_division: typeof draft.ds_division === "string" ? draft.ds_division : undefined,
     ai_severity: typeof draft.ai_severity === "string" ? draft.ai_severity : undefined,
+    ai_classification: classificationFromDraft(draft),
+  };
+}
+
+/**
+ * The officer's classification from a draft, or undefined when the draft has none (every citizen
+ * draft). Mirrors what the classify step stored (lib/indexeddb.ts saveClassification/saveOverride).
+ */
+export function classificationFromDraft(
+  draft: Record<string, unknown>,
+): Record<string, unknown> | undefined {
+  if (typeof draft.ai_category !== "string" || typeof draft.ai_model_version !== "string") {
+    return undefined;
+  }
+  const overridden =
+    draft.override_applied === true &&
+    typeof draft.override_category === "string" &&
+    draft.override_category !== draft.ai_category;
+  return {
+    model_type: "mobilenetv2",
+    model_version: draft.ai_model_version,
+    prediction: draft.ai_category,
+    confidence: typeof draft.ai_confidence === "number" ? draft.ai_confidence : null,
+    ai_processing_time_ms:
+      typeof draft.ai_processing_time_ms === "number"
+        ? Math.max(0, Math.round(draft.ai_processing_time_ms))
+        : null,
+    was_overridden: overridden,
+    override_category: overridden ? draft.override_category : null,
+    override_reason: overridden && typeof draft.override_reason === "string" ? draft.override_reason : null,
   };
 }
 
@@ -127,6 +163,8 @@ export function buildCasePayload(record: PoCRecord): Record<string, unknown> {
   if (record.submitted_by_officer) {
     body.submitted_by_officer = true;
     body.officer_id = record.officer_id;
+    // Only ever on the officer path: a citizen request body never carries a classification.
+    if (record.ai_classification) body.ai_classification = record.ai_classification;
   }
   // District/DS-division (Story 5.2 Task 7) and AI severity (Task 8) — additive, only
   // included when present so the anonymous citizen request body stays unchanged when

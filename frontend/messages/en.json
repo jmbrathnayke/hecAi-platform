@@ -223,6 +223,27 @@
       "Approved": "Your claim has been approved. The Divisional Secretariat will release payment to your registered bank account.",
       "Rejected": "This claim was not approved. Your Divisional Secretariat office can explain the decision.",
       "PaymentProcessed": "Payment has been released to your registered bank account."
+    },
+    "stageTitle": "Current stage",
+    "finalAmount": "Final compensation amount",
+    "finalAmountNote": "Confirmed by the Divisional Secretariat",
+    "stageLabels": {
+      "submitted": "Report received",
+      "officer_review": "Officer reviewing",
+      "officer_assessed": "Officer assessment complete",
+      "dwc_approved": "Approved by DWC",
+      "ds_final_decided": "Final amount confirmed",
+      "payment_processed": "Payment processed",
+      "rejected": "Not approved"
+    },
+    "stageNext": {
+      "submitted": "Your report has been received. A wildlife officer for your area will review it.",
+      "officer_review": "A wildlife officer is reviewing your report. No action is needed from you.",
+      "officer_assessed": "The officer has assessed the damage. The DWC office is reviewing the assessment.",
+      "dwc_approved": "Approved by DWC. The Divisional Secretariat is reviewing the final compensation amount.",
+      "ds_final_decided": "The Divisional Secretariat has confirmed your final compensation amount. Payment will be released to your registered bank account.",
+      "payment_processed": "The Divisional Secretariat has authorised the payment to your registered bank account.",
+      "rejected": "This claim was not approved. Your Divisional Secretariat office can explain the decision."
     }
   },
   "login": {
@@ -302,7 +323,8 @@
       "retry": "Retry",
       "empty": "No cases in your scope yet.",
       "pendingId": "(pending id)",
-      "via": "via {channel}"
+      "via": "via {channel}",
+      "openCase": "Open case"
     },
     "login": {
       "title": "Officer Portal",
@@ -479,7 +501,71 @@
     "navDashboard": "Home",
     "navNewReport": "New Report",
     "navClassify": "Classify",
-    "navQueue": "Queue"
+    "navQueue": "Queue",
+    "caseReview": {
+      "title": "Case review",
+      "loading": "Loading case…",
+      "back": "Back to cases",
+      "stage": "Stage",
+      "household": "Household",
+      "damage": "Damage reported",
+      "district": "District",
+      "division": "DS division",
+      "submitted": "Submitted",
+      "channel": "Reported by",
+      "channelCitizen": "Citizen (self-report)",
+      "channelOfficer": "Officer-assisted",
+      "location": "GPS location",
+      "assignment": "Responsible officer",
+      "assignedToMe": "You",
+      "assignedToOther": "Another officer",
+      "unassigned": "Not yet assigned",
+      "startReview": "Start review",
+      "reviewStarted": "Review started. The citizen has been told their report is under review.",
+      "assessTitle": "Officer assessment",
+      "reassessTitle": "Update assessment",
+      "assessHint": "Inspect the site and photograph the damage yourself. The photo is classified on this device and is not uploaded; only the result is recorded.",
+      "notFinalClassification": "AI classification assists the officer. It is not a final decision.",
+      "submitAssessment": "Submit assessment",
+      "submitting": "Submitting…",
+      "assessmentRecorded": "Assessment recorded. The DWC administrator has been notified.",
+      "aiResultTitle": "Recorded AI classification",
+      "prediction": "Model prediction",
+      "severity": "Severity",
+      "officerDecision": "Officer decision",
+      "noAiResult": "No classification has been recorded for this case yet.",
+      "estimateTitle": "AI-Assisted Compensation Estimate",
+      "noEstimate": "No estimate is available for this case.",
+      "estimateDisclaimer": "Decision support only — not the final compensation. The DWC administrator reviews it and the Divisional Secretariat decides the final amount.",
+      "historyTitle": "Case history",
+      "error": {
+        "signedOut": "Your session has expired. Sign in again.",
+        "forbidden": "This account does not have officer access.",
+        "notFound": "This case was not found in your divisions.",
+        "closed": "This case is no longer open for officer assessment.",
+        "invalid": "The assessment could not be recorded. Check the classification and try again.",
+        "network": "Could not reach the server. Your classification is kept — try again when connected.",
+        "server": "The server could not complete this action. Try again."
+      },
+      "events": {
+        "submitted": "Report submitted",
+        "case_synced": "Report synced from offline",
+        "officer_viewed_case": "Viewed by an officer",
+        "officer_review_started": "Officer review started",
+        "officer_assessment_recorded": "Officer assessment recorded",
+        "officer_classification_not_recorded": "Classification could not be recorded",
+        "compensation_estimate_generated": "AI-assisted estimate generated",
+        "compensation_estimate_not_regenerated": "Estimate not regenerated (no damage)",
+        "compensation_estimate_unavailable": "Estimate unavailable",
+        "case_approved": "Approved by DWC and forwarded to the Divisional Secretariat",
+        "case_rejected": "Rejected by DWC",
+        "case_info_requested": "More information requested",
+        "case_escalated": "Escalated",
+        "ds_final_decision": "Final compensation decided by the Divisional Secretariat",
+        "ds_authorized_payment": "Payment authorised",
+        "case_paid": "Payment processed"
+      }
+    }
   },
   "ds": {
     "login": {
@@ -530,6 +616,37 @@
         "noBankDetails": "This family has not given bank details. Ask them to provide an account.",
         "unreadable": "The stored bank details could not be read. Contact the system administrator — do not ask the family to re-enter them.",
         "server": "The server could not authorize this payment.",
+        "network": "Could not reach the server. Check your connection.",
+        "finalDecisionRequired": "Record the final compensation decision before authorizing payment."
+      },
+      "finalAmount": "Final compensation amount"
+    },
+    "finalDecision": {
+      "title": "Final compensation review",
+      "aiEstimate": "AI-assisted estimate",
+      "aiEstimateNote": "Decision support only — not a decision.",
+      "dwcAmount": "DWC recommended amount",
+      "officerAssessed": "Officer assessment recorded",
+      "officerNotAssessed": "No officer assessment recorded",
+      "amountLabel": "Final compensation amount (LKR)",
+      "reasonLabel": "Reason for the decision",
+      "reasonHint": "Required when the amount differs from the AI-assisted estimate (at least 10 characters).",
+      "confirm": "Record final decision",
+      "saving": "Recording…",
+      "humanDecision": "This is the final compensation decision. It is recorded in the audit trail under your account.",
+      "decided": "Final amount",
+      "revise": "Revise decision",
+      "recorded": "Final decision recorded. The citizen and the DWC administrator have been notified.",
+      "cancel": "Cancel",
+      "requiredBeforePayment": "Record the final compensation decision before authorizing payment.",
+      "error": {
+        "reasonRequired": "Give a reason of at least 10 characters — the amount differs from the AI-assisted estimate.",
+        "invalidAmount": "Enter a valid amount (zero or more).",
+        "notApproved": "Only a case approved by DWC can receive a final decision.",
+        "paymentAuthorized": "Payment has already been authorized; the decision can no longer change.",
+        "noPaymentRecord": "This case has no payment record. Ask the DWC administrator to re-approve it.",
+        "notFound": "That case is not in your division.",
+        "server": "The server could not record the decision.",
         "network": "Could not reach the server. Check your connection."
       }
     }
@@ -598,7 +715,13 @@
       "dsDivision": "DS Division",
       "divisionPlaceholder": "Exact division name",
       "apply": "Apply Filters",
-      "clear": "Clear Filters"
+      "clear": "Clear Filters",
+      "assessment": "Officer assessment",
+      "assessmentAll": "All",
+      "assessmentAssessed": "Officer assessed",
+      "assessmentPending": "Awaiting officer assessment",
+      "officer": "Responsible officer",
+      "officerPlaceholder": "Officer account ID"
     },
     "kpi": {
       "thisMonth": "Cases This Month",
@@ -637,7 +760,10 @@
       "submitting": "Submitting…",
       "confirm": "Confirm",
       "cancel": "Cancel",
-      "actionError": "Couldn't complete this action. Please try again."
+      "actionError": "Couldn't complete this action. Please try again.",
+      "assessmentRequired": "A field officer must verify and assess this citizen report before it can be approved. You can still reject it, request information or escalate it.",
+      "awaitingDsDecision": "Approved and forwarded. The Divisional Secretariat reviews the final compensation amount and authorizes payment.",
+      "forwardNote": "This is a recommended amount. Approving forwards the case to the Divisional Secretariat, which decides the final compensation."
     },
     "compensation": {
       "empty": "No estimate available.",
@@ -647,7 +773,8 @@
       "capYes": "Cap applied: Yes — raw estimate: {amount}",
       "capNo": "Cap applied: No",
       "colFeature": "Feature",
-      "colValue": "Value"
+      "colValue": "Value",
+      "notFinal": "AI-assisted estimate — not the final compensation. The Divisional Secretariat decides the final amount."
     },
     "audit": {
       "heading": "Audit Trail",
@@ -714,6 +841,18 @@
       "sectionAdmin": "Administration",
       "openMenu": "Open navigation menu",
       "closeMenu": "Close navigation menu"
+    },
+    "workflow": {
+      "heading": "Workflow",
+      "stage": "Stage",
+      "district": "District",
+      "division": "DS division",
+      "officer": "Responsible officer",
+      "assessedAt": "Officer assessment",
+      "notAssessed": "Not yet assessed",
+      "dsFinal": "DS final decision",
+      "dsFinalPending": "Awaiting Divisional Secretariat decision",
+      "dsFinalReason": "Reason"
     }
   },
   "notifications": {
@@ -800,5 +939,15 @@
       "errorExchangeFailed": "Your sign-in link has expired or was already used. Please try again.",
       "errorProvider": "Sign-in failed. Please try again."
     }
+  },
+  "registrationGate": {
+    "checking": "Checking your registration…",
+    "signInTitle": "Sign in to continue",
+    "signInBody": "Sign in to your account so we can check your family's registration.",
+    "signIn": "Sign in",
+    "unavailableTitle": "Registration check unavailable",
+    "unavailableBody": "Unable to verify registration right now. Please retry.",
+    "retry": "Retry",
+    "offlineConfirmed": "You are offline. Using your confirmed household registration {ref}."
   }
 }

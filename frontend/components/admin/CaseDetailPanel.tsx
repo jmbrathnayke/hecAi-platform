@@ -13,7 +13,7 @@ import { AIResultPanel } from "@/components/admin/AIResultPanel";
 import { CompensationPanel } from "@/components/admin/CompensationPanel";
 import { AuditTrail } from "@/components/admin/AuditTrail";
 import { CaseActionPanel } from "@/components/admin/CaseActionPanel";
-import { statusKey } from "@/lib/status";
+import { isKnownStage, statusKey } from "@/lib/status";
 import { STATUS_STYLES, STATUS_VALUES } from "@/components/admin/statusVocabulary";
 import { DAMAGE_CATEGORY_KEYS } from "@/components/admin/damageVocabulary";
 
@@ -104,8 +104,11 @@ export function CaseDetailPanel({ offlineId }: CaseDetailPanelProps) {
 
   if (!data) return null;
 
-  const { case: c, ai_result, compensation, audit_trail } = data;
+  const { case: c, ai_result, compensation, audit_trail, workflow } = data;
   const hasGps = c.gps_lat != null && c.gps_lng != null;
+  // Verified = an officer was present at submission, or has since assessed the citizen's report.
+  const verified = workflow ? workflow.officer_assessed : c.submitted_by_officer;
+  const stageKnown = workflow ? isKnownStage(workflow.stage) : false;
 
   return (
     <div className="space-y-design-4">
@@ -141,12 +144,12 @@ export function CaseDetailPanel({ offlineId }: CaseDetailPanelProps) {
             <dt className="text-label text-ink-disabled">{t("detail.verification")}</dt>
             <dd
               className={
-                c.submitted_by_officer
+                verified
                   ? "text-ink-primary"
                   : "font-medium text-ink-primary"
               }
             >
-              {c.submitted_by_officer
+              {verified
                 ? t("table.verifiedByOfficer")
                 : `⚠ ${t("table.notVerified")}`}
             </dd>
@@ -185,6 +188,56 @@ export function CaseDetailPanel({ offlineId }: CaseDetailPanelProps) {
         </dl>
       </div>
 
+      {workflow && (
+        // Where the case is in the governance workflow, organised by area and responsible officer.
+        <div className="rounded-md border border-border-subtle bg-surface-raised shadow-card p-design-4 space-y-design-2" data-testid="workflow-panel">
+          <h3 className="text-headline text-ink-primary">{t("workflow.heading")}</h3>
+          <dl className="grid grid-cols-2 gap-design-2 text-body">
+            <div>
+              <dt className="text-label text-ink-disabled">{t("workflow.stage")}</dt>
+              <dd className="text-ink-primary">
+                {stageKnown ? tStatus(`stageLabels.${workflow.stage}`) : workflow.stage}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-label text-ink-disabled">{t("workflow.district")}</dt>
+              <dd className="text-ink-primary">{workflow.district ?? "—"}</dd>
+            </div>
+            <div>
+              <dt className="text-label text-ink-disabled">{t("workflow.division")}</dt>
+              <dd className="text-ink-primary">{workflow.ds_division ?? "—"}</dd>
+            </div>
+            <div>
+              <dt className="text-label text-ink-disabled">{t("workflow.officer")}</dt>
+              <dd className="break-all font-mono text-caption text-ink-primary">{workflow.responsible_officer_id ?? "—"}</dd>
+            </div>
+            <div>
+              <dt className="text-label text-ink-disabled">{t("workflow.assessedAt")}</dt>
+              <dd className="text-ink-primary">
+                {workflow.officer_assessed_at
+                  ? formatDateTime(workflow.officer_assessed_at, locale)
+                  : c.submitted_by_officer
+                    ? t("table.verifiedByOfficer")
+                    : t("workflow.notAssessed")}
+              </dd>
+            </div>
+            <div data-testid="workflow-ds-final">
+              <dt className="text-label text-ink-disabled">{t("workflow.dsFinal")}</dt>
+              <dd className="text-ink-primary">
+                {workflow.ds_final_amount != null
+                  ? `Rs. ${workflow.ds_final_amount.toLocaleString("en-LK")} · ${formatDateTime(workflow.ds_final_at, locale)}`
+                  : t("workflow.dsFinalPending")}
+              </dd>
+              {workflow.ds_final_reason && (
+                <dd className="text-caption text-ink-secondary">
+                  {t("workflow.dsFinalReason")}: {workflow.ds_final_reason}
+                </dd>
+              )}
+            </div>
+          </dl>
+        </div>
+      )}
+
       <PhotoGallery />
       <AIResultPanel aiResult={ai_result} />
       <CompensationPanel compensation={compensation} />
@@ -195,6 +248,8 @@ export function CaseDetailPanel({ offlineId }: CaseDetailPanelProps) {
         hasEstimate={compensation != null}
         estimateAmountLkr={compensation?.amount_lkr ?? null}
         onActionComplete={setData}
+        officerAssessed={workflow ? workflow.officer_assessed : undefined}
+        dsFinalDecided={workflow ? workflow.ds_final_amount != null : undefined}
       />
     </div>
   );

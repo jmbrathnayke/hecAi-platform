@@ -1,5 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import RegisterHouseholdPage from "@/app/[locale]/register/page";
+// The form itself. Since the final governance workflow the route first checks whether this account
+// is already registered (tested in gate.test.tsx) and renders this component only when it is not.
+import RegisterHouseholdPage from "@/components/RegisterHouseholdForm";
 import { registerHousehold } from "@/lib/households";
 
 const push = jest.fn();

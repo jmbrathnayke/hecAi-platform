@@ -4,6 +4,7 @@ import { getCase } from "@/lib/indexeddb";
 import { getDraftId } from "@/lib/draft";
 import { getAccessToken } from "@/lib/auth";
 import { buildPoC, submitCaseOnline } from "@/lib/poc";
+import { markCitizenSubmission } from "@/lib/citizenOutbox";
 
 const replace = jest.fn();
 const mockRouter = { replace };
@@ -38,6 +39,10 @@ jest.mock("@/lib/indexeddb", () => ({
 
 jest.mock("@/lib/auth", () => ({
   getAccessToken: jest.fn(),
+}));
+
+jest.mock("@/lib/citizenOutbox", () => ({
+  markCitizenSubmission: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock("@/lib/poc", () => ({
@@ -89,6 +94,23 @@ describe("PoCPage", () => {
     render(<PoCPage />);
 
     expect(await screen.findByText("draft-1")).toBeInTheDocument();
+  });
+
+  it("queues the report for automatic delivery before trying to send it", async () => {
+    mockGetCase.mockResolvedValue({ offline_id: "draft-1" });
+    mockBuildPoC.mockResolvedValue(pocRecord());
+    render(<PoCPage />);
+    await screen.findByText("draft-1");
+    await waitFor(() => expect(markCitizenSubmission).toHaveBeenCalledWith("draft-1", expect.anything()));
+  });
+
+  it("does not re-queue a report the server already confirmed", async () => {
+    mockGetCase.mockResolvedValue({ offline_id: "draft-1", canonical_id: "HEC-2026-0007" });
+    (markCitizenSubmission as jest.Mock).mockClear();
+    mockBuildPoC.mockResolvedValue(pocRecord({ sync_status: "synced" }));
+    render(<PoCPage />);
+    await screen.findByText("HEC-2026-0007");
+    expect(markCitizenSubmission).not.toHaveBeenCalled();
   });
 
   it("shows the canonical id once the one-shot online submit succeeds", async () => {

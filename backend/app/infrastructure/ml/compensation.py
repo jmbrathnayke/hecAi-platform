@@ -153,11 +153,17 @@ def compute_estimate(bundle, damage_type, district, ds_division, year, ai_severi
 
 
 def estimate_and_store(cur, case_id, damage_category, ds_division_id, submitted_at,
-                        district=None, ai_severity=None):
+                        district=None, ai_severity=None, replace=False):
     """Best-effort: returns the stored dict on success, None on any skip/failure.
     Never raises -- a bug here must not fail the case insert/sync/sms it's
     piggybacking on. `district`/`ds_division_id`/`ai_severity` are string-or-None;
-    an empty string is treated the same as absent."""
+    an empty string is treated the same as absent.
+
+    `replace=True` regenerates the estimate for a case that already has one (the officer's
+    on-device assessment supplies an ai_severity the citizen submission could not). The row is
+    replaced rather than appended because compensation_estimates is UNIQUE on case_id (migration
+    013) and every reader expects at most one current estimate; the superseded figure survives in
+    the caller's audit event. Same model, same features -- only the severity input changes."""
     district = district or None
     ds_division_id = ds_division_id or None
     ai_severity = ai_severity or None
@@ -216,15 +222,33 @@ def estimate_and_store(cur, case_id, damage_category, ds_division_id, submitted_
             "dataset_version": meta.get("dataset"),
         }
 
-        cur.execute(
-            """INSERT INTO compensation_estimates
-                 (case_id, amount_lkr, raw_estimate_lkr, capped, feature_values_json,
-                  model_version, dataset_version)
-               VALUES (%s, %s, %s, %s, %s::jsonb, %s, %s)""",
-            (case_id, result["amount_lkr"], result["raw_estimate_lkr"], result["capped"],
-             json.dumps(result["feature_values"]), result["model_version"],
-             result["dataset_version"]),
-        )
+        params = (case_id, result["amount_lkr"], result["raw_estimate_lkr"], result["capped"],
+                  json.dumps(result["feature_values"]), result["model_version"],
+                  result["dataset_version"])
+        if replace:
+            cur.execute(
+                """INSERT INTO compensation_estimates
+                     (case_id, amount_lkr, raw_estimate_lkr, capped, feature_values_json,
+                      model_version, dataset_version)
+                   VALUES (%s, %s, %s, %s, %s::jsonb, %s, %s)
+                   ON CONFLICT (case_id) DO UPDATE
+                     SET amount_lkr = EXCLUDED.amount_lkr,
+                         raw_estimate_lkr = EXCLUDED.raw_estimate_lkr,
+                         capped = EXCLUDED.capped,
+                         feature_values_json = EXCLUDED.feature_values_json,
+                         model_version = EXCLUDED.model_version,
+                         dataset_version = EXCLUDED.dataset_version,
+                         created_at = now()""",
+                params,
+            )
+        else:
+            cur.execute(
+                """INSERT INTO compensation_estimates
+                     (case_id, amount_lkr, raw_estimate_lkr, capped, feature_values_json,
+                      model_version, dataset_version)
+                   VALUES (%s, %s, %s, %s, %s::jsonb, %s, %s)""",
+                params,
+            )
         cur.execute("RELEASE SAVEPOINT compensation_estimate")
         return result
     except Exception:

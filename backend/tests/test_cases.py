@@ -82,6 +82,15 @@ class FakeCursor:
                 "household_id": params[12] if len(params) > 12 else None,
             }
             self._result = (self.store["case_pk"],)
+        elif "officer_assessed_at = COALESCE" in sql:
+            # workflow_events.record_officer_assisted_assessment(): an officer-assisted case is
+            # verified and assessed by the submitting officer at the moment it is stored.
+            officer_id, _by, case_id = params
+            self.store.setdefault("assessed", {})[case_id] = officer_id
+            self._result = None
+        elif "INSERT INTO inference_log" in sql:
+            self.store.setdefault("inference", []).append(params)
+            self._result = None
         elif "INSERT INTO audit_log" in sql:
             self.store["audit"].append(params)
             self._result = None
@@ -547,3 +556,78 @@ def test_submit_saves_locale(client, store):
     assert res.status_code == 201
     row = store["rows"][body["offline_id"]]
     assert row["locale"] == "ta"
+
+
+# ======================================================================= workflow routing
+#
+# The final workflow routes each submission to whoever must act next -- never to "everyone":
+#   citizen report          -> the field officers of THAT DS division (they must verify it)
+#   officer-assisted report -> the district administrator (it arrives already assessed)
+# and in both cases the citizen receives a "Submitted" confirmation.
+
+@pytest.fixture
+def announced(monkeypatch):
+    calls = {"staff": [], "citizen": []}
+    monkeypatch.setattr(
+        "app.infrastructure.workflow_events.notify_staff_push",
+        lambda cur, case_id, alert, role, scope, ref, actor:
+            calls["staff"].append({"alert": alert, "role": role, "scope": scope}))
+    monkeypatch.setattr(
+        "app.infrastructure.workflow_events.notify_status_change_all",
+        lambda cur, case_id, ref, mobile, status, actor, amount_lkr=None:
+            calls["citizen"].append(status))
+    return calls
+
+
+def test_a_citizen_report_alerts_only_the_officers_of_its_division(client, store, announced):
+    res = client.post("/api/v1/cases/submit", json=_body(),
+                      headers={"Authorization": f"Bearer {_token(sub='citizen-9')}"})
+    assert res.status_code == 201
+    assert announced["staff"] == [{"alert": "case_submitted", "role": "officer",
+                                   "scope": DIVISION}]
+    assert announced["citizen"] == ["Submitted"]
+
+
+def test_a_citizen_report_is_not_marked_as_officer_assessed(client, store, announced):
+    client.post("/api/v1/cases/submit", json=_body(),
+                headers={"Authorization": f"Bearer {_token(sub='citizen-9')}"})
+    assert store.get("assessed", {}) == {}
+    assert "officer_assessment_recorded" not in _events(store)
+
+
+def test_an_officer_assisted_report_arrives_assessed_and_goes_to_the_administrator(
+        client, store, announced):
+    body = _body(submitted_by_officer=True, officer_id="officer-1", ai_severity="Moderate",
+                 ai_classification={"model_version": "mobilenetv2-1",
+                                    "prediction": "crop_damage", "confidence": 0.88})
+    res = client.post("/api/v1/cases/submit", json=body,
+                      headers={"Authorization": f"Bearer {_officer_token()}"})
+    assert res.status_code == 201
+    assert store["assessed"] == {1: "officer-1"}
+    assert len(store["inference"]) == 1
+    assert store["inference"][0][4] == "crop_damage"
+    assert "officer_assessment_recorded" in _events(store)
+    assert announced["staff"] == [{"alert": "assessment_complete", "role": "admin",
+                                   "scope": DISTRICT}]
+    assert announced["citizen"] == ["Submitted"]
+
+
+def test_a_malformed_officer_classification_never_blocks_the_submission(client, store, announced):
+    body = _body(submitted_by_officer=True, officer_id="officer-1",
+                 ai_classification={"model_version": "mobilenetv2-1", "prediction": "x",
+                                    "confidence": 7})
+    res = client.post("/api/v1/cases/submit", json=body,
+                      headers={"Authorization": f"Bearer {_officer_token()}"})
+    assert res.status_code == 201
+    assert store.get("inference", []) == []
+    assert "officer_classification_not_recorded" in _events(store)
+    assert store["assessed"] == {1: "officer-1"}, "the officer still verified the case in person"
+
+
+def test_a_retried_submission_announces_nothing_twice(client, store, announced):
+    headers = {"Authorization": f"Bearer {_token(sub='citizen-9')}"}
+    client.post("/api/v1/cases/submit", json=_body(), headers=headers)
+    again = client.post("/api/v1/cases/submit", json=_body(), headers=headers)
+    assert again.status_code == 200
+    assert len(announced["staff"]) == 1 and announced["citizen"] == ["Submitted"]
+    assert len(store["cases"]) == 1

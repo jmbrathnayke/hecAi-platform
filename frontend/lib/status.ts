@@ -7,7 +7,16 @@ export interface CaseStatus {
   status: string;
   // The backend emits null when a case has no updated_at timestamp.
   updated_at: string | null;
-  approved_amount?: number;
+  /**
+   * Finer, derived position in the governance workflow (backend app/domain/workflow.py). Optional
+   * so a response from an older backend still renders.
+   */
+  stage?: string;
+  /**
+   * The Divisional Secretariat's recorded final compensation amount -- the only amount the public
+   * page shows. The AI-assisted estimate and the DWC administrator's recommendation are never sent.
+   */
+  final_amount?: number;
 }
 
 export const KNOWN_STATUSES = ["Submitted", "Under Review", "Approved", "Rejected"] as const;
@@ -27,9 +36,27 @@ export function statusKey(status: string): string {
   return status.replace(/\s+/g, "");
 }
 
-/** Approved amount is shown only for an Approved claim that carries an amount. */
-export function showApprovedAmount(s: Pick<CaseStatus, "status" | "approved_amount">): boolean {
-  return s.status === "Approved" && typeof s.approved_amount === "number";
+/** The final amount is shown only once the DS office has decided it, and never for a rejection. */
+export function showFinalAmount(s: Pick<CaseStatus, "status" | "final_amount">): boolean {
+  return (
+    (s.status === "Approved" || s.status === "Payment Processed") &&
+    typeof s.final_amount === "number"
+  );
+}
+
+/** Workflow stages the status page can describe, in journey order, plus the terminal rejection. */
+export const WORKFLOW_STAGES = [
+  "submitted",
+  "officer_review",
+  "officer_assessed",
+  "dwc_approved",
+  "ds_final_decided",
+  "payment_processed",
+  "rejected",
+] as const;
+
+export function isKnownStage(stage: unknown): stage is (typeof WORKFLOW_STAGES)[number] {
+  return typeof stage === "string" && (WORKFLOW_STAGES as readonly string[]).includes(stage);
 }
 
 // ---------------------------------------------------------------- claim journey (FR-6.1)

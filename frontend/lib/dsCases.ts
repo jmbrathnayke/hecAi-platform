@@ -18,9 +18,18 @@ export interface DsCase {
   submitted_via: string;
   submitted_at: string | null;
   updated_at: string | null;
+  /** The DWC administrator's approved amount: a RECOMMENDATION to the DS office, not the decision. */
   approved_amount: number | null;
   /** null for pre-Epic-8 and seeded cases, which have no household (migration 025). */
   household_ref: string | null;
+  // --- final governance workflow (optional: an older backend omits them) ----------------------
+  /** Decision support from the Random Forest estimator. Never the final amount. */
+  ai_estimate?: { amount_lkr: number | null; model_version: string | null; is_final_decision: false };
+  district?: string | null;
+  officer_assessed?: boolean;
+  /** The Divisional Secretariat's recorded decision, or null before it is made. */
+  final_decision?: { amount_lkr: number | null; reason: string | null; decided_at: string | null } | null;
+  payment_authorized?: boolean;
 }
 
 export type DsFailure =
@@ -117,6 +126,8 @@ export interface PaymentAuthorization {
 
 export type PaymentFailure =
   | { reason: "not-found" }
+  /** Final governance workflow: payment follows the recorded DS final decision, never precedes it. */
+  | { reason: "final-decision-required" }
   | { reason: "not-approved"; status?: string }
   | { reason: "no-household" }
   | { reason: "no-bank-details"; householdRef?: string }
@@ -162,6 +173,9 @@ export async function authorizePayment(canonicalId: string): Promise<PaymentResu
       return { ok: false, failure: { reason: "not-approved", status: body.status } };
     }
     if (code === "no_household") return { ok: false, failure: { reason: "no-household" } };
+    if (code === "final_decision_required") {
+      return { ok: false, failure: { reason: "final-decision-required" } };
+    }
     if (code === "no_bank_details") {
       return { ok: false, failure: { reason: "no-bank-details", householdRef: body.household_ref } };
     }
@@ -174,4 +188,84 @@ export async function authorizePayment(canonicalId: string): Promise<PaymentResu
   } catch {
     return { ok: false, failure: { reason: "server", status: res.status, code: "bad_response" } };
   }
+}
+
+// --- Final compensation decision (final governance workflow) ---------------------------------
+//
+// The human decision on the amount. The backend requires a reason whenever the amount differs
+// from the AI-assisted estimate, records the decision in the audit trail and notifies the family.
+
+export interface FinalDecision {
+  amount_lkr: number;
+  reason: string | null;
+  decided_at: string | null;
+  is_final_decision: true;
+  revised: boolean;
+  unchanged: boolean;
+}
+
+export type FinalDecisionFailure =
+  | { reason: "reason-required" }
+  | { reason: "invalid-amount" }
+  | { reason: "not-approved"; status?: string }
+  | { reason: "payment-authorized" }
+  | { reason: "no-payment-record" }
+  | { reason: "not-found" }
+  | { reason: "forbidden" }
+  | { reason: "server"; status: number; code: string }
+  | { reason: "network" };
+
+export type FinalDecisionResult =
+  | { ok: true; decision: FinalDecision; aiEstimate: number | null; dwcAmount: number | null }
+  | { ok: false; failure: FinalDecisionFailure };
+
+export async function recordFinalDecision(
+  canonicalId: string,
+  amountLkr: number,
+  reason: string | null,
+): Promise<FinalDecisionResult> {
+  const token = await getAccessToken();
+  if (!token) return { ok: false, failure: { reason: "forbidden" } };
+
+  let res: Response;
+  try {
+    res = await fetch(
+      `${API_BASE}/api/v1/ds/cases/${encodeURIComponent(canonicalId)}/final-decision`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ amount_lkr: amountLkr, reason }),
+      },
+    );
+  } catch {
+    return { ok: false, failure: { reason: "network" } };
+  }
+
+  let body: Record<string, unknown> = {};
+  try {
+    body = (await res.json()) as Record<string, unknown>;
+  } catch {
+    body = {};
+  }
+
+  if (res.ok && body.final_decision && typeof body.final_decision === "object") {
+    return {
+      ok: true,
+      decision: body.final_decision as FinalDecision,
+      aiEstimate: typeof body.ai_estimate_lkr === "number" ? body.ai_estimate_lkr : null,
+      dwcAmount: typeof body.dwc_approved_amount_lkr === "number" ? body.dwc_approved_amount_lkr : null,
+    };
+  }
+
+  const code = typeof body.error === "string" ? body.error : "";
+  if (res.status === 404) return { ok: false, failure: { reason: "not-found" } };
+  if (res.status === 401 || res.status === 403) return { ok: false, failure: { reason: "forbidden" } };
+  if (code === "reason_required") return { ok: false, failure: { reason: "reason-required" } };
+  if (code === "invalid_amount") return { ok: false, failure: { reason: "invalid-amount" } };
+  if (code === "not_approved") {
+    return { ok: false, failure: { reason: "not-approved", status: typeof body.status === "string" ? body.status : undefined } };
+  }
+  if (code === "payment_already_authorized") return { ok: false, failure: { reason: "payment-authorized" } };
+  if (code === "no_payment_authorization") return { ok: false, failure: { reason: "no-payment-record" } };
+  return { ok: false, failure: { reason: "server", status: res.status, code } };
 }

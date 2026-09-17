@@ -1,14 +1,22 @@
 """Public claim-status API (Story 2.5).
 
 GET /api/v1/cases/status/<reference> — NO authentication (FR-6.1). Returns ONLY status
-metadata (canonical_id, offline_id, status, updated_at, approved_amount). Never NIC,
+metadata (canonical_id, offline_id, status, stage, updated_at, final_amount). Never NIC,
 mobile, GPS, or audit data (CRITICAL #1). A v4 UUID is looked up by offline_id; a
 HEC-YYYY-NNNN id by canonical_id (strict patterns, CRITICAL #5).
+
+WHICH AMOUNT A CITIZEN SEES (final governance workflow). Only the Divisional Secretariat's recorded
+final decision. The Random Forest estimate is decision support and the DWC administrator's
+approved_amount is a recommendation the DS office may change; showing either to the family as
+"your compensation" would present a non-final figure as the decision. Until the DS decision exists
+the page shows the stage and no amount.
 """
 import re
 
 import psycopg2
 from flask import Blueprint, current_app, jsonify
+
+from app.domain.workflow import workflow_stage
 
 status_bp = Blueprint("status", __name__)
 
@@ -48,7 +56,9 @@ def get_status(reference: str):
                     # `column` is a fixed identifier chosen by the regex branch above — never
                     # user text — so the f-string is injection-safe; `lookup` is parameterized.
                     cur.execute(
-                        f"""SELECT canonical_id, offline_id, status, updated_at, approved_amount
+                        f"""SELECT canonical_id, offline_id, status, updated_at,
+                                   ds_final_amount, ds_final_at, officer_review_started_at,
+                                   officer_assessed_at, submitted_by_officer
                             FROM cases WHERE {column} = %s""",
                         (lookup,),
                     )
@@ -64,14 +74,19 @@ def get_status(reference: str):
     if not row:
         return jsonify({"error": "not_found"}), 404
 
-    canonical_id, offline_id, status, updated_at, approved_amount = row
+    (canonical_id, offline_id, status, updated_at, ds_final_amount, ds_final_at,
+     review_started_at, assessed_at, submitted_by_officer) = row
     response = {
         "canonical_id": canonical_id,
         "offline_id": str(offline_id) if offline_id is not None else None,
         "status": status,
+        # Derived, never stored: see app/domain/workflow.py.
+        "stage": workflow_stage(status, review_started_at, assessed_at, ds_final_at,
+                                bool(submitted_by_officer)),
         "updated_at": updated_at.isoformat() if updated_at else None,
     }
-    if status == "Approved" and approved_amount is not None:
-        response["approved_amount"] = float(approved_amount)
+    if status in ("Approved", "Payment Processed") and ds_final_at is not None \
+            and ds_final_amount is not None:
+        response["final_amount"] = float(ds_final_amount)
 
     return jsonify(response), 200

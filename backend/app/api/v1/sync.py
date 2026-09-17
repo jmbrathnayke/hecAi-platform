@@ -16,7 +16,7 @@ import psycopg2
 from flask import Blueprint, current_app, g, jsonify, request
 
 from app.api.v1.middleware.auth import require_officer
-from app.infrastructure import registry
+from app.infrastructure import registry, workflow_events
 from app.infrastructure.audit import write_audit_log
 from app.infrastructure.ml import compensation
 
@@ -266,5 +266,15 @@ def _sync_one(cur, item: dict, officer_id: str) -> dict:
         cur, case_id, item.get("damage_category"), ds_division,
         datetime.datetime.now(datetime.timezone.utc),
         district=district, ai_severity=ai_severity,
+    )
+    # Same workflow events as cases.py's online submit. Before this, a case collected offline and
+    # synced here was announced to nobody, so the district administrator learned of an officer-
+    # assessed case only by opening the dashboard.
+    if submitted_by_officer:
+        workflow_events.record_officer_assisted_assessment(
+            cur, case_id, offline_id, officer_id, item.get("ai_classification"), ai_severity,
+        )
+    workflow_events.announce_submission(
+        cur, case_id, canonical_id, submitted_by_officer, district, ds_division, officer_id,
     )
     return {"offline_id": offline_id, "canonical_id": canonical_id, "inserted": True}
