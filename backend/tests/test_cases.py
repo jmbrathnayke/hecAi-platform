@@ -574,7 +574,7 @@ def announced(monkeypatch):
             calls["staff"].append({"alert": alert, "role": role, "scope": scope}))
     monkeypatch.setattr(
         "app.infrastructure.workflow_events.notify_status_change_all",
-        lambda cur, case_id, ref, mobile, status, actor, amount_lkr=None:
+        lambda cur, case_id, ref, status, actor, amount_lkr=None:
             calls["citizen"].append(status))
     return calls
 

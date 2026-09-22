@@ -183,7 +183,7 @@ def _sync_one(cur, item: dict, officer_id: str) -> dict:
     # Single global sequence, never reset per calendar year (PRD Addendum A3 / Story 4.3
     # decision): gap-free numbering matters more than year-local numbering. A case synced
     # in January 2027 can legitimately be HEC-2027-1042, continuing from HEC-2026-1041 —
-    # matches the same sequence already shared with cases.py::submit_case and sms.py.
+    # matches the same sequence already shared with cases.py::submit_case.
     cur.execute("SELECT nextval('hec_canonical_seq')")
     seq = cur.fetchone()[0]
     canonical_id = f"HEC-{year}-{seq:04d}"

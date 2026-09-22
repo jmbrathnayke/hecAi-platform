@@ -78,8 +78,8 @@ class FakeCursor:
         elif "FROM email_templates" in s:
             self._one = st.get("email_template", ("HEC claim {ref} — {status}",
                                                   "Claim {ref}. Amount: LKR {amount}."))
-        elif "FROM sms_templates" in s:
-            self._one = st.get("sms_template", ("Claim {ref} approved. LKR {amount}.",))
+        elif "FROM push_templates" in s:
+            self._one = st.get("push_template", ("HEC claim {ref}", "Claim {ref} approved. LKR {amount}."))
         else:  # pragma: no cover
             raise AssertionError(f"unexpected SQL: {s}")
 
@@ -638,3 +638,75 @@ def test_citizen_payloads_carry_no_personal_data(app, cur, store, monkeypatch):
     with app.app_context():
         notify_status_change_push(cur, 1, REF, "Submitted", "citizen-1")
     assert set(captured) == {"title", "body", "ref", "status", "url"}
+
+
+
+# =========================================================== push + email are the only channels
+#
+# SMS was retired (migration 034). These pin the notification model: citizen -> push then email;
+# staff -> push. No phone number is needed anywhere, and no SMS capability can quietly return.
+import inspect  # noqa: E402
+import pathlib  # noqa: E402
+
+from app.infrastructure import notifications  # noqa: E402
+
+APP_DIR = pathlib.Path(__file__).resolve().parent.parent / "app"
+
+
+def test_the_citizen_dispatcher_calls_push_then_email_and_nothing_else(monkeypatch):
+    calls = []
+    monkeypatch.setattr(notifications, "notify_status_change_push",
+                        lambda cur, case_id, ref, status, actor, amount_lkr=None: calls.append("push"))
+    monkeypatch.setattr(notifications, "notify_status_change_email",
+                        lambda cur, case_id, ref, status, actor, amount_lkr=None: calls.append("email"))
+    notifications.notify_status_change_all(None, 1, REF, "Approved", "admin-1", amount_lkr=100.0)
+    assert calls == ["push", "email"]
+
+
+def test_no_phone_number_is_part_of_the_notification_contract():
+    params = list(inspect.signature(notifications.notify_status_change_all).parameters)
+    assert params == ["cur", "case_id", "canonical_id", "new_status", "actor_id", "amount_lkr"]
+    assert not any("mobile" in p or "phone" in p for p in params)
+
+
+def test_push_wording_comes_from_push_templates_only(app, cur, store, monkeypatch):
+    store["subscriptions"] = _subs(1)
+    store["push_template"] = ("HEC claim {ref} approved", "Claim {ref}: LKR {amount}.")
+    captured = {}
+    monkeypatch.setattr("app.infrastructure.push.push_service.send_push",
+                        lambda e, p, a, payload: captured.update(payload) or PushResult(delivered=True))
+    with app.app_context():
+        notify_status_change_push(cur, 1, REF, "Final Decision", "ds-1", amount_lkr=38500)
+    assert captured["title"] == f"HEC claim {REF} approved"
+    assert captured["body"] == f"Claim {REF}: LKR 38,500.00."
+    queried = " ".join(sql for sql, _ in store["sql"])
+    assert "push_templates" in queried
+    assert "sms_templates" not in queried and "email_templates" not in queried
+
+
+def test_a_missing_push_template_is_audited_not_raised(app, cur, store):
+    store["subscriptions"] = _subs(1)
+    store["push_template"] = None
+    with app.app_context():
+        notify_status_change_push(cur, 1, REF, "Approved", "admin-1")
+    assert events(store) == ["push_template_missing"]
+
+
+def test_no_sms_capability_remains_in_the_application():
+    """No SMS module, route, transport, config key or audit outcome exists in app/."""
+    assert not (APP_DIR / "infrastructure" / "sms").exists()
+    assert not (APP_DIR / "api" / "v1" / "sms.py").exists()
+    offenders = []
+    for path in APP_DIR.rglob("*.py"):
+        text = path.read_text(encoding="utf-8")
+        for needle in ("twilio", "send_sms", '"sms_', "sms_templates", "TWILIO_", "/sms/"):
+            if needle in text:
+                offenders.append(f"{path.relative_to(APP_DIR).as_posix()}: {needle}")
+    assert offenders == []
+
+
+def test_the_app_registers_no_sms_route_and_no_twilio_config():
+    application = create_app({"TESTING": True, "DATABASE_URL": "postgresql://fake"})
+    rules = [rule.rule for rule in application.url_map.iter_rules()]
+    assert not [r for r in rules if "sms" in r.lower()]
+    assert not [k for k in application.config if k.startswith("TWILIO")]

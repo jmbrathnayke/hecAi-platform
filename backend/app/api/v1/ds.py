@@ -20,7 +20,7 @@ Scope comes only from `g.ds_division`, set by require_ds_officer() from the sign
 client would let any DS officer read, and later authorise payment on, another division's cases.
 
 PII discipline mirrors officer.py and admin.py — an explicit column list, never SELECT *, and
-never `submitter_identity_hash`, `citizen_nic_plain`, `citizen_mobile_plain`, or `nic_hmac`. The
+never `submitter_identity_hash` or `nic_hmac`. The
 household REFERENCE travels (it is the working identifier a DS officer quotes); the NICs behind it
 do not, and cannot: the registry stores only their keyed digests.
 """
@@ -194,7 +194,7 @@ def record_final_decision(canonical_id):
     so a double-click neither re-audits nor re-notifies the family.
 
     The status stays "Approved". The five-status vocabulary is shared with the public status page,
-    the SMS grammar and the analytics; the decision is its own recorded checkpoint instead.
+    the notification templates and the analytics; the decision is its own recorded checkpoint instead.
     """
     ds_division = g.ds_division
     ds_officer_id = g.ds_officer_id
@@ -223,7 +223,7 @@ def record_final_decision(canonical_id):
                     # office, must not interleave; the second waits and sees the first's result.
                     cur.execute(
                         """SELECT c.id, c.status, c.approved_amount, c.district,
-                                  c.citizen_mobile_plain, c.ds_final_amount, c.ds_final_reason,
+                                  c.ds_final_amount, c.ds_final_reason,
                                   c.ds_final_at, ce.amount_lkr, pa.id, pa.ds_authorized_at
                              FROM cases c
                              LEFT JOIN compensation_estimates ce ON ce.case_id = c.id
@@ -237,7 +237,7 @@ def record_final_decision(canonical_id):
                     if not row:
                         return jsonify({"error": "not_found"}), 404
 
-                    (case_id, status, approved_amount, district, citizen_mobile_plain,
+                    (case_id, status, approved_amount, district,
                      previous_amount, previous_reason, previous_at, ai_estimate, payment_id,
                      ds_authorized_at) = row
                     ai_estimate = float(ai_estimate) if ai_estimate is not None else None
@@ -303,7 +303,7 @@ def record_final_decision(canonical_id):
                     # revision that changes only the written reason is not news to the family.
                     if previous_amount != amount:
                         notify_status_change_all(
-                            cur, case_id, ref, citizen_mobile_plain, _FINAL_DECISION_EVENT,
+                            cur, case_id, ref, _FINAL_DECISION_EVENT,
                             ds_officer_id, amount_lkr=amount,
                         )
                     notify_staff_push(cur, case_id, "final_decision_recorded", "admin", district,
@@ -352,7 +352,7 @@ def authorize_payment(canonical_id):
                     cur.execute(
                         """SELECT c.id, c.status, c.approved_amount, c.household_id,
                                   h.household_ref, h.bank_details_ciphertext,
-                                  h.bank_account_last4, c.citizen_mobile_plain,
+                                  h.bank_account_last4,
                                   pa.ds_authorized_at, c.ds_final_amount, c.district
                              FROM cases c
                              LEFT JOIN households h ON h.id = c.household_id
@@ -367,7 +367,7 @@ def authorize_payment(canonical_id):
                         return jsonify({"error": "not_found"}), 404
 
                     case_id, status, approved_amount, household_id, household_ref, \
-                        ciphertext, last4, citizen_mobile_plain, previously_authorized, \
+                        ciphertext, last4, previously_authorized, \
                         ds_final_amount, district = row
 
                     # Read BEFORE the UPDATE below overwrites ds_authorized_at. This endpoint is
@@ -472,7 +472,7 @@ def authorize_payment(canonical_id):
                             {"ds_division": ds_division, "authorized_by": "ds_officer"},
                         )
                         notify_status_change_all(
-                            cur, case_id, canonical_id.upper(), citizen_mobile_plain,
+                            cur, case_id, canonical_id.upper(),
                             _PAID_STATUS, ds_officer_id,
                             amount_lkr=float(auth_row[1]) if auth_row[1] is not None else None,
                         )
@@ -594,8 +594,8 @@ def transfer_registration(household_ref):
                     )
                     # registrant_uid is CLEARED, not moved: it holds a Supabase account id, and the
                     # DS office has no way to know the new registrant's app account. The family is
-                    # not locked out by this — officer-assisted and SMS reporting both resolve by
-                    # NIC and continue to work (asserted by test). What stops working is citizen
+                    # not locked out by this — officer-assisted reporting resolves the household by
+                    # NIC and continues to work (asserted by test). What stops working is citizen
                     # SELF-SERVICE until the new registrant links an account, which is not built.
                     cur.execute(
                         "UPDATE households SET registrant_uid = NULL, updated_at = now() "

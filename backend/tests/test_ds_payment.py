@@ -84,7 +84,6 @@ class FakeCursor:
                     h["household_ref"] if h else None,
                     h["bank_details_ciphertext"] if h else None,
                     h["bank_account_last4"] if h else None,
-                    c.get("citizen_mobile_plain"),
                     pa.get("ds_authorized_at") if pa else None,
                     c.get("ds_final_amount"),
                     c.get("district"),
@@ -100,7 +99,7 @@ class FakeCursor:
                 pa = self.store["payment_auth"].get(c["id"])
                 self._one = (
                     c["id"], c["status"], c["approved_amount"], c.get("district"),
-                    c.get("citizen_mobile_plain"), c.get("ds_final_amount"),
+                    c.get("ds_final_amount"),
                     c.get("ds_final_reason"), c.get("ds_final_at"), c.get("ai_estimate"),
                     pa["id"] if pa else None, pa.get("ds_authorized_at") if pa else None,
                 )
@@ -128,9 +127,9 @@ class FakeCursor:
                     c["status"] = new_status
             self._one = None
         # --- statements issued by the notification chain (notify_status_change_all) -----------
-        # Push short-circuits on missing VAPID keys before querying, so only the email and SMS
-        # lookups reach here. Both resolve to "nobody to tell" in this fixture, which is the
-        # honest state: no household in it carries a contact_email or a plaintext mobile.
+        # Push short-circuits on missing VAPID keys before querying, so only the email lookup
+        # reaches here. It resolves to "nobody to tell" in this fixture, which is the honest
+        # state: no household in it carries a contact_email.
         # Notification CONTENT is covered properly in tests/test_notification_channels.py.
         elif "h.contact_email" in s:
             (case_id,) = params
@@ -571,7 +570,7 @@ def test_zero_is_a_valid_final_amount(client, store):
 def test_the_citizen_and_the_district_administrator_are_told(client, store):
     _decide(client, amount_lkr=45000)
     citizen = [_meta(a) for a in store["audit"]
-               if a["event"].startswith(("push_", "email_", "sms_"))]
+               if a["event"].startswith(("push_", "email_"))]
     assert any(m.get("status") == "Final Decision" for m in citizen)
     staff = [_meta(a) for a in store["audit"] if a["event"].startswith("staff_push_")]
     # The routing key is on record too: the administrator of THIS case's district.
@@ -657,3 +656,15 @@ def test_a_non_object_body_is_refused(client):
     res = client.post(f"/api/v1/ds/cases/{PENDING}/final-decision", json=[1],
                       headers=_auth())
     assert res.status_code == 400
+
+
+def test_ds_notifications_use_push_and_email_only(client, store):
+    """The final decision and the payment each notify the citizen on the two channels only."""
+    _decide(client, amount_lkr=45000)
+    _post(client, canonical=PENDING)
+    events = _events(store)
+    assert not [e for e in events if e.startswith("sms")], events
+    for status in ("Final Decision", "Payment Processed"):
+        channels = {a["event"].split("_")[0] for a in store["audit"]
+                    if a["event"].startswith(("push_", "email_")) and _meta(a).get("status") == status}
+        assert channels == {"push", "email"}, (status, channels)

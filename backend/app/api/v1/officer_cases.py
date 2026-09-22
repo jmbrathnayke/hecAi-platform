@@ -25,8 +25,7 @@ SCOPE. Exactly officer.py's list rule, from the verified JWT only: a case is vis
 submitted it, or its DS division is one of the officer's assigned divisions. A case outside that
 scope is a 404, never a 403, so its existence is not confirmed.
 
-PII. Never citizen_mobile_plain, submitter_identity_hash or any NIC digest in a response. The mobile
-column is read only to hand to the notification chain, exactly as admin.py does.
+PII. Never submitter_identity_hash, any NIC digest or any contact detail in a response.
 """
 import re
 
@@ -63,10 +62,10 @@ _CASE_COLUMNS = """c.id, c.canonical_id, c.offline_id, c.status, c.damage_catego
                    c.gps_lat, c.gps_lng, c.submitted_at, c.updated_at, c.submitted_via,
                    c.submitted_by_officer, c.district, c.ds_division_id, h.household_ref,
                    c.assigned_officer_id, c.officer_review_started_at, c.officer_assessed_at,
-                   c.officer_assessed_by, c.citizen_mobile_plain"""
+                   c.officer_assessed_by"""
 (_ID, _REF, _OFFLINE, _STATUS, _CATEGORY, _LAT, _LNG, _SUBMITTED, _UPDATED, _VIA, _BY_OFFICER,
  _DISTRICT, _DIVISION, _HOUSEHOLD, _ASSIGNED, _REVIEW_AT, _ASSESSED_AT, _ASSESSED_BY,
- _MOBILE) = range(19)
+) = range(18)
 
 
 def _get_connection():
@@ -248,7 +247,7 @@ def start_review(reference):
                                          "previous_status": status})
                         if status == "Submitted":
                             # The citizen's first sign that a person is now handling the claim.
-                            notify_status_change_all(cur, row[_ID], row[_REF], row[_MOBILE],
+                            notify_status_change_all(cur, row[_ID], row[_REF],
                                                      "Under Review", g.officer_id)
                     payload = _reload(cur, reference)
         finally:
@@ -380,7 +379,7 @@ def record_assessment(reference):
                     notify_staff_push(cur, case_id, "assessment_complete", "admin",
                                       row[_DISTRICT], row[_REF], g.officer_id)
                     if first_assessment:
-                        notify_status_change_all(cur, case_id, row[_REF], row[_MOBILE],
+                        notify_status_change_all(cur, case_id, row[_REF],
                                                  ASSESSMENT_COMPLETE_EVENT, g.officer_id)
 
                     payload = _reload(cur, reference)

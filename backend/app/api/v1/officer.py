@@ -10,7 +10,7 @@ ds_division_id is a nullable hook (migration 010); nothing populates it yet, so 
 effectively the officer's own submitted cases, with the division branch wired for when cases carry
 a division. officer_id / assigned_divisions come ONLY from the verified JWT (g.*), never the request.
 
-The payload is PII-free: it never includes citizen_nic_plain or submitter_identity_hash (mirrors
+The payload is PII-free: it never includes a NIC in any form or submitter_identity_hash (mirrors
 the status.py rule).
 """
 import psycopg2

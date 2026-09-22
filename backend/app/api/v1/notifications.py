@@ -7,8 +7,8 @@
 WHY THIS STORES NO PERSONAL DATA. A push subscription is an opaque endpoint URL minted by the
 browser's own push service, plus the public half of a keypair used to encrypt payloads to that one
 browser install. It names nobody, reaches nobody by any other route, and dies when the user clears
-site data. So unlike the SMS path (which needs a plaintext mobile) and the email path (a plaintext
-address), this channel carries no citizen PII and needs no amendment to NFR-3.1.
+site data. So unlike the email path (a plaintext address), this channel carries no citizen PII
+and needs no amendment to NFR-3.1.
 
 THE KEY ENDPOINT IS DELIBERATELY UNAUTHENTICATED. A VAPID public key is public by construction --
 it is handed to every browser that subscribes and travels in the clear to the push service. Gating

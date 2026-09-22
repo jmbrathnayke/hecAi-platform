@@ -1,18 +1,16 @@
 """Outbound email wrapper.
 
-The email sibling of sms/twilio_client.py, and deliberately the same shape: a thin seam that never
-raises, returns True/False, and reads credentials from `current_app.config` (loaded from env in
-create_app) rather than at import time, so tests can monkeypatch `send_email` with no SendGrid
+The email sibling of push/webpush_client.py, and deliberately the same shape: a thin seam that
+never raises, returns True/False, and reads credentials from `current_app.config` (loaded from env
+in create_app) rather than at import time, so tests can monkeypatch `send_email` with no SendGrid
 account and no network.
 
 Uses `requests` (already in requirements.txt) against SendGrid's v3 REST API rather than the
 `sendgrid` SDK. The call is one POST with a JSON body; an SDK would add a dependency for no gain,
 and the deployment target already carries requests for other reasons.
 
-WHY SENDGRID AND NOT SMS. Sri Lankan carriers accept application-to-person SMS only from a sender
-identity registered with each operator, which requires a locally registered business entity. Email
-has no equivalent gate: SendGrid's Single Sender Verification needs only an address the sender
-controls. See §7.2 of the dissertation.
+WHY SENDGRID. Single Sender Verification needs only an address the sender controls -- no registered
+business entity and no per-operator sender registration.
 """
 import logging
 
@@ -28,8 +26,7 @@ TIMEOUT_SECONDS = 15
 def _mask(address: str) -> str:
     """Reduce an address to something safe to log.
 
-    twilio_client logs the destination number in full. That precedent is not followed here: an
-    email address is a durable identifier that reaches the person directly, application logs are
+    An email address is a durable identifier that reaches the person directly, application logs are
     retained and shipped off-host, and NFR-3.2 is explicit about not widening the exposure surface
     of citizen contact data. The domain is kept because that is what actually helps diagnose a
     delivery failure; the local part is not.
@@ -67,7 +64,7 @@ def email_configured() -> bool:
 def send_email(to: str, subject: str, body: str) -> bool:
     """Send one plain-text email. Returns True on acceptance, False on any failure.
 
-    Never raises, for the same reason send_sms never raises: this runs inside the same database
+    Never raises, for the same reason send_push never raises: this runs inside the same database
     transaction as a case's already-applied status write, and an unhandled exception here would
     roll that transition back. A notification failing must not undo the decision it was announcing.
 

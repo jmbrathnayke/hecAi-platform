@@ -25,16 +25,6 @@ SECRET = "test-jwt-secret-0123456789-abcdef-ghij"  # >=32 bytes for HS256
 DISTRICT_A = "අනුරාධපුරය"
 DISTRICT_B = "කොළඹ"
 
-# Story 5.6: a handful of real seeded (language, status) -> template pairs, enough to exercise
-# notify_status_change()'s {ref}/{amount} placeholder substitution without needing all 15 rows.
-_SMS_TEMPLATES = {
-    ("si", "Approved"): "අනුමතයි {ref} රු. {amount}",
-    ("si", "Rejected"): "ප්‍රතික්ෂේපයි {ref}",
-    ("si", "Under Review"): "සමාලෝචනය {ref}",
-    ("si", "Payment Processed"): "ගෙවීම {ref}",
-}
-
-
 def _token(sub="admin-1", role="admin", district_id=DISTRICT_A):
     claims = {"sub": sub, "app_metadata": {"role": role, "district_id": district_id}}
     return jwt.encode(claims, SECRET, algorithm="HS256")
@@ -57,7 +47,6 @@ def _case(
     gps_lat=None,
     gps_lng=None,
     submitted_via="app",
-    citizen_mobile_plain=None,
     officer_assessed_at=datetime(2026, 7, 8, 11, 0, 0),
     assigned_officer_id="officer-1",
 ):
@@ -88,9 +77,6 @@ def _case(
         # docstring -- citizen_nic_plain never is, from either endpoint):
         "citizen_nic_plain": "200012345678",
         "submitter_identity_hash": "deadbeef",
-        # Story 5.6: NULL for every case except ones from the extended SMS-fallback grammar --
-        # never returned by any read endpoint (write-only, same convention as citizen_nic_plain).
-        "citizen_mobile_plain": citizen_mobile_plain,
         # Migration 033 workflow checkpoints. Assessed by default: most tests here exercise the
         # administrator's decision logic, which (since the final governance workflow) runs only
         # after a field officer has verified a citizen's case. The unassessed path is tested
@@ -251,10 +237,8 @@ class FakeCursor:
             c = next((c for c in self.store["cases"] if c["id"] == case_id), None)
             self._result = None if c is None else (c.get("officer_assessed_at"),)
         elif "FROM cases WHERE offline_id" in sql and "FOR UPDATE" in sql:
-            # Story 5.6: post_case_action's own copy of the cases SELECT (FOR UPDATE-locked,
-            # distinct query text from _load_case_detail's below since Story 5.5's code review
-            # fix) gained a 12th column, citizen_mobile_plain, so notify_status_change() never
-            # needs a second query.
+            # post_case_action's own copy of the cases SELECT (FOR UPDATE-locked, distinct query
+            # text from _load_case_detail's below since Story 5.5's code review fix).
             offline_id, district = params
             matches = [
                 c for c in self.store["cases"]
@@ -266,9 +250,8 @@ class FakeCursor:
                     c["canonical_id"], c["offline_id"], c["damage_category"], c["status"],
                     c.get("gps_lat"), c.get("gps_lng"), c["submitted_at"], c["updated_at"],
                     c.get("submitted_via", "app"), c.get("approved_amount"), c["id"],
-                    c.get("citizen_mobile_plain"),
                     c.get("submitted_by_officer", False),
-                    # 14th column, ds_division_id: post_case_action routes the DS officer's
+                    # Last column, ds_division_id: post_case_action routes the DS officer's
                     # payment-pending alert with it. The fake has to carry every column the real
                     # SELECT returns -- a double that is shorter than the query it stands in for
                     # turns a real IndexError into a passing test.
@@ -382,12 +365,6 @@ class FakeCursor:
                     "bank_account_last4": household.get("bank_account_last4"),
                 }
             )
-        elif "SELECT template FROM sms_templates" in sql:
-            # Story 5.6: notify_status_change() always queries language='si' today (CRITICAL
-            # #6 -- no per-case locale exists). A handful of real seeded templates, enough to
-            # exercise {ref}/{amount} placeholder substitution.
-            language, status = params
-            self._result = (_SMS_TEMPLATES.get((language, status)),) if (language, status) in _SMS_TEMPLATES else None
         elif "FROM compensation_caps" in sql:
             (damage_type,) = params
             rows = sorted(
@@ -518,21 +495,7 @@ def _seed_audit(store, case_id, event, actor_id="admin-1", metadata=None):
 
 
 @pytest.fixture
-def sent(monkeypatch):
-    """Captures every notify_status_change() -> send_sms() call. Story 5.6: monkeypatched at
-    notification_service's own import site (not twilio_client's), same level of fidelity as
-    test_notification_service.py -- the real notify_status_change()/write_audit_log() run for
-    real, only the actual Twilio call is faked out. Returns True (send succeeded) by default."""
-    calls = []
-    monkeypatch.setattr(
-        "app.infrastructure.sms.notification_service.send_sms",
-        lambda to, body: calls.append({"to": to, "body": body}) or True,
-    )
-    return calls
-
-
-@pytest.fixture
-def client(monkeypatch, store, sent):
+def client(monkeypatch, store):
     app = create_app(
         {"TESTING": True, "DATABASE_URL": "postgresql://fake", "SUPABASE_JWT_SECRET": SECRET}
     )
@@ -1226,7 +1189,7 @@ def test_verify_chain_still_valid_after_a_sequence_of_actions(client):
     assert res.get_json() == {"valid": True, "broken_id": None}
 
 
-# --- SMS status notifications (Story 5.6) -------------------------------------------------
+# --- citizen status notifications: Web Push and email only -------------------------------
 
 
 @pytest.mark.parametrize(
@@ -1241,43 +1204,31 @@ def test_verify_chain_still_valid_after_a_sequence_of_actions(client):
         (_CASE_3_OFFLINE_ID, "mark_paid", {}),
     ],
 )
-def test_every_action_logs_sms_skipped_no_mobile_when_no_mobile_on_file(
-    client, store, sent, offline_id, action, kwargs
+def test_every_action_notifies_the_citizen_by_push_and_email_only(
+    client, store, offline_id, action, kwargs
 ):
-    # Every fixture case has citizen_mobile_plain=None (true for essentially every case today
-    # -- only the SMS-fallback channel's extended grammar can ever populate it, CRITICAL #1).
+    """Each action attempts exactly the two citizen channels, each outcome audited once, and
+    nothing else: no SMS attempt, skip or audit row of any kind."""
     res = _action(client, offline_id, action, **kwargs)
     assert res.status_code == 200
-    assert sent == []
     events = [a["event"] for a in store["audit"]]
-    assert "sms_skipped_no_mobile" in events
+    push = [e for e in events if e.startswith("push_")]
+    email = [e for e in events if e.startswith("email_")]
+    assert len(push) == 1 and len(email) == 1, events
+    assert not [e for e in events if e.startswith("sms")], events
 
 
-def test_action_with_mobile_on_file_sends_sms_and_logs_sms_sent(client, store, sent):
-    case = next(c for c in store["cases"] if c["id"] == _CASE_1_ID)
-    case["citizen_mobile_plain"] = "0771234567"
-    res = _action(client, _CASE_1_OFFLINE_ID, "reject", reason=VALID_REASON)
-    assert res.status_code == 200
-    assert len(sent) == 1
-    assert sent[0]["to"] == "0771234567"
-    events = [a["event"] for a in store["audit"]]
-    assert "sms_sent" in events
-    assert "sms_skipped_no_mobile" not in events
+def test_the_locked_action_select_reads_no_phone_number(client, store, monkeypatch):
+    seen = []
+    original = FakeCursor.execute
 
+    def spy(self, sql, params=()):
+        seen.append(sql)
+        return original(self, sql, params)
 
-def test_action_sms_failure_logs_sms_failed_but_does_not_affect_the_action(
-    client, store, monkeypatch
-):
-    monkeypatch.setattr(
-        "app.infrastructure.sms.notification_service.send_sms", lambda to, body: False
-    )
-    case = next(c for c in store["cases"] if c["id"] == _CASE_1_ID)
-    case["citizen_mobile_plain"] = "0771234567"
-    res = _action(client, _CASE_1_OFFLINE_ID, "escalate")
-    assert res.status_code == 200
-    assert res.get_json()["case"]["status"] == "Under Review"
-    events = [a["event"] for a in store["audit"]]
-    assert "sms_failed" in events
+    monkeypatch.setattr(FakeCursor, "execute", spy)
+    assert _action(client, _CASE_1_OFFLINE_ID, "escalate").status_code == 200
+    assert not any("mobile" in sql for sql in seen)
 
 
 # --- compensation caps settings (Story 5.6, FR-4.4) ---------------------------------------

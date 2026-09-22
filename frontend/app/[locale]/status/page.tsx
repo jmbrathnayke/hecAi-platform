@@ -3,7 +3,7 @@
 // (HEC-YYYY-NNNN or UUID-v4) or scan the PoC QR; shows status metadata only.
 //
 // THE LOOKUP LOGIC BELOW IS UNCHANGED. What was rebuilt is the presentation: this is the channel
-// that still works when push, email and SMS have all failed (§5.9), and for many families it is
+// that still works when push and email have both failed (§5.9), and for many families it is
 // the only part of the platform they will ever see. It was a bare heading, an input and a flat
 // list of four fields on a narrow column adrift in an empty page. It now reads as the official
 // service it is: an identifying header, guidance before the first search, and an answer that leads

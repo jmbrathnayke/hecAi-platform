@@ -82,7 +82,7 @@ class FakeCursor:
                 datetime(2026, 9, 1, tzinfo=timezone.utc), None, "app",
                 c.get("submitted_by_officer", False), c["district"], c["ds_division_id"],
                 "HH-2026-0003", c.get("assigned_officer_id"), c.get("officer_review_started_at"),
-                c.get("officer_assessed_at"), c.get("officer_assessed_by"), None,
+                c.get("officer_assessed_at"), c.get("officer_assessed_by"),
             )
         elif s.startswith("UPDATE cases SET status = 'Under Review'"):
             case = self._case_by_id(params[-1])
@@ -172,7 +172,7 @@ def client(monkeypatch, store):
     monkeypatch.setattr("app.api.v1.officer_cases._get_connection", lambda: FakeConn(store))
     monkeypatch.setattr(
         "app.api.v1.officer_cases.notify_status_change_all",
-        lambda cur, case_id, ref, mobile, status, actor, amount_lkr=None:
+        lambda cur, case_id, ref, status, actor, amount_lkr=None:
             store["citizen_notified"].append({"case_id": case_id, "status": status,
                                               "actor": actor}))
     monkeypatch.setattr(

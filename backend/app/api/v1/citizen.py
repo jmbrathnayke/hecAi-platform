@@ -5,7 +5,7 @@ cases owned by the signed-in citizen (cases.citizen_id = g.citizen_id), newest f
 account "My Cases" list; it is distinct from the public reference-lookup (Story 2.5, FR-6.1), which
 stays unauthenticated.
 
-The payload is PII-free: never citizen_nic_plain or submitter_identity_hash (mirrors status.py /
+The payload is PII-free: never a NIC in any form or submitter_identity_hash (mirrors status.py /
 officer.py). citizen_id comes only from the verified JWT, never the request.
 """
 import psycopg2

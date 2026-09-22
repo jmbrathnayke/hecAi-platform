@@ -154,7 +154,11 @@ export function submitOfficerAssessment(ref: string, body: Record<string, unknow
 
 // ------------------------------------------------------------------------------ case history
 
-/** Delivery bookkeeping (push/email/SMS outcomes). Kept on the administrator's audit view. */
+/**
+ * Delivery bookkeeping (push/email outcomes). Kept on the administrator's audit view. `sms_` still
+ * matches only so audit rows written before SMS was retired (migration 034) stay hidden here; the
+ * audit log is hash-chained and those rows cannot be removed.
+ */
 export function isDeliveryEvent(event: string): boolean {
   return /^(push_|email_|sms_|staff_push_)/.test(event);
 }

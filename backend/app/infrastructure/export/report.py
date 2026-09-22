@@ -1,13 +1,12 @@
 """Case-export rendering (Story 7.2, FR-7.2): CSV streaming + PDF report building.
 
-Lives under infrastructure/ alongside ml/compensation.py and sms/notification_service.py --
+Lives under infrastructure/ alongside ml/compensation.py and email/email_service.py --
 this codebase's as-built architecture is a modular blueprint monolith with NO application
 layer (app/application/ is an empty stub package; see architecture.md's 2026-07-10
 reconciliation). The HTTP route stays in api/v1/admin.py; only rendering lives here.
 
 NO PII, EVER (AC4 / NFR-3.3). The column set below is the whole contract: no NIC in any
-form (not full, not last-4, not submitter_identity_hash), no citizen_nic_plain, no
-citizen_mobile_plain, no raw GPS. PO-ratified 2026-08-06: canonical_id (HEC-YYYY-NNNN) is
+form (not full, not last-4, not submitter_identity_hash), no contact details, no raw GPS. PO-ratified 2026-08-06: canonical_id (HEC-YYYY-NNNN) is
 the cross-reference key district managers use against paper DWC records -- the same
 resolution Stories 5.3, 5.4 and migration 018 each reached independently.
 

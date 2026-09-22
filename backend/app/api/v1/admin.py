@@ -4,11 +4,10 @@ GET /api/v1/admin/cases -- admin-authenticated (Supabase JWT via require_admin()
 District-scoped: WHERE district = g.district_id, from the verified JWT only, never a
 request param. Mirrors officer.py's list_cases() shape at district instead of
 officer/division scope. Payload never includes NIC in any form (no submitter_identity_hash,
-no citizen_nic_plain) -- case detail (Story 5.4) is a separate, more privileged view.
+no NIC digest) -- case detail (Story 5.4) is a separate, more privileged view.
 
 GET /api/v1/admin/cases/<offline_id> -- Story 5.4 case detail. Same district-scoping rule.
-Never returns citizen_nic_plain (migration 009: write-only, must never be returned by any
-read endpoint) or submitter_identity_hash (code review fix: unused by the frontend, not
+Never returns submitter_identity_hash (code review fix: unused by the frontend, not
 required by any AC, and an unnecessary exposure surface -- see deferred-work.md).
 
 GET /api/v1/admin/audit/verify-chain -- Story 5.4 AC4. Wraps the existing, unmodified
@@ -187,7 +186,7 @@ def list_cases():
                     offset = min(offset, total)
 
                     # Explicit column list (never SELECT *) -- no submitter_identity_hash,
-                    # no citizen_nic_plain, ever (CRITICAL #3). inference_log's confidence is
+                    # no NIC in any form, ever (CRITICAL #3). inference_log's confidence is
                     # pulled via a LATERAL subquery (code review fix), not a plain LEFT JOIN --
                     # inference_log has no uniqueness constraint on case_id and is append-only
                     # (an officer override is a second inserted row, not an update), so a plain
@@ -649,15 +648,10 @@ def post_case_action(offline_id):
                     # below), so a second concurrent request blocks here until the first
                     # commits, then re-reads the now-updated status and correctly gets
                     # invalid_transition/case_closed instead of racing the write.
-                    # citizen_mobile_plain (Story 5.6, 12th column): read once here alongside
-                    # canonical_id (row[0]) so the notify_status_change() calls below never
-                    # need a second query -- see Dev Notes Sec Design: Where Notifications Hook
-                    # In. Not part of _load_case_detail's response shape (the frontend has no
-                    # use for it).
                     cur.execute(
                         """SELECT canonical_id, offline_id, damage_category, status,
                                   gps_lat, gps_lng, submitted_at, updated_at, submitted_via,
-                                  approved_amount, id, citizen_mobile_plain,
+                                  approved_amount, id,
                                   submitted_by_officer, ds_division_id
                              FROM cases WHERE offline_id = %s AND district = %s
                              FOR UPDATE""",
@@ -667,7 +661,6 @@ def post_case_action(offline_id):
                     if row is None:
                         return jsonify({"error": "not_found"}), 404
                     case_id, current_status = row[10], row[3]
-                    citizen_mobile_plain = row[11]
 
                     if current_status not in _ACTION_ALLOWED_FROM[action]:
                         # Terminal states get their own error code (AC5) -- distinct from an
@@ -682,12 +675,12 @@ def post_case_action(offline_id):
                     # already fetched here instead of re-querying it a second time.
                     known_comp_row = _NOT_FETCHED
 
-                    if action == "approve" and not row[12]:
+                    if action == "approve" and not row[11]:
                         # Human verification before administrative approval. A citizen's own report
                         # has been seen by nobody from DWC until a field officer verifies it and
                         # records the on-device assessment (officer_cases.py). Approving it before
                         # that would forward an unverified claim to the Divisional Secretariat.
-                        # Officer-assisted cases (row[12]) were verified at submission. Reject,
+                        # Officer-assisted cases (row[11]) were verified at submission. Reject,
                         # request_info and escalate stay available at any point.
                         cur.execute("SELECT officer_assessed_at FROM cases WHERE id = %s",
                                     (case_id,))
@@ -752,16 +745,15 @@ def post_case_action(offline_id):
                             {"amount_lkr": resolved_amount, "reason": reason},
                         )
                         notify_status_change_all(
-                            cur, case_id, row[0], citizen_mobile_plain, "Approved", g.admin_id,
+                            cur, case_id, row[0], "Approved", g.admin_id,
                             amount_lkr=resolved_amount,
                         )
                         # FR-6.4: approval is the exact moment the Divisional Secretariat acquires
-                        # work -- the DWC administrator approves, the DS office pays. Appended as
-                        # the 14th column rather than inserted, so every positional index above
-                        # (and the tests asserting on them) is unchanged.
+                        # work -- the DWC administrator approves, the DS office pays. The division
+                        # is the last column of the locked SELECT above.
                         notify_staff_push(
                             cur, case_id, "payment_pending", "ds_officer",
-                            row[13], row[0], g.admin_id,
+                            row[12], row[0], g.admin_id,
                         )
                         new_status = "Approved"
                         new_approved_amount = resolved_amount
@@ -784,7 +776,7 @@ def post_case_action(offline_id):
                         metadata = {"reason": reason} if reason else {}
                         write_audit_log(cur, case_id, _ACTION_EVENT[action], g.admin_id, metadata)
                         notify_status_change_all(
-                            cur, case_id, row[0], citizen_mobile_plain, target_status, g.admin_id,
+                            cur, case_id, row[0], target_status, g.admin_id,
                         )
                         new_status = target_status
                         new_approved_amount = row[9]
@@ -802,7 +794,7 @@ def post_case_action(offline_id):
                         # as submitted_by_officer; omitting it would make every case look
                         # unverified the moment an action was taken on it — the response would
                         # contradict the list the admin was just looking at.
-                        row[12],
+                        row[11],
                     )
                     # Same response shape as GET .../cases/<offline_id> (Dev Notes Sec Response
                     # Shape Reuse) -- includes the action just written, since this call happens
@@ -1356,8 +1348,8 @@ def _close_quietly(closeable):
 # The latter is the AI's UNAPPROVED recommendation; exporting it as an approval would misstate
 # the district's financial position. Same rule as list_cases's KPI and get_analytics.
 #
-# NO PII (AC4/NFR-3.3): no submitter_identity_hash, no citizen_nic_plain, no
-# citizen_mobile_plain, no gps_lat/gps_lng.
+# NO PII (AC4/NFR-3.3): no submitter_identity_hash, no NIC in any form, no contact details,
+# no gps_lat/gps_lng.
 _EXPORT_SELECT = """SELECT c.canonical_id, c.submitted_at, c.damage_category,
                            il.confidence, il.was_overridden, c.status,
                            c.approved_amount, c.district, c.ds_division_id

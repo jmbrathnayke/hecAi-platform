@@ -2,12 +2,12 @@
 
 Plain module-level functions, no class -- mirrors infrastructure/audit.py's
 write_audit_log(cur, ...) shape. Called inline from cases.py::submit_case,
-sync.py::_sync_one, and sms.py::inbound_sms, in the SAME transaction as the case
-insert, so a case and its estimate are always consistent. Never raises out to the
+sync.py::_sync_one and officer_cases.py, in the SAME transaction as the case
+write, so a case and its estimate are always consistent. Never raises out to the
 caller -- estimation is a best-effort enhancement, not a requirement of a
-successful submit/sync/sms.
+successful submit/sync.
 
-district/ai_severity are optional. SMS-originated cases never pass them and get
+district/ai_severity are optional. A caller that has neither gets
 "unknown"/neutral-multiplier behavior. Citizen self-service cases never have
 ai_severity (no AI classification step on that tree) but may have district (the
 Story 5.2 picker).
@@ -94,7 +94,7 @@ def _map_damage_category(damage_category):
 def _resolve_district(district, ds_division_id):
     """`district` is the picker's direct output (Story 5.2 Task 7) -- if the caller
     already has it, use it as-is, no lookup needed. Otherwise fall back to deriving it
-    from ds_division_id (SMS, pre-picker queued drafts), and finally to the "unknown"
+    from ds_division_id (pre-picker queued drafts), and finally to the "unknown"
     sentinel the model's OrdinalEncoder(handle_unknown=...) degrades gracefully on."""
     if district:
         return district, ds_division_id or district
@@ -155,7 +155,7 @@ def compute_estimate(bundle, damage_type, district, ds_division, year, ai_severi
 def estimate_and_store(cur, case_id, damage_category, ds_division_id, submitted_at,
                         district=None, ai_severity=None, replace=False):
     """Best-effort: returns the stored dict on success, None on any skip/failure.
-    Never raises -- a bug here must not fail the case insert/sync/sms it's
+    Never raises -- a bug here must not fail the case insert/sync it's
     piggybacking on. `district`/`ds_division_id`/`ai_severity` are string-or-None;
     an empty string is treated the same as absent.
 

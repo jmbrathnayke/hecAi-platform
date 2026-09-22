@@ -1,20 +1,13 @@
 """Citizen Web Push status-change notifications.
 
-Same contract as sms/notification_service.py and email/email_service.py: called from
-admin.py::post_case_action inside the SAME transaction as the case's own status write, it never
-raises, and every outcome is recorded as its own audit event.
+Same contract as email/email_service.py: called inside the SAME transaction as the case's own
+status write, it never raises, and every outcome is recorded as its own audit event.
 
-WHERE THE WORDING COMES FROM, and why there is no push_templates table. A push notification has a
-title and a body, and the two have different length budgets: the title must be short enough for a
-notification shade, and the body shorter still. Both strings already exist, already translated, and
-already reviewed:
-
-    title  <- email_templates.subject   (migration 030) -- short, carries {ref}
-    body   <- sms_templates.template    (migration 019) -- written for a 160-character budget
-
-Reusing them means the SMS, the email, the push and the public status page cannot drift apart in
-terminology, which is the same reason migration 030 copied its core sentences from 019 verbatim. A
-third table would be a third place for the wording to diverge.
+WHERE THE WORDING COMES FROM. push_templates (migration 034), one (language, status) row with a
+title and a body. The two have different length budgets: the title must fit a notification shade,
+and the body is shorter still. The wording was copied verbatim when SMS was retired: the title is
+the email subject, and the body is the short status sentence the email body also opens with, so
+push, email and the public status page use the same terminology.
 
 ONE CASE, MANY DEVICES. A household may have several subscribed devices -- the registrant's phone,
 a son's phone. All are notified. Partial success counts as success: one device receiving the news
@@ -91,23 +84,18 @@ def notify_status_change_push(cur, case_id, canonical_id, new_status, admin_id, 
         return
 
     cur.execute(
-        "SELECT subject FROM email_templates WHERE language = %s AND status = %s",
+        "SELECT title, body FROM push_templates WHERE language = %s AND status = %s",
         (locale, new_status),
     )
-    title_row = cur.fetchone()
-    cur.execute(
-        "SELECT template FROM sms_templates WHERE language = %s AND status = %s",
-        (locale, new_status),
-    )
-    body_row = cur.fetchone()
+    template = cur.fetchone()
 
-    if title_row is None or body_row is None:
+    if template is None:
         write_audit_log(cur, case_id, "push_template_missing", admin_id, {"status": new_status})
         return
 
     ref = canonical_id or ""
-    title = title_row[0].replace("{ref}", ref)
-    body = body_row[0].replace("{ref}", ref)
+    title = template[0].replace("{ref}", ref)
+    body = template[1].replace("{ref}", ref)
     if amount_lkr is not None:
         body = body.replace("{amount}", f"{amount_lkr:,.2f}")
 
@@ -159,9 +147,9 @@ def notify_status_change_push(cur, case_id, canonical_id, new_status, admin_id, 
 # looking.
 #
 # WHY THE WORDING IS IN CODE AND NOT IN A TEMPLATE TABLE, which is the opposite of the decision
-# made for the citizen channels. The citizen wording lives in sms_templates and email_templates
-# because the SAME sentence has to appear in an SMS, an email, a push notification and the public
-# status page, and four copies of it would drift. A staff alert has no second channel to agree
+# made for the citizen channels. The citizen wording lives in push_templates and email_templates
+# because the SAME sentence has to appear in an email, a push notification and the public status
+# page, and three copies of it would drift. A staff alert has no second channel to agree
 # with: it exists only as a push notification. A table would add a migration, a seeding step and a
 # "template missing" failure mode in exchange for keeping one copy of a string consistent with
 # nothing. If a staff alert ever gains an email counterpart, this becomes a table.

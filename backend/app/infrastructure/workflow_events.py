@@ -7,7 +7,7 @@ administrator only if they happened to open the dashboard.
 
 WHO IS TOLD, by channel of intake (role- and event-appropriate, never "everyone"):
 
-    citizen self-submission     citizen: "Submitted" confirmation (push / email / SMS as provisioned)
+    citizen self-submission     citizen: "Submitted" confirmation (push, then email)
                                 staff:   the field officers of the case's DS division -- the people
                                          who must now verify it. Nobody else yet.
     officer-assisted submission citizen: "Submitted" confirmation
@@ -77,9 +77,8 @@ def record_officer_assisted_assessment(cur, case_id, offline_id, officer_id, cla
 def announce_submission(cur, case_id, canonical_id, submitted_by_officer, district, ds_division,
                         actor_id):
     """Tell the citizen their claim was received and route the work to whoever acts next."""
-    # citizen_mobile_plain is None on the app channels (encrypted client-side, migration 020), so
-    # the SMS leg records sms_skipped_no_mobile; email and push resolve from the household.
-    notify_status_change_all(cur, case_id, canonical_id, None, "Submitted", actor_id)
+    # Push and email both resolve their destination from the case's registered household.
+    notify_status_change_all(cur, case_id, canonical_id, "Submitted", actor_id)
     if submitted_by_officer:
         notify_staff_push(cur, case_id, "assessment_complete", "admin", district, canonical_id,
                           actor_id)
