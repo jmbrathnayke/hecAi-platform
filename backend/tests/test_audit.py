@@ -141,7 +141,7 @@ def test_verify_chain_skips_a_legacy_pre_chain_row_without_flagging_it():
     cur = FakeAuditTable()
     cur.insert_legacy_row()  # the real id=1 "submitted" row from before migration 012
     audit.write_audit_log(cur, 2, "case_synced", "officer-1")
-    audit.write_audit_log(cur, 2, "sms_submission", "officer-1")
+    audit.write_audit_log(cur, 2, "officer_assessment_recorded", "officer-1")
 
     is_valid, broken_id = audit.verify_chain(cur)
     assert is_valid is True

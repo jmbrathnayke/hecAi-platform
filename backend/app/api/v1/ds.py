@@ -1,6 +1,14 @@
 """Divisional Secretariat API (Story 8.5, PRD Section 3, NFR-3.2).
 
-    GET /api/v1/ds/cases   cases in this officer's DS division   (ds_officer JWT)
+    GET  /api/v1/ds/cases                               cases in this officer's DS division
+    POST /api/v1/ds/cases/<ref>/final-decision          the human final compensation decision
+    POST /api/v1/ds/cases/<ref>/authorize-payment       release payment (after the decision)
+
+THE FINAL GOVERNANCE STEP. The Random Forest produces an AI-assisted estimate; the DWC administrator
+reviews the officer's assessment and forwards an approved case with a recommended amount. Neither of
+those is the compensation decision. The Divisional Secretariat officer reviews both and records the
+final amount -- a human decision, audit-logged with its reason -- and only then may payment be
+authorised. (All ds_officer JWT.)
 
 A SEPARATE SURFACE FROM THE ADMIN DASHBOARD, not a variant of it. The DWC administrator oversees
 a district's pipeline; the Divisional Secretariat authorises the payment for its own division, one
@@ -12,10 +20,12 @@ Scope comes only from `g.ds_division`, set by require_ds_officer() from the sign
 client would let any DS officer read, and later authorise payment on, another division's cases.
 
 PII discipline mirrors officer.py and admin.py — an explicit column list, never SELECT *, and
-never `submitter_identity_hash`, `citizen_nic_plain`, `citizen_mobile_plain`, or `nic_hmac`. The
+never `submitter_identity_hash` or `nic_hmac`. The
 household REFERENCE travels (it is the working identifier a DS officer quotes); the NICs behind it
 do not, and cannot: the registry stores only their keyed digests.
 """
+import math
+
 import psycopg2
 from flask import Blueprint, current_app, g, jsonify, request
 
@@ -24,6 +34,7 @@ from app.infrastructure.audit import write_audit_log
 from app.domain.validation import MIN_REASON_LENGTH
 from app.infrastructure.security.bank_crypto import BankDecryptFailed, decrypt_bank_details
 from app.infrastructure.notifications import notify_status_change_all
+from app.infrastructure.push.push_service import notify_staff_push
 from app.infrastructure.security.nic_identity import NicPepperMissing, nic_hmac
 
 ds_bp = Blueprint("ds", __name__)
@@ -33,6 +44,9 @@ ds_bp = Blueprint("ds", __name__)
 # in any language, so every notification would log template_missing and none would be sent.
 _PAID_STATUS = "Payment Processed"
 _APPROVED_STATUS = "Approved"
+# Notification event, not a case status (migration 033 seeds its templates). The status stays
+# "Approved" until payment is authorised; the citizen is told the confirmed amount in between.
+_FINAL_DECISION_EVENT = "Final Decision"
 
 # A working queue, not an export (export is Epic 7) — cap the result set, same as officer.py.
 MAX_CASES = 200
@@ -68,9 +82,16 @@ def list_division_cases():
                     cur.execute(
                         """SELECT c.canonical_id, c.offline_id, c.status, c.damage_category,
                                   c.submitted_via, c.submitted_at, c.updated_at,
-                                  c.approved_amount, h.household_ref
+                                  c.approved_amount, h.household_ref,
+                                  ce.amount_lkr, ce.model_version, c.district,
+                                  (c.officer_assessed_at IS NOT NULL
+                                   OR COALESCE(c.submitted_by_officer, FALSE)),
+                                  c.ds_final_amount, c.ds_final_reason, c.ds_final_at,
+                                  pa.ds_authorized_at
                              FROM cases c
                              LEFT JOIN households h ON h.id = c.household_id
+                             LEFT JOIN compensation_estimates ce ON ce.case_id = c.id
+                             LEFT JOIN payment_authorizations pa ON pa.case_id = c.id
                             WHERE c.ds_division_id = %s
                               AND (%s IS NULL OR c.status = %s)
                             ORDER BY c.submitted_at DESC
@@ -90,6 +111,21 @@ def list_division_cases():
                             "updated_at": r[6].isoformat() if r[6] else None,
                             "approved_amount": float(r[7]) if r[7] is not None else None,
                             "household_ref": r[8],
+                            # Decision support, labelled as such everywhere it is shown. The DWC
+                            # administrator's approved_amount above is a recommendation too.
+                            "ai_estimate": {
+                                "amount_lkr": float(r[9]) if r[9] is not None else None,
+                                "model_version": r[10],
+                                "is_final_decision": False,
+                            },
+                            "district": r[11],
+                            "officer_assessed": bool(r[12]),
+                            "final_decision": {
+                                "amount_lkr": float(r[13]) if r[13] is not None else None,
+                                "reason": r[14],
+                                "decided_at": r[15].isoformat() if r[15] else None,
+                            } if r[15] is not None else None,
+                            "payment_authorized": r[16] is not None,
                         }
                         for r in rows
                     ]
@@ -114,6 +150,172 @@ def list_division_cases():
         return jsonify({"error": "server_error"}), 500
 
     return jsonify({"cases": cases, "count": len(cases), "ds_division": ds_division}), 200
+
+
+def _parse_final_amount(value):
+    """A non-negative, finite number of rupees. Zero is legitimate (assessed, nothing payable)."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if not math.isfinite(value) or value < 0:
+        return None
+    return round(float(value), 2)
+
+
+def _final_decision_payload(ref, amount, reason, decided_at, ai_estimate, approved_amount,
+                            revised, unchanged=False):
+    return {
+        "canonical_id": ref,
+        "final_decision": {
+            "amount_lkr": amount,
+            "reason": reason,
+            "decided_at": decided_at.isoformat() if decided_at else None,
+            "is_final_decision": True,
+            "revised": revised,
+            "unchanged": unchanged,
+        },
+        "ai_estimate_lkr": ai_estimate,
+        "dwc_approved_amount_lkr": approved_amount,
+    }
+
+
+@ds_bp.route("/ds/cases/<string:canonical_id>/final-decision", methods=["POST"])
+@require_ds_officer()
+def record_final_decision(canonical_id):
+    """The Divisional Secretariat's final compensation decision for one approved case.
+
+    WHAT IT DECIDES. The amount the family will be paid. The AI-assisted estimate and the DWC
+    administrator's recommended amount are both shown to the officer and both recorded beside the
+    decision in the audit trail, but neither binds it: the officer may confirm either or enter a
+    different figure. A figure that departs from the AI estimate needs a written reason -- the same
+    floor as an administrator's override -- so the record says why a human disagreed with the model.
+
+    Revisable until payment is authorised, and not after: once the account number has been released
+    the amount on the authorisation is what was paid. A repeat of the identical decision is a no-op,
+    so a double-click neither re-audits nor re-notifies the family.
+
+    The status stays "Approved". The five-status vocabulary is shared with the public status page,
+    the notification templates and the analytics; the decision is its own recorded checkpoint instead.
+    """
+    ds_division = g.ds_division
+    ds_officer_id = g.ds_officer_id
+
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return jsonify({"error": "invalid_body"}), 400
+
+    amount = _parse_final_amount(body.get("amount_lkr"))
+    if amount is None:
+        return jsonify({"error": "invalid_amount"}), 400
+
+    reason = body.get("reason")
+    if reason is not None and not isinstance(reason, str):
+        return jsonify({"error": "invalid_reason"}), 400
+    reason = reason.strip() if reason else None
+
+    ref = canonical_id.strip().upper()
+
+    try:
+        conn = _get_connection()
+        try:
+            with conn:
+                with conn.cursor() as cur:
+                    # FOR UPDATE OF c: a double-submitted decision, or two officers in the same
+                    # office, must not interleave; the second waits and sees the first's result.
+                    cur.execute(
+                        """SELECT c.id, c.status, c.approved_amount, c.district,
+                                  c.ds_final_amount, c.ds_final_reason,
+                                  c.ds_final_at, ce.amount_lkr, pa.id, pa.ds_authorized_at
+                             FROM cases c
+                             LEFT JOIN compensation_estimates ce ON ce.case_id = c.id
+                             LEFT JOIN payment_authorizations pa ON pa.case_id = c.id
+                            WHERE c.canonical_id = %s AND c.ds_division_id = %s
+                              FOR UPDATE OF c""",
+                        (ref, ds_division),
+                    )
+                    row = cur.fetchone()
+                    # 404 for another division too -- see authorize_payment.
+                    if not row:
+                        return jsonify({"error": "not_found"}), 404
+
+                    (case_id, status, approved_amount, district,
+                     previous_amount, previous_reason, previous_at, ai_estimate, payment_id,
+                     ds_authorized_at) = row
+                    ai_estimate = float(ai_estimate) if ai_estimate is not None else None
+                    approved_amount = float(approved_amount) if approved_amount is not None else None
+                    previous_amount = float(previous_amount) if previous_amount is not None else None
+
+                    if status != _APPROVED_STATUS:
+                        # Only a case the DWC administrator approved and forwarded reaches the
+                        # final review. A paid or rejected case is closed.
+                        return jsonify({"error": "not_approved", "status": status}), 409
+                    if ds_authorized_at is not None:
+                        return jsonify({"error": "payment_already_authorized"}), 409
+                    if payment_id is None:
+                        # Approved before Story 5.5 wired the authorisation insert. Reported rather
+                        # than inventing a payment record.
+                        return jsonify({"error": "no_payment_authorization"}), 409
+
+                    differs_from_ai = ai_estimate is None or amount != ai_estimate
+                    if differs_from_ai and (not reason or len(reason) < MIN_REASON_LENGTH):
+                        return jsonify({"error": "reason_required",
+                                        "min_length": MIN_REASON_LENGTH}), 400
+
+                    if previous_amount is not None and previous_amount == amount \
+                            and (previous_reason or None) == reason:
+                        return jsonify(_final_decision_payload(
+                            ref, amount, reason, previous_at, ai_estimate, approved_amount,
+                            revised=False, unchanged=True)), 200
+
+                    # The amount on the authorisation is what the DS office will pay.
+                    cur.execute(
+                        """UPDATE payment_authorizations SET amount_lkr = %s
+                            WHERE id = %s AND ds_authorized_at IS NULL""",
+                        (amount, payment_id),
+                    )
+                    cur.execute(
+                        """UPDATE cases
+                              SET ds_final_amount = %s, ds_final_reason = %s, ds_final_by = %s,
+                                  ds_final_at = now(), updated_at = now()
+                            WHERE id = %s
+                        RETURNING ds_final_at""",
+                        (amount, reason, ds_officer_id, case_id),
+                    )
+                    decided_at = cur.fetchone()[0]
+
+                    revised = previous_amount is not None
+                    write_audit_log(
+                        cur, case_id, "ds_final_decision", ds_officer_id,
+                        {
+                            "ip_address": _client_ip(),
+                            "ds_division": ds_division,
+                            "final_amount_lkr": amount,
+                            "ai_estimate_lkr": ai_estimate,
+                            "dwc_approved_amount_lkr": approved_amount,
+                            "differs_from_ai_estimate": differs_from_ai,
+                            "reason": reason,
+                            "revised": revised,
+                            "previous_amount_lkr": previous_amount,
+                            "decided_by": "human_ds_officer",
+                        },
+                    )
+                    # The family learns the confirmed amount -- and again if it is corrected before
+                    # payment, since the earlier message named a figure that is no longer true. A
+                    # revision that changes only the written reason is not news to the family.
+                    if previous_amount != amount:
+                        notify_status_change_all(
+                            cur, case_id, ref, _FINAL_DECISION_EVENT,
+                            ds_officer_id, amount_lkr=amount,
+                        )
+                    notify_staff_push(cur, case_id, "final_decision_recorded", "admin", district,
+                                      ref, ds_officer_id)
+        finally:
+            conn.close()
+    except psycopg2.Error:
+        current_app.logger.exception("DS final decision failed")
+        return jsonify({"error": "server_error"}), 500
+
+    return jsonify(_final_decision_payload(ref, amount, reason, decided_at, ai_estimate,
+                                           approved_amount, revised=revised)), 200
 
 
 @ds_bp.route("/ds/cases/<string:canonical_id>/authorize-payment", methods=["POST"])
@@ -150,8 +352,8 @@ def authorize_payment(canonical_id):
                     cur.execute(
                         """SELECT c.id, c.status, c.approved_amount, c.household_id,
                                   h.household_ref, h.bank_details_ciphertext,
-                                  h.bank_account_last4, c.citizen_mobile_plain,
-                                  pa.ds_authorized_at
+                                  h.bank_account_last4,
+                                  pa.ds_authorized_at, c.ds_final_amount, c.district
                              FROM cases c
                              LEFT JOIN households h ON h.id = c.household_id
                              LEFT JOIN payment_authorizations pa ON pa.case_id = c.id
@@ -165,7 +367,8 @@ def authorize_payment(canonical_id):
                         return jsonify({"error": "not_found"}), 404
 
                     case_id, status, approved_amount, household_id, household_ref, \
-                        ciphertext, last4, citizen_mobile_plain, previously_authorized = row
+                        ciphertext, last4, previously_authorized, \
+                        ds_final_amount, district = row
 
                     # Read BEFORE the UPDATE below overwrites ds_authorized_at. This endpoint is
                     # repeatable on purpose — an officer who closed the window needs the account
@@ -183,6 +386,12 @@ def authorize_payment(canonical_id):
                         # "Approved" would make the endpoint work exactly once and then lock the
                         # officer out of the account number they are in the middle of paying.
                         return jsonify({"error": "not_approved", "status": status}), 409
+                    if status == _APPROVED_STATUS and ds_final_amount is None \
+                            and previously_authorized is None:
+                        # The final compensation decision is a separate, recorded human act and it
+                        # comes first: paying the administrator's recommendation, or the model's
+                        # estimate, by default would make either one the decision in practice.
+                        return jsonify({"error": "final_decision_required"}), 409
                     if not household_id:
                         # Pre-Epic-8 or seeded. There is no registered family to pay.
                         return jsonify({"error": "no_household"}), 409
@@ -263,10 +472,16 @@ def authorize_payment(canonical_id):
                             {"ds_division": ds_division, "authorized_by": "ds_officer"},
                         )
                         notify_status_change_all(
-                            cur, case_id, canonical_id.upper(), citizen_mobile_plain,
+                            cur, case_id, canonical_id.upper(),
                             _PAID_STATUS, ds_officer_id,
                             amount_lkr=float(auth_row[1]) if auth_row[1] is not None else None,
                         )
+                        # Staff who handled the case are told it is closed: the district
+                        # administrator and the field officers of the division.
+                        notify_staff_push(cur, case_id, "payment_processed", "admin", district,
+                                          canonical_id.upper(), ds_officer_id)
+                        notify_staff_push(cur, case_id, "payment_processed", "officer",
+                                          ds_division, canonical_id.upper(), ds_officer_id)
         finally:
             conn.close()
     except psycopg2.Error:
@@ -379,8 +594,8 @@ def transfer_registration(household_ref):
                     )
                     # registrant_uid is CLEARED, not moved: it holds a Supabase account id, and the
                     # DS office has no way to know the new registrant's app account. The family is
-                    # not locked out by this — officer-assisted and SMS reporting both resolve by
-                    # NIC and continue to work (asserted by test). What stops working is citizen
+                    # not locked out by this — officer-assisted reporting resolves the household by
+                    # NIC and continues to work (asserted by test). What stops working is citizen
                     # SELF-SERVICE until the new registrant links an account, which is not built.
                     cur.execute(
                         "UPDATE households SET registrant_uid = NULL, updated_at = now() "

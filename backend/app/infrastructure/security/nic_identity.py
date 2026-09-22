@@ -34,9 +34,8 @@ import hmac
 import hashlib
 import re
 
-# Sri Lanka NIC, both issued formats. Mirrors frontend/lib/validation.ts NIC_REGEX and sms.py
-# NIC_RE — three copies of this pattern now exist and they must agree, so any change here needs
-# the same change there. (The frontend copy accepts lowercase v/x; this one is applied after
+# Sri Lanka NIC, both issued formats. Mirrors frontend/lib/validation.ts NIC_REGEX — two copies of
+# this pattern exist and they must agree, so any change here needs the same change there. (The frontend copy accepts lowercase v/x; this one is applied after
 # upper-casing, which is why it lists only [VX].)
 #
 #   legacy   9 digits + V or X    e.g. 751234567V   (issued until 2016)

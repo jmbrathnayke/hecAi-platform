@@ -191,9 +191,7 @@ def _audit(event, metadata):
 # The first draft mirrored every provisioned account into `users`, on the reasoning that the table
 # exists and should stay in step. Checking what actually reads it changed the decision:
 #
-#   - the ONLY read anywhere in the backend is sms.py resolving an officer from an inbound sender
-#     number (`SELECT supabase_uid FROM users WHERE mobile_number = %s`), and SMS intake is not
-#     delivered (§7.3)
+#   - nothing in the backend reads it for access or routing
 #   - authorization never consults it: every guard reads app_metadata out of the signature-verified
 #     JWT, so a row here grants nothing and its absence withholds nothing
 #   - `users.district_id` is a bigint, a legacy foreign key, while the administrator claim is a

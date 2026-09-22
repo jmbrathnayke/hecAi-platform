@@ -36,12 +36,14 @@ SCENARIO_DISTRICT = "අනුරාධපුරය"
 SCENARIO_DIVISION = "ඉපලෝගම"
 
 
-def make_token(sub, role=None, district_id=None, expires_in=3600):
+def make_token(sub, role=None, district_id=None, expires_in=3600, assigned_divisions=None):
     metadata = {}
     if role:
         metadata["role"] = role
     if district_id:
         metadata["district_id"] = district_id
+    if assigned_divisions:
+        metadata["assigned_divisions"] = assigned_divisions
     payload = {
         "sub": sub,
         "app_metadata": metadata,
@@ -73,7 +75,8 @@ def client(scenario_app):
 @pytest.fixture(scope="session")
 def tokens():
     return {
-        "officer": make_token(OFFICER_SUB, role="officer"),
+        "officer": make_token(OFFICER_SUB, role="officer",
+                              assigned_divisions=[SCENARIO_DIVISION]),
         "citizen": make_token(CITIZEN_SUB),
         "admin": make_token(ADMIN_SUB, role="admin", district_id=SCENARIO_DISTRICT),
         "researcher": make_token(RESEARCHER_SUB, role="system_admin"),

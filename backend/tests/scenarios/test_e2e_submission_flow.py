@@ -221,6 +221,22 @@ def test_scenario_admin_approve(client, tokens, db, new_offline_id):
                        headers=auth(tokens["citizen"])).status_code == 201
 
     case_id = _row(db, "SELECT id FROM cases WHERE offline_id = %s", (oid,))[0]
+    canonical = _row(db, "SELECT canonical_id FROM cases WHERE id = %s", (case_id,))[0]
+
+    # Final governance workflow: a citizen's own report is approved only after a field officer of
+    # its division has verified it and recorded the on-device assessment.
+    refused = client.post(f"/api/v1/admin/cases/{oid}/action", json={"action": "approve"},
+                          headers=auth(tokens["admin"]))
+    assert refused.status_code == 409, refused.get_json()
+    assert refused.get_json()["error"] == "officer_assessment_required"
+
+    assessed = client.post(f"/api/v1/officer/cases/{canonical}/assessment", json={
+        "model_type": "mobilenetv2", "model_version": "v1", "prediction": "property_damage",
+        "confidence": 0.82, "was_overridden": False, "ai_severity": "Moderate",
+        "ai_processing_time_ms": 120,
+    }, headers=auth(tokens["officer"]))
+    assert assessed.status_code == 200, assessed.get_json()
+
     estimate = _row(db, "SELECT amount_lkr FROM compensation_estimates WHERE case_id = %s",
                     (case_id,))[0]
 

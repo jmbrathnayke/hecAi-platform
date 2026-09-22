@@ -36,6 +36,11 @@ export function CompensationPanel({ compensation }: CompensationPanelProps) {
       {/* was `text-heading-3` — undefined token; see AIResultPanel. DESIGN.md § Typography. */}
       <h3 className="text-headline text-ink-primary">{t("compensation.heading")}</h3>
       <p className="text-label font-semibold text-amber">{t("compensation.aiRecommendation")}</p>
+      {/* The estimate is decision support. The administrator recommends an amount; the Divisional
+          Secretariat records the final compensation decision. */}
+      <p className="text-caption text-ink-secondary" data-testid="compensation-not-final">
+        {t("compensation.notFinal")}
+      </p>
 
       <div>
         <p className="text-label text-ink-disabled">{t("compensation.recommendedAmount")}</p>

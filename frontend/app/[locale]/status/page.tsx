@@ -3,12 +3,12 @@
 // (HEC-YYYY-NNNN or UUID-v4) or scan the PoC QR; shows status metadata only.
 //
 // THE LOOKUP LOGIC BELOW IS UNCHANGED. What was rebuilt is the presentation: this is the channel
-// that still works when push, email and SMS have all failed (§5.9), and for many families it is
+// that still works when push and email have both failed (§5.9), and for many families it is
 // the only part of the platform they will ever see. It was a bare heading, an input and a flat
 // list of four fields on a narrow column adrift in an empty page. It now reads as the official
 // service it is: an identifying header, guidance before the first search, and an answer that leads
 // with the outcome.
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import { useTranslations } from "next-intl";
 import { StatusCard } from "@/components/StatusCard";
@@ -60,6 +60,23 @@ export default function StatusPage() {
       setLoading(false);
     }
   }
+
+  // A tapped notification or a shared link arrives as /status?ref=HEC-YYYY-NNNN. Read once on
+  // mount from window.location rather than useSearchParams(), which would force a Suspense boundary
+  // around a page that is otherwise statically rendered.
+  useEffect(() => {
+    let ref: string | null = null;
+    try {
+      ref = new URLSearchParams(window.location.search).get("ref");
+    } catch {
+      ref = null;
+    }
+    if (ref) {
+      setReference(ref);
+      void handleCheck(ref);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once, for the landing URL only
+  }, []);
 
   function handleQRResult(decoded: string) {
     setShowScanner(false);

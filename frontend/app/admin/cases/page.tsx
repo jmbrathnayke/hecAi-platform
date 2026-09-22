@@ -92,9 +92,14 @@ function AdminCasesPageContent() {
       to: searchParams.get("to") ?? "",
       type: searchParams.get("type") ?? "",
       division: searchParams.get("division") ?? "",
+      assessment: searchParams.get("assessment") ?? "",
+      officer: searchParams.get("officer") ?? "",
     }),
     [searchParams],
   );
+  // A staff notification opens /admin/cases?ref=HEC-…: the list narrows to that case and its
+  // detail opens. Not part of the filter bar (it is a link target, not a working filter).
+  const refParam = (searchParams.get("ref") ?? "").trim();
   const page = Math.max(1, Number(searchParams.get("page") ?? "1") || 1);
   // Raw (undefaulted) sort param, kept alongside the resolved/whitelisted value below so
   // handleSort can distinguish "never explicitly touched" from "explicitly cycled back
@@ -158,6 +163,9 @@ function AdminCasesPageContent() {
         to: filters.to || null,
         type: filters.type || null,
         division: filters.division || null,
+        assessment: filters.assessment || null,
+        officer: filters.officer || null,
+        ref: refParam || null,
         page,
         limit: PAGE_SIZE,
         sort: sortCol,
@@ -182,7 +190,7 @@ function AdminCasesPageContent() {
       active = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [checked, filters.status, filters.from, filters.to, filters.type, filters.division, page, sortCol, sortDir, reloadNonce]);
+  }, [checked, filters.status, filters.from, filters.to, filters.type, filters.division, filters.assessment, filters.officer, refParam, page, sortCol, sortDir, reloadNonce]);
 
   // Reset the Story 5.4 seam's selection whenever filters/sort/page change (code review
   // fix) -- otherwise a previously-selected case stays "selected" even after it's scrolled
@@ -190,7 +198,14 @@ function AdminCasesPageContent() {
   useEffect(() => {
     setSelectedOfflineId(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters.status, filters.from, filters.to, filters.type, filters.division, page, sortCol, sortDir]);
+  }, [filters.status, filters.from, filters.to, filters.type, filters.division, filters.assessment, filters.officer, refParam, page, sortCol, sortDir]);
+
+  // Open the case a notification pointed at, once the narrowed list has loaded.
+  useEffect(() => {
+    if (!refParam || !data) return;
+    const match = data.items.find((c) => (c.canonical_id ?? "").toUpperCase() === refParam.toUpperCase());
+    if (match?.offline_id) setSelectedOfflineId(match.offline_id);
+  }, [refParam, data]);
 
   function handleSort(col: SortColumn) {
     if (explicitSortCol !== col) {

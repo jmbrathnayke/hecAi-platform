@@ -1,15 +1,13 @@
 """Citizen email status-change notifications.
 
-The email counterpart of sms/notification_service.py, and it holds to the same contract: called
-from admin.py::post_case_action inside the SAME transaction as the case's own status write, it
-never raises, and every outcome -- including "there was nobody to write to" -- is recorded as its
-own audit event rather than swallowed or escalated.
+The email counterpart of push/push_service.py, and it holds to the same contract: called inside
+the SAME transaction as the case's own status write, it never raises, and every outcome --
+including "there was nobody to write to" -- is recorded as its own audit event rather than
+swallowed or escalated.
 
-WHERE THE ADDRESS COMES FROM, and why it is not a column on `cases`. Migration 020 added
-cases.citizen_mobile_plain and its own comment records what happened: it "stays NULL for every case
-from those channels", because the app and officer-assisted paths AES-GCM encrypt citizen contact
-details client-side with a non-extractable key the server can never decrypt (NFR-3.1). A plaintext
-email column on `cases` would inherit exactly that fate.
+WHERE THE ADDRESS COMES FROM, and why it is not a column on `cases`. The app and officer-assisted
+paths AES-GCM encrypt citizen contact details client-side with a non-extractable key the server can
+never decrypt (NFR-3.1), so a contact column on `cases` would stay empty for every case.
 
 Registration is the one path that already transmits server-readable citizen data, under the
 deliberate NFR-3.1 exception documented in Addendum A8. So the address lives on `households`, and
@@ -27,9 +25,8 @@ DEFAULT_LOCALE = "si"
 def notify_status_change_email(cur, case_id, canonical_id, new_status, admin_id, amount_lkr=None):
     """Email the registered household about a status change.
 
-    Unlike notify_status_change(), the address is resolved here rather than passed in: the caller
-    holds a case row, and the address hangs off the household behind it. Doing the lookup here
-    keeps admin.py's five action branches unchanged apart from one added call.
+    The address is resolved here rather than passed in: the caller holds a case row, and the
+    address hangs off the household behind it.
 
     Every early return writes an audit row. A silent skip would be indistinguishable from a bug,
     and the AuditTrail UI already renders these events with no frontend change.
@@ -67,15 +64,15 @@ def notify_status_change_email(cur, case_id, canonical_id, new_status, admin_id,
     )
     template = cur.fetchone()
     if template is None:
-        # Same failure mode migration 019 anticipated for SMS: an unseeded (language, status) pair,
-        # or a future status with no template yet. Must not raise -- see the module docstring.
+        # An unseeded (language, status) pair, or a future status with no template yet. Must not
+        # raise -- see the module docstring.
         write_audit_log(cur, case_id, "email_template_missing", admin_id, {"status": new_status})
         return
 
     subject, body = template[0], template[1]
 
     # Plain replace, not str.format(): a non-Approved template contains no {amount}, and format()
-    # would raise KeyError on the braces it does contain. Same rule as notification_service.py.
+    # would raise KeyError on the braces it does contain. Same rule as push_service.py.
     ref = canonical_id or ""
     subject = subject.replace("{ref}", ref)
     body = body.replace("{ref}", ref)
@@ -99,7 +96,7 @@ def notify_status_change_email(cur, case_id, canonical_id, new_status, admin_id,
 
     # The address never enters audit metadata. It is already stored once on `households`;
     # duplicating it into an append-only, widely-read log enlarges the exposure surface for no
-    # operational benefit. Same rule notification_service.py applies to the mobile number.
+    # operational benefit.
     # sendgrid_client.send_email already swallows everything it can raise. The guard is here as
     # well because this module's docstring is where the "never raises" promise is made, and a
     # promise enforced only inside a collaborator breaks silently the day the transport changes.

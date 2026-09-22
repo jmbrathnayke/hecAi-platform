@@ -3,6 +3,11 @@
 // (offline-first, FR-3.2). If online and an auth token is available it submits in the
 // background and upgrades the reference to the canonical HEC-YYYY-NNNN — the QR/receipt
 // never blocks on the network (CRITICAL #3).
+//
+// A report the one-shot submit cannot deliver (offline, server unreachable) is marked for the
+// citizen outbox (lib/citizenOutbox.ts), which retries it automatically -- from any citizen page,
+// not only this one -- until the server confirms it. The live hec-case-synced listener below then
+// upgrades the reference on this screen if it is still open.
 import { useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { Link, useRouter } from "@/navigation";
@@ -12,6 +17,7 @@ import { getCase, updateDraft } from "@/lib/indexeddb";
 import { getDraftId } from "@/lib/draft";
 import { getAccessToken } from "@/lib/auth";
 import { buildPoC, submitCaseOnline, type PoCRecord } from "@/lib/poc";
+import { markCitizenSubmission } from "@/lib/citizenOutbox";
 
 export default function PoCPage() {
   const t = useTranslations("poc");
@@ -50,6 +56,13 @@ export default function PoCPage() {
       // already have set from a sync that completed while this async chain was in flight
       // (review patch) — the draft read here can be stale relative to that live event.
       setCanonicalId((prev) => prev ?? (typeof draft.canonical_id === "string" ? draft.canonical_id : null));
+
+      // Hand the report to the outbox BEFORE trying to send it, so a failure below -- or the
+      // citizen closing the app mid-request -- still leaves it queued for automatic delivery.
+      if (!draft.canonical_id) {
+        const lang = typeof document !== "undefined" ? document.documentElement.lang : undefined;
+        await markCitizenSubmission(draftId, lang).catch(() => {});
+      }
 
       // Best-effort online submission (does not block the receipt above).
       if (!navigator.onLine || draft.canonical_id) return;

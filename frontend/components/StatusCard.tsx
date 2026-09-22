@@ -16,10 +16,11 @@ import { useState } from "react";
 import { useTranslations, useLocale } from "next-intl";
 import {
   type CaseStatus,
+  isKnownStage,
   isTranslatedStatus,
   journeyIndex,
   statusKey,
-  showApprovedAmount,
+  showFinalAmount,
 } from "@/lib/status";
 import { ClaimProgress } from "@/components/ClaimProgress";
 
@@ -37,7 +38,8 @@ export function StatusCard({
   offline_id,
   status,
   updated_at,
-  approved_amount,
+  stage,
+  final_amount,
 }: CaseStatus) {
   const t = useTranslations("status");
   const locale = useLocale();
@@ -90,24 +92,37 @@ export function StatusCard({
             <span aria-hidden="true" className={`h-3 w-3 rounded-full ${accent.dot}`} />
             <h2 className={`text-title ${accent.text}`}>{label}</h2>
           </div>
-          {known && (
-            <p className="mt-design-2 text-body text-ink-secondary">
-              {t(`nextStep.${statusKey(status)}`)}
-            </p>
+          {/* The workflow stage says more than the five statuses can: "Approved" alone does not
+              tell a family that the Divisional Secretariat still has to confirm the amount. */}
+          {isKnownStage(stage) ? (
+            <>
+              <p className="mt-design-2 text-caption text-ink-secondary" data-testid="claim-stage">
+                {t("stageTitle")}: <span className="font-semibold text-ink-primary">{t(`stageLabels.${stage}`)}</span>
+              </p>
+              <p className="mt-design-1 text-body text-ink-secondary">{t(`stageNext.${stage}`)}</p>
+            </>
+          ) : (
+            known && (
+              <p className="mt-design-2 text-body text-ink-secondary">
+                {t(`nextStep.${statusKey(status)}`)}
+              </p>
+            )
           )}
         </div>
 
         {onJourney && <ClaimProgress status={status} />}
 
         <dl className="grid grid-cols-1 gap-design-3 sm:grid-cols-2">
-          {showApprovedAmount({ status, approved_amount }) && (
-            // The figure the family is actually waiting for. Given its own tile and set at display
-            // size: in the previous card it sat in body text, the same weight as the date beside it.
-            <div className="rounded-sm bg-forest-pale px-design-4 py-design-3">
-              <dt className="text-caption text-ink-secondary">{t("approvedAmount")}</dt>
+          {showFinalAmount({ status, final_amount }) && (
+            // The figure the family is actually waiting for -- and only once it is the Divisional
+            // Secretariat's recorded decision. The AI-assisted estimate and the DWC recommendation
+            // never reach this page (backend status.py).
+            <div className="rounded-sm bg-forest-pale px-design-4 py-design-3" data-testid="final-amount">
+              <dt className="text-caption text-ink-secondary">{t("finalAmount")}</dt>
               <dd className="mt-design-1 text-display text-forest">
-                LKR {approved_amount!.toLocaleString(locale)}
+                LKR {final_amount!.toLocaleString(locale)}
               </dd>
+              <dd className="mt-design-1 text-caption text-ink-secondary">{t("finalAmountNote")}</dd>
             </div>
           )}
           <div className="rounded-sm bg-surface-base px-design-4 py-design-3">

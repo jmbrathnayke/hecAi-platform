@@ -15,6 +15,10 @@ export interface AdminCaseFilters {
   to: string;
   type: string;
   division: string;
+  /** "" | "assessed" | "pending" (final governance workflow). */
+  assessment: string;
+  /** Responsible officer account id, exact. */
+  officer: string;
 }
 
 export const EMPTY_FILTERS: AdminCaseFilters = {
@@ -23,6 +27,8 @@ export const EMPTY_FILTERS: AdminCaseFilters = {
   to: "",
   type: "",
   division: "",
+  assessment: "",
+  officer: "",
 };
 
 const DAMAGE_TYPE_OPTIONS = ["crop", "property", "combined"];
@@ -50,6 +56,8 @@ export function FilterBar({ value, onApply, onClear }: FilterBarProps) {
       to: String(form.get("to") ?? ""),
       type: String(form.get("type") ?? ""),
       division: String(form.get("division") ?? ""),
+      assessment: String(form.get("assessment") ?? ""),
+      officer: String(form.get("officer") ?? ""),
     });
   }
 
@@ -143,6 +151,38 @@ export function FilterBar({ value, onApply, onClear }: FilterBarProps) {
           type="text"
           defaultValue={value.division}
           placeholder={t("filter.divisionPlaceholder")}
+          className="min-h-touch-target w-full rounded-md border border-border-default bg-surface-raised px-design-3 text-body text-ink-primary sm:w-auto"
+        />
+      </div>
+
+      {/* Final governance workflow: organise the queue by whether a field officer has verified the
+          report, and by the officer responsible for it. */}
+      <div className="flex w-full flex-col gap-design-1 sm:w-auto">
+        <label htmlFor="filter-assessment" className="text-label font-medium text-ink-secondary">
+          {t("filter.assessment")}
+        </label>
+        <select
+          id="filter-assessment"
+          name="assessment"
+          defaultValue={value.assessment}
+          className="min-h-touch-target w-full rounded-md border border-border-default bg-surface-raised px-design-3 text-body text-ink-primary sm:w-auto"
+        >
+          <option value="">{t("filter.assessmentAll")}</option>
+          <option value="assessed">{t("filter.assessmentAssessed")}</option>
+          <option value="pending">{t("filter.assessmentPending")}</option>
+        </select>
+      </div>
+
+      <div className="flex w-full flex-col gap-design-1 sm:w-auto">
+        <label htmlFor="filter-officer" className="text-label font-medium text-ink-secondary">
+          {t("filter.officer")}
+        </label>
+        <input
+          id="filter-officer"
+          name="officer"
+          type="text"
+          defaultValue={value.officer}
+          placeholder={t("filter.officerPlaceholder")}
           className="min-h-touch-target w-full rounded-md border border-border-default bg-surface-raised px-design-3 text-body text-ink-primary sm:w-auto"
         />
       </div>

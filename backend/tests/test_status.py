@@ -3,7 +3,7 @@
 Public, no-auth lookup. The DB is faked: a FakeConn/FakeCursor returns a canned row for
 the SELECT the endpoint issues. We verify reference routing (UUID vs canonical), 404 on
 miss, 400 on malformed input, that ONLY status metadata is returned (no PII — CRITICAL #1),
-and that approved_amount appears only for Approved cases.
+and that only the Divisional Secretariat's final amount is ever shown.
 """
 from datetime import datetime, timezone
 
@@ -17,7 +17,9 @@ HEC_REF = "HEC-2026-0001"
 UPDATED = datetime(2026, 6, 30, 10, 0, 0, tzinfo=timezone.utc)
 
 # A full DB row mirrors the SELECT column order:
-# (canonical_id, offline_id, status, updated_at, approved_amount)
+# (canonical_id, offline_id, status, updated_at, ds_final_amount, ds_final_at,
+#  officer_review_started_at, officer_assessed_at, submitted_by_officer)
+# Short test rows are padded with None/False by make_client.
 PII_LEAK_GUARD = ("mobile", "submitter", "identity", "audit", "damage")
 
 
@@ -62,6 +64,8 @@ class FakeConn:
 
 
 def make_client(monkeypatch, row):
+    if row is not None and len(row) < 9:
+        row = tuple(row) + (None,) * (8 - len(row)) + (False,)
     captured = {}
     app = create_app({"TESTING": True, "DATABASE_URL": "postgresql://fake"})
     monkeypatch.setattr(
@@ -168,28 +172,67 @@ def test_v1_uuid_is_rejected(monkeypatch):
 
 
 def test_response_excludes_pii(monkeypatch):
-    row = (HEC_REF, UUID_REF, "Submitted", UPDATED, None)
+    row = (HEC_REF, UUID_REF, "Submitted", UPDATED)
     client, _ = make_client(monkeypatch, row)
     res = client.get(f"/api/v1/cases/status/{UUID_REF}")
     keys = set(res.get_json().keys())
-    assert keys == {"canonical_id", "offline_id", "status", "updated_at"}
+    assert keys == {"canonical_id", "offline_id", "status", "stage", "updated_at"}
     blob = res.get_data(as_text=True).lower()
     for forbidden in PII_LEAK_GUARD:
         assert forbidden not in blob
 
 
-def test_approved_amount_present_only_when_approved(monkeypatch):
-    row = (HEC_REF, UUID_REF, "Approved", UPDATED, 50000)
+DECIDED = datetime(2026, 7, 2, 9, 0, 0, tzinfo=timezone.utc)
+
+
+def test_the_ds_final_amount_is_shown_once_decided(monkeypatch):
+    row = (HEC_REF, UUID_REF, "Approved", UPDATED, 50000, DECIDED)
     client, _ = make_client(monkeypatch, row)
-    res = client.get(f"/api/v1/cases/status/{HEC_REF}")
-    data = res.get_json()
+    data = client.get(f"/api/v1/cases/status/{HEC_REF}").get_json()
     assert data["status"] == "Approved"
-    assert data["approved_amount"] == 50000.0
+    assert data["stage"] == "ds_final_decided"
+    assert data["final_amount"] == 50000.0
 
 
-def test_approved_amount_hidden_when_not_approved(monkeypatch):
-    # Even if a stray amount exists in the row, it must not leak unless status is Approved.
-    row = (HEC_REF, UUID_REF, "Rejected", UPDATED, 50000)
+def test_the_final_amount_stays_visible_after_payment(monkeypatch):
+    row = (HEC_REF, UUID_REF, "Payment Processed", UPDATED, 50000, DECIDED)
     client, _ = make_client(monkeypatch, row)
-    res = client.get(f"/api/v1/cases/status/{HEC_REF}")
-    assert "approved_amount" not in res.get_json()
+    data = client.get(f"/api/v1/cases/status/{HEC_REF}").get_json()
+    assert data["stage"] == "payment_processed"
+    assert data["final_amount"] == 50000.0
+
+
+def test_no_amount_before_the_ds_final_decision(monkeypatch):
+    """Approved by DWC but not yet decided by the Divisional Secretariat: the administrator's
+    recommendation and the AI-assisted estimate are not the family's compensation."""
+    row = (HEC_REF, UUID_REF, "Approved", UPDATED, None, None)
+    client, captured = make_client(monkeypatch, row)
+    data = client.get(f"/api/v1/cases/status/{HEC_REF}").get_json()
+    assert data["stage"] == "dwc_approved"
+    assert "final_amount" not in data
+    assert "approved_amount" not in data
+    # The endpoint does not even read the non-final amounts.
+    assert "approved_amount" not in captured["sql"]
+    assert "compensation_estimates" not in captured["sql"]
+
+
+def test_amount_hidden_when_rejected(monkeypatch):
+    # Even if a stray amount exists in the row, it must not leak for a rejected case.
+    row = (HEC_REF, UUID_REF, "Rejected", UPDATED, 50000, DECIDED)
+    client, _ = make_client(monkeypatch, row)
+    data = client.get(f"/api/v1/cases/status/{HEC_REF}").get_json()
+    assert "final_amount" not in data
+    assert data["stage"] == "rejected"
+
+
+@pytest.mark.parametrize("row,stage", [
+    ((HEC_REF, UUID_REF, "Submitted", UPDATED, None, None, None, None, False), "submitted"),
+    ((HEC_REF, UUID_REF, "Under Review", UPDATED, None, None, UPDATED, None, False),
+     "officer_review"),
+    ((HEC_REF, UUID_REF, "Under Review", UPDATED, None, None, UPDATED, UPDATED, False),
+     "officer_assessed"),
+    ((HEC_REF, UUID_REF, "Submitted", UPDATED, None, None, None, None, True), "officer_assessed"),
+])
+def test_the_citizen_can_see_the_workflow_stage(monkeypatch, row, stage):
+    client, _ = make_client(monkeypatch, row)
+    assert client.get(f"/api/v1/cases/status/{HEC_REF}").get_json()["stage"] == stage

@@ -1,7 +1,7 @@
 "use client";
 // Step 1 of the incident form: citizen identity (NIC + mobile).
 // NIC and mobile are AES-GCM encrypted (NFR-3.1) BEFORE any IndexedDB write.
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { useRouter } from "@/navigation";
 import { StepIndicator } from "@/components/StepIndicator";
@@ -9,7 +9,8 @@ import { isValidNIC, isValidMobile } from "@/lib/validation";
 import { getOrCreateSessionKey, encryptField } from "@/lib/crypto";
 import { getCase, putCase } from "@/lib/indexeddb";
 import { getOrCreateDraftId } from "@/lib/draft";
-import { getMyHousehold } from "@/lib/households";
+import { checkRegistration, type RegistrationState } from "@/lib/registrationState";
+import { RegistrationStateNotice } from "@/components/RegistrationStateNotice";
 
 export default function IdentityStep() {
   const t = useTranslations("report");
@@ -27,21 +28,26 @@ export default function IdentityStep() {
   // with 403 not_registered; without this check a citizen would fill in four steps and take
   // photographs at the damage site before being told they cannot file. Checked here, at the
   // entrance, so the cost of being unregistered is one screen instead of the whole form.
-  const [gate, setGate] = useState<"checking" | "registered" | "unregistered">("checking");
+  //
+  // Five outcomes, not two (lib/registrationState.ts). Until 2026-09 "no session" and "API
+  // unreachable" were both shown as "register your family first", which told registered families
+  // to register again whenever the signal dropped.
+  const [gate, setGate] = useState<RegistrationState | { kind: "checking" }>({ kind: "checking" });
+  const gateT = useTranslations("registrationGate");
+
+  const runCheck = useCallback(async (isActive: () => boolean = () => true) => {
+    setGate({ kind: "checking" });
+    const state = await checkRegistration();
+    if (isActive()) setGate(state);
+  }, []);
 
   useEffect(() => {
     let active = true;
-    void (async () => {
-      const household = await getMyHousehold();
-      // getMyHousehold() returns null for 404, for no session, and for an unreachable API.
-      // All three land on the same screen deliberately: each ends with the citizen needing
-      // to register or sign in, and none lets the form usefully proceed.
-      if (active) setGate(household ? "registered" : "unregistered");
-    })();
+    void runCheck(() => active);
     return () => {
       active = false;
     };
-  }, []);
+  }, [runCheck]);
 
   function validate(): boolean {
     const nicErr = isValidNIC(nic) ? null : t("step1.nicError");
@@ -85,23 +91,21 @@ export default function IdentityStep() {
     }
   }
 
-  if (gate === "checking") {
+  if (gate.kind === "checking") {
+    return <RegistrationStateNotice kind="checking" />;
+  }
+
+  if (gate.kind === "unauthenticated" || gate.kind === "unavailable") {
     return (
-      <main
-        className="mx-auto flex w-full max-w-md flex-col items-center gap-design-4 px-design-5 py-design-7"
-        role="status"
-        aria-live="polite"
-      >
-        <span
-          className="h-8 w-8 animate-spin rounded-full border-2 border-border-default border-t-forest"
-          aria-hidden="true"
-        />
-        <p className="text-body text-ink-secondary">{t("gate.checking")}</p>
-      </main>
+      <RegistrationStateNotice
+        kind={gate.kind}
+        onRetry={() => void runCheck()}
+        onSignIn={() => router.push("/login")}
+      />
     );
   }
 
-  if (gate === "unregistered") {
+  if (gate.kind === "not-registered") {
     return (
       <main
         className="mx-auto flex w-full max-w-md flex-col gap-design-6 px-design-5 py-design-6"
@@ -127,6 +131,12 @@ export default function IdentityStep() {
   return (
     <main className="mx-auto flex w-full max-w-md flex-col gap-design-6 px-design-5 py-design-6">
       <StepIndicator steps={steps} currentStep={0} />
+
+      {gate.source === "cached" && (
+        <p role="status" className="rounded-md bg-surface-tint px-design-4 py-design-3 text-caption text-ink-secondary">
+          {gateT("offlineConfirmed", { ref: gate.householdRef })}
+        </p>
+      )}
 
       <header>
         <h1 className="text-title font-bold text-ink-primary">{t("step1.title")}</h1>

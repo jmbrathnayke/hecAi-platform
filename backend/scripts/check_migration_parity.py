@@ -51,6 +51,13 @@ _RE_ADD_COLUMN = re.compile(
 _RE_CREATE_INDEX = re.compile(
     r"^\s*CREATE\s+(?:UNIQUE\s+)?INDEX\s+(?:CONCURRENTLY\s+)?(?:IF\s+NOT\s+EXISTS\s+)?([A-Za-z_][\w]*)",
     re.I | re.M)
+# Removals (migration 034 retired SMS). A later migration that drops an object means the repo no
+# longer declares it; without these the checker would demand objects the schema deliberately lost.
+_RE_DROP_TABLE = re.compile(
+    r"^\s*DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?([A-Za-z_][\w]*)", re.I | re.M)
+_RE_DROP_COLUMN = re.compile(
+    r"^\s*ALTER\s+TABLE\s+([A-Za-z_][\w]*)\s+DROP\s+COLUMN\s+(?:IF\s+EXISTS\s+)?([A-Za-z_][\w]*)",
+    re.I | re.M)
 
 # Postgres creates these itself; no migration declares them, and reporting them as drift would
 # bury the real signal under noise on every run.
@@ -94,6 +101,14 @@ def parse_migrations():
         for index in _RE_CREATE_INDEX.findall(sql):
             declared["indexes"].add(index.lower())
             sources[("index", index.lower())] = path.name
+        # Applied after this file's creates: files run in filename order, and no migration here
+        # creates and drops the same object in one file.
+        for table in _RE_DROP_TABLE.findall(sql):
+            name = table.lower()
+            declared["tables"].discard(name)
+            declared["columns"] = {c for c in declared["columns"] if not c.startswith(name + ".")}
+        for table, column in _RE_DROP_COLUMN.findall(sql):
+            declared["columns"].discard(f"{table.lower()}.{column.lower()}")
 
     return declared, sources, files
 

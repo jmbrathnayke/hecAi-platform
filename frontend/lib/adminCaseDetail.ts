@@ -39,6 +39,8 @@ export interface AdminAiResult {
 }
 
 export interface AdminCompensation {
+  /** Always false: the Random Forest output is an AI-assisted estimate, never the decision. */
+  is_final_decision?: false;
   amount_lkr: number;
   raw_estimate_lkr: number;
   capped: boolean;
@@ -58,11 +60,28 @@ export interface AdminAuditEntry {
   prev_hash: string | null;
 }
 
+/** Final governance workflow checkpoints (migration 033). */
+export interface AdminWorkflow {
+  stage: string;
+  district: string | null;
+  ds_division: string | null;
+  responsible_officer_id: string | null;
+  officer_review_started_at: string | null;
+  officer_assessed_at: string | null;
+  officer_assessed_by: string | null;
+  officer_assessed: boolean;
+  ds_final_amount: number | null;
+  ds_final_reason: string | null;
+  ds_final_at: string | null;
+}
+
 export interface AdminCaseDetailResponse {
   case: AdminCaseDetailCase;
   ai_result: AdminAiResult | null;
   compensation: AdminCompensation | null;
   audit_trail: AdminAuditEntry[];
+  /** Optional so a response from an older backend still renders. */
+  workflow?: AdminWorkflow;
 }
 
 export interface VerifyChainResult {

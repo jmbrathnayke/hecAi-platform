@@ -13,7 +13,7 @@ from flask import Blueprint, current_app, jsonify, request
 from app.api.v1.middleware.auth import authenticated_claims, authz_role
 from app.infrastructure import registry
 from app.infrastructure.audit import write_audit_log
-from app.infrastructure.push.push_service import notify_staff_push
+from app.infrastructure import workflow_events
 from app.infrastructure.ml import compensation
 
 cases_bp = Blueprint("cases", __name__)
@@ -192,16 +192,21 @@ def submit_case():
                     cur, case_id, damage_category, ds_division, datetime.now(timezone.utc),
                     district=district, ai_severity=ai_severity,
                 )
-                # FR-6.4: a submitted case is work arriving for two roles at once -- the field
-                # officers covering the division, and the administrator responsible for the
-                # district. Both are best-effort: notify_staff_push never raises, which matters
-                # more here than anywhere else in the platform, because an exception inside this
-                # transaction would roll back the citizen's SUBMISSION rather than merely the
-                # announcement of it.
-                notify_staff_push(cur, case_id, "case_submitted", "officer",
-                                  ds_division, canonical_id, claims.get("sub"))
-                notify_staff_push(cur, case_id, "case_submitted", "admin",
-                                  district, canonical_id, claims.get("sub"))
+                # An officer-assisted submission is the officer's verification and on-device AI
+                # assessment at the same moment, so it enters the workflow already assessed.
+                if submitted_by_officer:
+                    workflow_events.record_officer_assisted_assessment(
+                        cur, case_id, offline_id, officer_id, body.get("ai_classification"),
+                        ai_severity,
+                    )
+                # FR-6.4, role- and event-appropriate: a citizen's report goes to the field
+                # officers of ITS division, who must verify it; an officer-assessed case goes to
+                # the district administrator. The citizen is sent a "Submitted" confirmation. None
+                # of this raises -- an exception here would roll back the SUBMISSION itself.
+                workflow_events.announce_submission(
+                    cur, case_id, canonical_id, submitted_by_officer, district, ds_division,
+                    claims.get("sub"),
+                )
         return jsonify({"canonical_id": canonical_id, "offline_id": offline_id}), 201
     finally:
         conn.close()

@@ -1,13 +1,12 @@
 """Outbound Web Push wrapper.
 
-The third sibling of sms/twilio_client.py and email/sendgrid_client.py, and the same shape: never
-raises, reads credentials from `current_app.config`, and is a thin enough seam that tests can
+The sibling of email/sendgrid_client.py, and the same shape: never raises, reads credentials from `current_app.config`, and is a thin enough seam that tests can
 monkeypatch `send_push` with no network and no keys.
 
-It differs from the other two in one way that matters: there is no vendor. Web Push is a W3C
+It differs from email in one way that matters: there is no vendor. Web Push is a W3C
 standard delivered by the browser's own push service (FCM for Chrome, Mozilla's for Firefox), and
 the server authenticates with a VAPID keypair it generates itself. No account, no contract, and no
-registered business entity -- which is precisely the wall that stopped SMS (§7.2).
+registered business entity.
 
 Returns a small result object rather than a bare bool, because the caller must distinguish "this
 failed, try again next time" from "this subscription is dead, delete the row". A push service
@@ -46,7 +45,7 @@ def push_configured() -> bool:
 def send_push(endpoint: str, p256dh: str, auth: str, payload: dict) -> PushResult:
     """Deliver one encrypted push message to one browser subscription.
 
-    Never raises, for the same reason send_sms and send_email never raise: this runs inside the
+    Never raises, for the same reason send_email never raises: this runs inside the
     same database transaction as a case's already-applied status write, and an exception here
     would roll back the transition the message was announcing.
     """
