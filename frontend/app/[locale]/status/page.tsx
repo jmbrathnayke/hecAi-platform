@@ -28,7 +28,9 @@ export default function StatusPage() {
   const [showScanner, setShowScanner] = useState(false);
 
   async function handleCheck(ref: string = reference) {
-    const trimmed = ref.trim();
+    // No reference contains whitespace, so any is a transcription slip ("HEC-2026- 0281" typed from
+    // a printed receipt), not a different reference.
+    const trimmed = ref.replace(/\s+/g, "");
     if (!trimmed || loading) return;
     setResult(null);
     // Client-side format gate avoids a pointless request and never reveals server internals.

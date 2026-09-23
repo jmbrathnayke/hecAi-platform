@@ -28,6 +28,13 @@ jest.mock("next/link", () => {
   return { __esModule: true, default: Link };
 });
 
+// The account menu has its own tests (StaffAccountMenu.test.tsx); here it only has to be mounted.
+jest.mock("@/components/StaffAccountMenu", () => ({
+  StaffAccountMenu: ({ loginPath }: { loginPath: string }) => (
+    <div data-testid="account-menu" data-login={loginPath} />
+  ),
+}));
+
 const mockUsePathname = usePathname as jest.Mock;
 
 function renderAt(pathname: string) {
@@ -80,6 +87,12 @@ describe("AdminShell", () => {
     screen
       .getAllByRole("link", { current: "page" })
       .forEach((link) => expect(link).toHaveAttribute("href", "/admin/settings/caps"));
+  });
+
+  it("puts the account menu in the top bar, signing out to the admin login", () => {
+    renderAt("/admin/cases");
+    const banner = screen.getByRole("banner");
+    expect(within(banner).getByTestId("account-menu")).toHaveAttribute("data-login", "/admin/login");
   });
 
   it("renders NO navigation on the login route", () => {

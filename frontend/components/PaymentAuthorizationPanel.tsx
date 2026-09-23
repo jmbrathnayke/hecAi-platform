@@ -16,6 +16,8 @@ interface Props {
   canonicalId: string;
   t: (key: string, values?: Record<string, string | number>) => string;
   onClose: () => void;
+  /** Offered when the family has given no account: the DS office records one (Epic 8 gap). */
+  onRecordBankDetails?: () => void;
 }
 
 /** Which message explains this refusal. Each has a different person who must act on it. */
@@ -42,7 +44,7 @@ function failureKey(f: PaymentFailure): string {
   }
 }
 
-export function PaymentAuthorizationPanel({ canonicalId, t, onClose }: Props) {
+export function PaymentAuthorizationPanel({ canonicalId, t, onClose, onRecordBankDetails }: Props) {
   const [busy, setBusy] = useState(false);
   const [auth, setAuth] = useState<PaymentAuthorization | null>(null);
   const [failure, setFailure] = useState<PaymentFailure | null>(null);
@@ -86,6 +88,18 @@ export function PaymentAuthorizationPanel({ canonicalId, t, onClose }: Props) {
         <p role="alert" className="text-body text-status-error">
           {t(failureKey(failure))}
         </p>
+      )}
+
+      {/* The one refusal this screen can resolve itself: the family gave no account, and this is
+          the office that records one. */}
+      {failure?.reason === "no-bank-details" && onRecordBankDetails && (
+        <button
+          type="button"
+          onClick={onRecordBankDetails}
+          className="min-h-touch-target self-start rounded-md border border-forest px-design-4 text-label font-semibold text-forest"
+        >
+          {t("bankDetails.record")}
+        </button>
       )}
 
       {auth && (

@@ -19,6 +19,8 @@ import type { PoCRecord } from "@/lib/poc";
 interface PoCCardProps {
   poc: PoCRecord;
   canonicalId: string | null;
+  /** The server may still return the HEC number: say so instead of showing the offline UUID. */
+  awaitingReference?: boolean;
 }
 
 // `ai_severity` is a free-form string on PoCRecord; guard it the same way the admin components
@@ -26,7 +28,7 @@ interface PoCCardProps {
 // missing-message placeholder.
 const SEVERITY_VALUES = new Set(["None", "Minor", "Moderate", "Severe"]);
 
-export function PoCCard({ poc, canonicalId }: PoCCardProps) {
+export function PoCCard({ poc, canonicalId, awaitingReference = false }: PoCCardProps) {
   const t = useTranslations("poc");
   const tReport = useTranslations("report");
   // The citizen layout loads the whole locale bundle via getMessages(), so the officer
@@ -75,11 +77,20 @@ export function PoCCard({ poc, canonicalId }: PoCCardProps) {
 
       {/* Reference number */}
       <p className="mt-design-4 text-caption uppercase tracking-wide opacity-70">
-        {t("canonicalLabel")}
+        {canonicalId || awaitingReference ? t("canonicalLabel") : t("temporaryLabel")}
       </p>
-      {/* break-all: an unsynced receipt shows a 36-char UUID here, which must wrap inside the
-          card rather than overflow it on a 360px screen. */}
-      <p className="select-all break-all text-title font-bold tracking-wide">{reference}</p>
+      {awaitingReference ? (
+        <p role="status" className="text-title font-bold tracking-wide opacity-80">
+          {t("assigningRef")}
+        </p>
+      ) : (
+        // break-all: an unsynced receipt shows a 36-char UUID here, which must wrap inside the
+        // card rather than overflow it on a 360px screen.
+        <p className="select-all break-all text-title font-bold tracking-wide">{reference}</p>
+      )}
+      {!canonicalId && !awaitingReference && (
+        <p className="mt-design-1 text-caption opacity-80">{t("temporaryHint")}</p>
+      )}
 
       {/* Detail rows */}
       <dl className="mt-design-4 flex flex-col divide-y divide-white/20 border-y border-white/20">

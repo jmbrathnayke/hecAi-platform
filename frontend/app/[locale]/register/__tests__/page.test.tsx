@@ -50,6 +50,14 @@ beforeEach(() => {
   window.localStorage.clear();
 });
 
+const ADDRESS = "No. 12, Tank Road, Thalawa";
+
+/** The area step needs a picked district/division AND a home address (migration 035). */
+function pickAreaAndAddress(address = ADDRESS) {
+  fireEvent.click(screen.getByText("pick-area"));
+  fireEvent.change(screen.getByLabelText("step3.addressLabel"), { target: { value: address } });
+}
+
 /** Fill step 1 with a valid NIC and advance. */
 function completeStep1(nic = NIC_CURRENT) {
   fireEvent.change(screen.getByLabelText("step1.nic"), { target: { value: nic } });
@@ -60,7 +68,7 @@ function completeStep1(nic = NIC_CURRENT) {
 function reachStep3(nic = NIC_CURRENT) {
   completeStep1(nic);
   fireEvent.click(screen.getByText("next")); // skip the family step
-  fireEvent.click(screen.getByText("pick-area"));
+  pickAreaAndAddress();
   fireEvent.click(screen.getByText("next")); // Story 8.6 added the optional bank step
 }
 
@@ -152,6 +160,17 @@ describe("submission", () => {
     expect(mockRegister).not.toHaveBeenCalled();
   });
 
+  it("will not leave the area step without a home address", () => {
+    render(<RegisterHouseholdPage />);
+    completeStep1();
+    fireEvent.click(screen.getByText("next"));
+    pickAreaAndAddress("   ");
+    fireEvent.click(screen.getByText("next"));
+    expect(screen.getByRole("alert")).toHaveTextContent("step3.addressError");
+    expect(screen.getByText("step3.title")).toBeInTheDocument();
+    expect(mockRegister).not.toHaveBeenCalled();
+  });
+
   it("posts the registrant, members and area", async () => {
     render(<RegisterHouseholdPage />);
     completeStep1();
@@ -160,7 +179,7 @@ describe("submission", () => {
       target: { value: NIC_MEMBER },
     });
     fireEvent.click(screen.getByText("next"));
-    fireEvent.click(screen.getByText("pick-area"));
+    pickAreaAndAddress();
     fireEvent.click(screen.getByText("next"));
     fireEvent.click(screen.getByText("submit"));
 
@@ -309,7 +328,7 @@ describe("PII discipline (NFR-3.1)", () => {
       target: { value: NIC_MEMBER },
     });
     fireEvent.click(screen.getByText("next"));
-    fireEvent.click(screen.getByText("pick-area"));
+    pickAreaAndAddress();
     fireEvent.click(screen.getByText("next"));
     fireEvent.click(screen.getByText("submit"));
     await screen.findByTestId("registration-receipt");

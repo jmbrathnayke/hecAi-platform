@@ -1,6 +1,6 @@
 // Household registration state for the citizen app (FR-10.3 gate, final governance workflow).
 //
-// WHY THIS EXISTS. getMyHousehold() returns null for "no household", for "not signed in" AND for
+// WHY THIS EXISTS. The old getMyHousehold() returned null for "no household", for "not signed in" AND for
 // "the API could not be reached". The report page showed all three as "Register your family first",
 // so a family that had registered was told to register again whenever the network dropped, and
 // the registration page showed its form to a citizen who had already completed it. These are five
@@ -27,7 +27,14 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
 export const REGISTRATION_CACHE_KEY = "hec-registration-confirmed";
 
 export type RegistrationState =
-  | { kind: "registered"; householdRef: string; source: "server" | "cached" }
+  | {
+      kind: "registered";
+      householdRef: string;
+      source: "server" | "cached";
+      /** Present only from the server; the offline cache deliberately keeps the reference alone. */
+      district?: string;
+      dsDivision?: string;
+    }
   | { kind: "not-registered" }
   | { kind: "unauthenticated" }
   | { kind: "unavailable" };
@@ -134,12 +141,22 @@ export async function checkRegistration(): Promise<RegistrationState> {
   if (!res.ok) return { kind: "unavailable" };
 
   try {
-    const body = (await res.json()) as { household_ref?: unknown };
+    const body = (await res.json()) as {
+      household_ref?: unknown;
+      district?: unknown;
+      ds_division?: unknown;
+    };
     if (typeof body.household_ref !== "string" || !body.household_ref) {
       return { kind: "unavailable" };
     }
     if (account) rememberRegistration(account, body.household_ref);
-    return { kind: "registered", householdRef: body.household_ref, source: "server" };
+    return {
+      kind: "registered",
+      householdRef: body.household_ref,
+      source: "server",
+      ...(typeof body.district === "string" ? { district: body.district } : {}),
+      ...(typeof body.ds_division === "string" ? { dsDivision: body.ds_division } : {}),
+    };
   } catch {
     return { kind: "unavailable" };
   }

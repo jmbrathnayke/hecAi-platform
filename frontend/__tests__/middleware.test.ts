@@ -85,6 +85,38 @@ test("/auth/callback/ (trailing slash) is bypassed too, so the ?code is not 307'
   expect(innerIntlMiddleware()).not.toHaveBeenCalled();
 });
 
+// Supabase can only redirect an emailed sign-in link to the site root, so its PKCE code arrives on
+// the home page. Left there, nothing exchanges it and the citizen is never signed in.
+const AUTH_CODE = "3f2b8c1e-9a4d-4e7f-b6c5-1d2e3f4a5b6c";
+
+test.each([
+  ["/", "%2F"],
+  ["/si", "%2Fsi"],
+  ["/en/", "%2Fen%2F"],
+])("a sign-in code landing on %s is forwarded to /auth/callback", async (landing, next) => {
+  const req = new NextRequest(new URL(`http://localhost${landing}?code=${AUTH_CODE}`));
+  const res = await middleware(req);
+  expect(res.status).toBe(307);
+  expect(res.headers.get("location")).toBe(
+    `http://localhost/auth/callback?code=${AUTH_CODE}&next=${next}`,
+  );
+  expect(innerIntlMiddleware()).not.toHaveBeenCalled();
+});
+
+test("a non-UUID ?code on the home page is not treated as a sign-in code", async () => {
+  const req = new NextRequest(new URL("http://localhost/?code=HEC-2026-0001"));
+  const res = await middleware(req);
+  expect(res.headers.get("location")).toBeNull();
+  expect(innerIntlMiddleware()).toHaveBeenCalled();
+});
+
+test("a UUID ?code on a page other than home is left alone", async () => {
+  const req = new NextRequest(new URL(`http://localhost/en/report?code=${AUTH_CODE}`));
+  const res = await middleware(req);
+  expect(res.headers.get("location")).toBeNull();
+  expect(innerIntlMiddleware()).toHaveBeenCalled();
+});
+
 test("/officerx (boundary, not an officer route) is not treated as protected", async () => {
   const req = new NextRequest(new URL("http://localhost/officerx"));
   await middleware(req);
@@ -278,4 +310,27 @@ test("/systemx (boundary) is not treated as a system route", async () => {
   await middleware(new NextRequest(new URL("http://localhost/systemx")));
   expect(mockGetUser).not.toHaveBeenCalled();
   expect(innerIntlMiddleware()).toHaveBeenCalled();
+});
+
+// Citizen account views. Only these are gated: report/* and status/* stay public.
+test.each(["/en/my-cases", "/si/profile", "/ta/profile/"])(
+  "signed-out %s redirects to that locale's login",
+  async (path) => {
+    mockGetUser.mockResolvedValue({ data: { user: null } });
+    const res = await middleware(new NextRequest(new URL(`http://localhost${path}`)));
+    expect(res.status).toBe(307);
+    expect(res.headers.get("location")).toBe(`http://localhost/${path.split("/")[1]}/login`);
+  },
+);
+
+test("a signed-in citizen reaches /en/profile through the locale middleware", async () => {
+  mockGetUser.mockResolvedValue({ data: { user: { id: "citizen-1" } } });
+  const res = await middleware(new NextRequest(new URL("http://localhost/en/profile")));
+  expect(res.headers.get("location")).toBeNull();
+  expect(innerIntlMiddleware()).toHaveBeenCalled();
+});
+
+test("the public report form stays ungated", async () => {
+  await middleware(new NextRequest(new URL("http://localhost/en/report")));
+  expect(mockGetUser).not.toHaveBeenCalled();
 });

@@ -17,7 +17,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
-import { createClient } from "@/lib/supabase";
+import { signOutCitizen } from "@/lib/citizenSession";
 import {
   fetchMyCases,
   isRetryable,
@@ -92,11 +92,7 @@ export default function MyCasesPage() {
   }
 
   async function handleSignOut() {
-    try {
-      await createClient().auth.signOut();
-    } catch {
-      // Best-effort; navigate away regardless.
-    }
+    await signOutCitizen();
     router.push(`/${locale}/login`);
   }
 

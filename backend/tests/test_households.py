@@ -44,6 +44,7 @@ def _payload(nic=NIC_CURRENT, members=None, **over):
         "full_name": "Test Registrant",
         "district": DISTRICT,
         "ds_division": DIVISION,
+        "address": "No. 12, Tank Road, Thalawa",
         "members": members if members is not None else [],
     }
     body.update(over)
@@ -115,14 +116,14 @@ class FakeCursor:
             self.store["seq"] += 1
             self._one = (self.store["seq"],)
         elif s.startswith("INSERT INTO households"):
-            ref, district, ds_division, gn, uid, bank_ct, bank_last4, contact_email = params
+            ref, district, ds_division, gn, uid, bank_ct, bank_last4, contact_email, address = params
             new_id = len(self.store["households"]) + 1
             self.store["households"].append({
                 "id": new_id, "household_ref": ref, "district": district,
                 "ds_division": ds_division, "gn_division": gn, "registrant_uid": uid,
                 "status": "active", "registered_at": None,
                 "bank_details_ciphertext": bank_ct, "bank_account_last4": bank_last4,
-                "contact_email": contact_email,
+                "contact_email": contact_email, "address": address,
             })
             self._one = (new_id,)
         elif s.startswith("INSERT INTO household_members"):
@@ -132,7 +133,21 @@ class FakeCursor:
             hit = next((h for h in self.store["households"]
                         if h["registrant_uid"] == params[0] and h["status"] == "active"), None)
             self._one = (hit["id"], hit["household_ref"], hit["district"], hit["ds_division"],
-                         hit["gn_division"], hit["status"], hit["registered_at"]) if hit else None
+                         hit["gn_division"], hit["status"], hit["registered_at"], hit["address"],
+                         hit["contact_email"], hit["bank_account_last4"]) if hit else None
+        elif s.startswith("SELECT id, household_ref, address, contact_email"):
+            # PATCH /me: the caller's household, locked for update.
+            hit = next((h for h in self.store["households"]
+                        if h["registrant_uid"] == params[0] and h["status"] == "active"), None)
+            self._one = (hit["id"], hit["household_ref"], hit["address"], hit["contact_email"],
+                         hit["gn_division"], hit["bank_details_ciphertext"],
+                         hit["bank_account_last4"]) if hit else None
+        elif s.startswith("UPDATE households SET address"):
+            address, contact_email, gn, bank_ct, bank_last4, household_id = params
+            h = next(h for h in self.store["households"] if h["id"] == household_id)
+            h.update(address=address, contact_email=contact_email, gn_division=gn,
+                     bank_details_ciphertext=bank_ct, bank_account_last4=bank_last4)
+            self._one = None
         elif "SELECT full_name, relationship, is_registrant" in s:
             self._rows = [(m["full_name"], m["relationship"], m["is_registrant"])
                           for m in self.store["members"] if m["household_id"] == params[0]]
@@ -319,6 +334,26 @@ def test_requires_district_and_division(client, missing):
     assert res.get_json()["error"] == "missing_fields"
 
 
+@pytest.mark.parametrize("address", [None, "", "   ", 42])
+def test_requires_an_address(client, store, address):
+    body = _payload(address=address)
+    if address is None:
+        del body["address"]
+    res = client.post("/api/v1/households", json=body, headers=_auth())
+    assert res.status_code == 400
+    assert res.get_json() == {"error": "missing_fields", "fields": ["address"]}
+    assert store["households"] == []
+
+
+def test_address_is_stored_trimmed_and_capped(client, store):
+    res = client.post("/api/v1/households",
+                      json=_payload(address="  No. 7, Wewa Road  " + "x" * 400), headers=_auth())
+    assert res.status_code == 201
+    stored = store["households"][0]["address"]
+    assert stored.startswith("No. 7, Wewa Road")
+    assert len(stored) == 300
+
+
 @pytest.mark.parametrize("bad", ["", "12345", "abcdefghiV", None])
 def test_rejects_a_malformed_registrant_nic(client, bad):
     res = client.post("/api/v1/households", json=_payload(nic=bad), headers=_auth())
@@ -416,6 +451,24 @@ def test_me_returns_the_household_and_its_members(client):
     assert body["status"] == "active"
     assert len(body["members"]) == 2
     assert body["members"][0]["is_registrant"] is True
+
+
+def test_me_returns_the_callers_own_address_contact_and_account_tail_only(client):
+    client.post("/api/v1/households",
+                json=_payload(contact_email="family@example.lk",
+                              bank={"bank_name": "BOC", "branch": "Thalawa",
+                                    "account_holder": "Test Registrant",
+                                    "account_number": "0012345678"}),
+                headers=_auth())
+    res = client.get("/api/v1/households/me", headers=_auth())
+    assert res.status_code == 200
+    body = res.get_json()
+    assert body["address"] == "No. 12, Tank Road, Thalawa"
+    assert body["contact_email"] == "family@example.lk"
+    assert body["bank_account_last4"] == "5678"
+    blob = res.get_data(as_text=True)
+    assert "0012345678" not in blob
+    assert "ciphertext" not in blob
 
 
 def test_me_does_not_return_another_citizens_household(client):
@@ -520,3 +573,149 @@ def test_lookup_fails_closed_with_no_pepper(nopepper_client):
                                headers=_officer_auth())
     assert res.status_code == 500
     assert res.get_json()["error"] == "server_misconfigured"
+
+
+# --------------------------------------------------------------------------- PATCH /me
+BANK = {"bank_name": "BOC", "branch": "Thalawa", "account_holder": "Test Registrant",
+        "account_number": "0012345678"}
+
+
+def _meta(entry):
+    """write_audit_log stores metadata as JSON text."""
+    raw = entry["metadata"]
+    return json.loads(raw) if isinstance(raw, str) else raw
+
+
+def _registered(client, **over):
+    res = client.post("/api/v1/households", json=_payload(**over), headers=_auth())
+    assert res.status_code == 201
+    return res.get_json()["household_ref"]
+
+
+def test_patch_corrects_contact_details_and_returns_the_household(client, store):
+    _registered(client)
+    res = client.patch("/api/v1/households/me", headers=_auth(), json={
+        "address": "  No. 99, New Road, Thalawa  ", "contact_email": "family@example.lk",
+        "gn_division": "Thalawa North",
+    })
+    assert res.status_code == 200
+    body = res.get_json()
+    assert body["address"] == "No. 99, New Road, Thalawa"
+    assert body["contact_email"] == "family@example.lk"
+    assert body["gn_division"] == "Thalawa North"
+    assert store["households"][0]["address"] == "No. 99, New Road, Thalawa"
+
+
+def test_patch_is_audit_logged_with_field_names_never_values(client, store):
+    _registered(client)
+    client.patch("/api/v1/households/me", headers=_auth(),
+                 json={"address": "No. 99, New Road", "contact_email": "family@example.lk"})
+    entry = store["audit"][-1]
+    assert entry["event"] == "household_details_updated"
+    assert entry["actor_id"] == "citizen-1"
+    assert _meta(entry)["fields"] == ["address", "contact_email"]
+    blob = json.dumps(entry["metadata"], ensure_ascii=False)
+    assert "No. 99" not in blob and "family@example.lk" not in blob
+
+
+def test_patch_with_unchanged_values_writes_no_audit_row(client, store):
+    _registered(client)
+    before = len(store["audit"])
+    res = client.patch("/api/v1/households/me", headers=_auth(),
+                       json={"address": "No. 12, Tank Road, Thalawa"})
+    assert res.status_code == 200
+    assert len(store["audit"]) == before
+
+
+def test_patch_can_clear_the_optional_email_but_not_the_required_address(client, store):
+    _registered(client, contact_email="family@example.lk")
+    cleared = client.patch("/api/v1/households/me", headers=_auth(), json={"contact_email": ""})
+    assert cleared.status_code == 200
+    assert store["households"][0]["contact_email"] is None
+
+    blank = client.patch("/api/v1/households/me", headers=_auth(), json={"address": "   "})
+    assert blank.status_code == 400
+    assert blank.get_json() == {"error": "missing_fields", "fields": ["address"]}
+    assert store["households"][0]["address"] == "No. 12, Tank Road, Thalawa"
+
+
+def test_patch_refuses_a_malformed_email_instead_of_dropping_it(client, store):
+    _registered(client)
+    res = client.patch("/api/v1/households/me", headers=_auth(), json={"contact_email": "not an email"})
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "invalid_email"
+
+
+@pytest.mark.parametrize("field,value", [
+    ("district", "පොළොන්නරුව"), ("ds_division", "ගල්නැව"), ("members", [NIC_OTHER]),
+    ("nic", NIC_OTHER), ("full_name", "Someone Else"), ("household_ref", "HH-2026-9999"),
+])
+def test_patch_refuses_registration_facts_the_family_cannot_change(client, store, field, value):
+    _registered(client)
+    res = client.patch("/api/v1/households/me", headers=_auth(),
+                       json={field: value, "address": "No. 99, New Road"})
+    assert res.status_code == 400
+    assert res.get_json() == {"error": "not_editable", "fields": [field]}
+    # Refused as a whole: the editable field in the same request is not applied either.
+    assert store["households"][0]["address"] == "No. 12, Tank Road, Thalawa"
+    assert store["households"][0]["district"] == DISTRICT
+
+
+@pytest.mark.parametrize("body", [{}, {"unknown": 1}])
+def test_patch_with_nothing_editable_is_a_bad_request(client, body):
+    _registered(client)
+    res = client.patch("/api/v1/households/me", headers=_auth(), json=body)
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "no_changes"
+
+
+def test_patch_adds_bank_details_a_family_skipped_at_registration(client, store):
+    _registered(client)
+    res = client.patch("/api/v1/households/me", headers=_auth(), json={"bank": BANK})
+    assert res.status_code == 200
+    assert res.get_json()["bank_account_last4"] == "5678"
+    stored = store["households"][0]
+    assert stored["bank_details_ciphertext"] and "0012345678" not in stored["bank_details_ciphertext"]
+    assert "0012345678" not in res.get_data(as_text=True)
+    assert _meta(store["audit"][-1])["fields"] == ["bank"]
+
+
+def test_patch_never_replaces_bank_details_already_on_file(client, store):
+    """Where compensation is paid must not be changeable by whoever holds the session."""
+    _registered(client, bank=BANK)
+    original = store["households"][0]["bank_details_ciphertext"]
+    res = client.patch("/api/v1/households/me", headers=_auth(),
+                       json={"bank": dict(BANK, account_number="9999999999")})
+    assert res.status_code == 409
+    assert res.get_json()["error"] == "bank_details_locked"
+    assert store["households"][0]["bank_details_ciphertext"] == original
+    assert store["households"][0]["bank_account_last4"] == "5678"
+
+
+def test_patch_rejects_malformed_bank_details(client, store):
+    _registered(client)
+    res = client.patch("/api/v1/households/me", headers=_auth(), json={"bank": {"bank_name": "BOC"}})
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "invalid_bank_details"
+    assert store["households"][0]["bank_details_ciphertext"] is None
+
+
+def test_patch_404s_for_a_citizen_with_no_household_and_touches_no_other(client, store):
+    _registered(client)
+    res = client.patch("/api/v1/households/me", headers=_auth(sub="citizen-2"),
+                       json={"address": "No. 1, Elsewhere"})
+    assert res.status_code == 404
+    assert store["households"][0]["address"] == "No. 12, Tank Road, Thalawa"
+
+
+def test_patch_requires_a_citizen_token(client):
+    assert client.patch("/api/v1/households/me", json={"address": "x"}).status_code == 401
+    res = client.patch("/api/v1/households/me", headers=_auth(role="officer"), json={"address": "x"})
+    assert res.status_code == 403
+
+
+def test_patch_rejects_a_non_object_body(client):
+    _registered(client)
+    res = client.patch("/api/v1/households/me", headers=_auth(), json=["address"])
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "invalid_body"

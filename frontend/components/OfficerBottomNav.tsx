@@ -25,6 +25,7 @@ const TABS = [
   { href: "/officer/submit", icon: "📝", labelKey: "navNewReport" },
   { href: "/officer/classify", icon: "🤖", labelKey: "navClassify" },
   { href: "/officer/sync", icon: "📤", labelKey: "navQueue", badge: true },
+  { href: "/officer/profile", icon: "👤", labelKey: "navProfile" },
 ] as const;
 
 export function OfficerBottomNav() {

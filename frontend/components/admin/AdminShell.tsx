@@ -17,6 +17,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTranslations } from "next-intl";
+import { StaffAccountMenu } from "@/components/StaffAccountMenu";
 
 interface NavLink {
   href: string;
@@ -55,6 +56,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
           </span>
           <span className="text-label">{t("nav.brand")}</span>
         </Link>
+        <StaffAccountMenu loginPath="/admin/login" />
       </header>
 
       {/* Mobile destination row — the sidebar's job below `lg`. overflow-x-auto so a fourth

@@ -52,6 +52,7 @@ def _case(canonical, division, status="Submitted", household_ref="HH-2026-0001")
         "ds_final_reason": None,
         "ds_final_at": None,
         "ds_authorized_at": None,
+        "bank_account_last4": "5678",
         # PII that must never appear in a response:
         "citizen_nic_plain": "200012345678",
         "submitter_identity_hash": "deadbeef",
@@ -63,6 +64,7 @@ _PROJECTION = (
     "submitted_at", "updated_at", "approved_amount", "household_ref",
     "ai_estimate", "ai_model_version", "district", "officer_assessed",
     "ds_final_amount", "ds_final_reason", "ds_final_at", "ds_authorized_at",
+    "bank_account_last4",
 )
 
 
