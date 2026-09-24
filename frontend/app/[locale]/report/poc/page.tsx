@@ -3,6 +3,11 @@
 // (offline-first, FR-3.2). If online and an auth token is available it submits in the
 // background and upgrades the reference to the canonical HEC-YYYY-NNNN — the QR/receipt
 // never blocks on the network (CRITICAL #3).
+//
+// A report the one-shot submit cannot deliver (offline, server unreachable) is marked for the
+// citizen outbox (lib/citizenOutbox.ts), which retries it automatically -- from any citizen page,
+// not only this one -- until the server confirms it. The live hec-case-synced listener below then
+// upgrades the reference on this screen if it is still open.
 import { useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { Link, useRouter } from "@/navigation";
@@ -12,6 +17,11 @@ import { getCase, updateDraft } from "@/lib/indexeddb";
 import { getDraftId } from "@/lib/draft";
 import { getAccessToken } from "@/lib/auth";
 import { buildPoC, submitCaseOnline, type PoCRecord } from "@/lib/poc";
+import { markCitizenSubmission } from "@/lib/citizenOutbox";
+
+// Longest the receipt waits for the HEC number before falling back to the offline id. The outbox
+// keeps delivering after this; the wait only stops a slow network holding the receipt hostage.
+const REFERENCE_WAIT_MS = 20000;
 
 export default function PoCPage() {
   const t = useTranslations("poc");
@@ -20,6 +30,10 @@ export default function PoCPage() {
 
   const [poc, setPoc] = useState<PoCRecord | null>(null);
   const [canonicalId, setCanonicalId] = useState<string | null>(null);
+  // "pending" while the one-shot submit may still return the HEC number. Until then the card says
+  // the number is being assigned and Share/Download wait: a receipt saved during that window used
+  // to carry the 36-character offline UUID, which citizens then mistyped on the status page.
+  const [refState, setRefState] = useState<"pending" | "settled">("pending");
   const [canShare, setCanShare] = useState(false);
   // Known synchronously from mount (unlike `poc`, which is only set after the async
   // getCase/buildPoC chain resolves) — lets the sync-event listener below match a case
@@ -37,6 +51,10 @@ export default function PoCPage() {
     }
 
     let active = true;
+    const settle = () => {
+      if (active) setRefState("settled");
+    };
+    const waitCap = window.setTimeout(settle, REFERENCE_WAIT_MS);
     (async () => {
       const draft = await getCase(draftId);
       if (!active || !draft) {
@@ -51,22 +69,32 @@ export default function PoCPage() {
       // (review patch) — the draft read here can be stale relative to that live event.
       setCanonicalId((prev) => prev ?? (typeof draft.canonical_id === "string" ? draft.canonical_id : null));
 
+      // Hand the report to the outbox BEFORE trying to send it, so a failure below -- or the
+      // citizen closing the app mid-request -- still leaves it queued for automatic delivery.
+      if (!draft.canonical_id) {
+        const lang = typeof document !== "undefined" ? document.documentElement.lang : undefined;
+        await markCitizenSubmission(draftId, lang).catch(() => {});
+      }
+
       // Best-effort online submission (does not block the receipt above).
-      if (!navigator.onLine || draft.canonical_id) return;
+      if (!navigator.onLine || draft.canonical_id) return settle();
       const token = await getAccessToken();
-      if (!token || !active) return;
+      if (!token || !active) return settle();
       const result = await submitCaseOnline(record, token);
+      if (active && result) setCanonicalId(result.canonical_id);
+      settle();
       if (!active || !result) return;
-      setCanonicalId(result.canonical_id);
       await updateDraft(draftId, { canonical_id: result.canonical_id, sync_status: "synced" }).catch(
         () => {},
       );
     })().catch(() => {
       /* PoC already rendered; sync retries later (Epic 4) */
+      settle();
     });
 
     return () => {
       active = false;
+      window.clearTimeout(waitCap);
     };
   }, [router]);
 
@@ -127,7 +155,7 @@ export default function PoCPage() {
           const href = URL.createObjectURL(blob);
           const a = document.createElement("a");
           a.href = href;
-          a.download = `proof-of-claim-${poc.offline_id}.png`;
+          a.download = `proof-of-claim-${reference}.png`;
           a.click();
           URL.revokeObjectURL(href);
         }, "image/png");
@@ -158,6 +186,7 @@ export default function PoCPage() {
   }
 
   const reference = canonicalId ?? poc.offline_id;
+  const awaitingReference = !canonicalId && refState === "pending";
 
   return (
     <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-design-4 bg-surface-base px-design-4 py-design-5 print:p-0">
@@ -174,7 +203,7 @@ export default function PoCPage() {
         <p className="mt-design-1 text-label text-ink-secondary">{t("successBody")}</p>
       </div>
 
-      <PoCCard poc={poc} canonicalId={canonicalId} />
+      <PoCCard poc={poc} canonicalId={canonicalId} awaitingReference={awaitingReference} />
 
       {!isOnline && !canonicalId && (
         <p role="status" className="text-center text-caption text-status-warning print:hidden">
@@ -183,14 +212,16 @@ export default function PoCPage() {
       )}
 
       {/* Reminder strip — tells the citizen what happens next and repeats the reference. */}
-      <aside className="flex items-start gap-design-2 rounded-md bg-forest-pale p-design-3 print:hidden">
-        <span className="shrink-0 text-[16px] leading-tight" aria-hidden="true">
-          💡
-        </span>
-        <p className="text-caption leading-relaxed text-forest">
-          {t("reminder", { ref: reference })}
-        </p>
-      </aside>
+      {!awaitingReference && (
+        <aside className="flex items-start gap-design-2 rounded-md bg-forest-pale p-design-3 print:hidden">
+          <span className="shrink-0 text-[16px] leading-tight" aria-hidden="true">
+            💡
+          </span>
+          <p className="text-caption leading-relaxed text-forest">
+            {t("reminder", { ref: reference })}
+          </p>
+        </aside>
+      )}
 
       {/* Actions. Share is the mockup's amber primary; Print is the outline secondary. They
           stack on narrow screens so two wrapped Sinhala/Tamil labels don't squeeze each other. */}
@@ -198,24 +229,27 @@ export default function PoCPage() {
         {canShare ? (
           <button
             type="button"
+            disabled={awaitingReference}
             onClick={() => void handleShare()}
-            className="flex min-h-primary-btn flex-1 items-center justify-center rounded-lg bg-amber px-design-4 text-label font-bold text-ink-on-amber transition-opacity hover:opacity-90"
+            className="flex min-h-primary-btn flex-1 items-center justify-center rounded-lg bg-amber px-design-4 text-label font-bold text-ink-on-amber transition-opacity hover:opacity-90 disabled:opacity-50"
           >
             {t("share")}
           </button>
         ) : (
           <button
             type="button"
+            disabled={awaitingReference}
             onClick={downloadPoCPng}
-            className="flex min-h-primary-btn flex-1 items-center justify-center rounded-lg bg-amber px-design-4 text-label font-bold text-ink-on-amber transition-opacity hover:opacity-90"
+            className="flex min-h-primary-btn flex-1 items-center justify-center rounded-lg bg-amber px-design-4 text-label font-bold text-ink-on-amber transition-opacity hover:opacity-90 disabled:opacity-50"
           >
             {t("download")}
           </button>
         )}
         <button
           type="button"
+          disabled={awaitingReference}
           onClick={() => window.print()}
-          className="flex min-h-primary-btn flex-1 items-center justify-center rounded-lg border-2 border-forest px-design-4 text-label font-semibold text-forest transition-opacity hover:opacity-90"
+          className="flex min-h-primary-btn flex-1 items-center justify-center rounded-lg border-2 border-forest px-design-4 text-label font-semibold text-forest transition-opacity hover:opacity-90 disabled:opacity-50"
         >
           {t("print")}
         </button>

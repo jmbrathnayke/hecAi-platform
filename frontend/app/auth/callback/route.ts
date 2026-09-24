@@ -36,6 +36,14 @@ function safeErrorCode(raw: string): string {
   return ALLOWED_PROVIDER_ERRORS.has(raw) ? raw : "oauth_error";
 }
 
+// Email sign-in links verified here by token_hash rather than via Supabase's /verify redirect, which
+// can only return to the site root (the one allowlisted URL) where nothing exchanges a session.
+type EmailLinkType = "magiclink" | "email";
+
+function emailLinkType(raw: string | null): EmailLinkType | null {
+  return raw === "magiclink" || raw === "email" ? raw : null;
+}
+
 /**
  * Login page to bounce back to when the exchange fails, inferred from the intended destination.
  *
@@ -117,7 +125,10 @@ export async function GET(request: NextRequest) {
   }
 
   const code = searchParams.get("code");
-  if (!code) {
+  const tokenHash = searchParams.get("token_hash");
+  const linkType = emailLinkType(searchParams.get("type"));
+  const emailLink = tokenHash && linkType ? { token_hash: tokenHash, type: linkType } : null;
+  if (!code && !emailLink) {
     // Someone reached /auth/callback directly, with no OAuth round-trip behind it.
     return redirectToLogin(next, origin, "missing_code");
   }
@@ -142,14 +153,16 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+    const { data, error } = emailLink
+      ? await supabase.auth.verifyOtp(emailLink)
+      : await supabase.auth.exchangeCodeForSession(code as string);
     if (error) {
       // The URL deliberately carries only a generic code (see safeErrorCode), but the SERVER log
       // must carry the real reason or this failure is undiagnosable: "exchange_failed" is the same
       // string whether the PKCE verifier cookie was absent, the code was already spent, or the
       // callback URL is missing from the provider's redirect allowlist — three different fixes.
       console.error(
-        "[auth/callback] exchangeCodeForSession failed:",
+        emailLink ? "[auth/callback] verifyOtp failed:" : "[auth/callback] exchangeCodeForSession failed:",
         error.message,
         "| status:", error.status,
         "| next:", next,

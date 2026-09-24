@@ -1,11 +1,11 @@
 """Household lookups for the submit gate (Story 8.4, FR-10.3 / FR-10.6).
 
-Three submission channels each need the same answer — "which registered household is this case
-for?" — from three different starting points:
+Every submission and lookup path needs the same answer — "which registered household is this
+for?" — from a different starting point:
 
-    citizen self-service   the verified JWT `sub`      -> resolve_by_registrant()
-    officer-assisted       a household reference       -> resolve_by_ref()
-    SMS                    a plaintext NIC in the body -> resolve_by_nic()
+    citizen self-service   the verified JWT `sub`              -> resolve_by_registrant()
+    officer-assisted       a household reference               -> resolve_by_ref()
+    officer lookup         the NIC the officer types (POST body) -> resolve_by_nic()
 
 Every function takes the CALLER'S cursor rather than opening its own, so the lookup happens inside
 the same transaction as the insert it gates. Opening a second connection here would let a
@@ -76,12 +76,12 @@ def resolve_by_ref(cur, household_ref):
 def resolve_by_nic(cur, nic, pepper):
     """The household a NIC belongs to — as registrant OR as a declared member — or None.
 
-    Used on the SMS path, the one channel that already carries a server-readable plaintext NIC
-    (migration 009). Matching declared members too, not just registrants, is the point: a son whose
-    father registered the family is covered by that registration and must be able to report.
+    Used by the officer's household lookup (households.py), where the officer types the citizen's
+    NIC. Matching declared members too, not just registrants, is the point: a son whose father
+    registered the family is covered by that registration and must be able to report.
 
-    Returns None rather than raising on a malformed NIC or a missing pepper — the SMS handler has
-    one reply string to give and no way to render an exception.
+    Returns None rather than raising on a malformed NIC or a missing pepper — the caller has one
+    "not found" answer to give and no use for an exception.
     """
     try:
         digest = nic_hmac(nic, pepper)

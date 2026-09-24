@@ -1,7 +1,8 @@
 """Household registration API (Story 8.2, FR-10.1 / FR-10.2 / FR-10.6).
 
-    POST /api/v1/households      register a household           (citizen JWT)
-    GET  /api/v1/households/me   the caller's own household     (citizen JWT)
+    POST  /api/v1/households      register a household           (citizen JWT)
+    GET   /api/v1/households/me   the caller's own household     (citizen JWT)
+    PATCH /api/v1/households/me   correct contact details; add bank details if none (citizen JWT)
 
 The household is the unit of claim. One person per family registers; the NICs of the declared
 members are occupied by that registration, so no second household can claim the same family.
@@ -45,6 +46,7 @@ households_bp = Blueprint("households", __name__)
 # it is a support conversation, not a silent truncation.
 MAX_MEMBERS = 25
 MAX_NAME_LEN = 200
+MAX_ADDRESS_LEN = 300
 
 
 def _get_connection():
@@ -115,6 +117,11 @@ def register_household():
     # so an unknown or mismatched pair is rejected rather than stored and silently unroutable.
     if not is_valid_pair(district, ds_division):
         return jsonify({"error": "invalid_division"}), 400
+
+    # Required from migration 035 on; households registered before it keep NULL.
+    address = _clean_text(body.get("address"), MAX_ADDRESS_LEN)
+    if not address:
+        return jsonify({"error": "missing_fields", "fields": ["address"]}), 400
 
     members, member_error = _parse_members(body.get("members"))
     if member_error:
@@ -211,11 +218,11 @@ def register_household():
                     cur.execute(
                         """INSERT INTO households
                              (household_ref, district, ds_division, gn_division, registrant_uid,
-                              bank_details_ciphertext, bank_account_last4, contact_email)
-                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+                              bank_details_ciphertext, bank_account_last4, contact_email, address)
+                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
                         (household_ref, district, ds_division,
                          _clean_text(body.get("gn_division")), citizen_id,
-                         bank_ciphertext, bank_last4, contact_email),
+                         bank_ciphertext, bank_last4, contact_email, address),
                     )
                     household_id = cur.fetchone()[0]
 
@@ -349,11 +356,124 @@ def lookup_household():
     }), 200
 
 
+def _read_own_household(cur, citizen_id):
+    """The caller's active household as the /me response body, or None. Never nic_hmac or the bank
+    ciphertext — see the module docstring. Address, contact email and account tail are their own."""
+    cur.execute(
+        """SELECT id, household_ref, district, ds_division, gn_division,
+                  status, registered_at, address, contact_email,
+                  bank_account_last4
+             FROM households
+            WHERE registrant_uid = %s AND status = 'active'
+            ORDER BY id DESC LIMIT 1""",
+        (citizen_id,),
+    )
+    row = cur.fetchone()
+    if not row:
+        return None
+
+    cur.execute(
+        """SELECT full_name, relationship, is_registrant
+             FROM household_members
+            WHERE household_id = %s
+            ORDER BY is_registrant DESC, id""",
+        (row[0],),
+    )
+    members = [
+        {"full_name": m[0], "relationship": m[1], "is_registrant": m[2]}
+        for m in cur.fetchall()
+    ]
+    return {
+        "household_ref": row[1],
+        "district": row[2],
+        "ds_division": row[3],
+        "gn_division": row[4],
+        "status": row[5],
+        "registered_at": row[6].isoformat() if row[6] else None,
+        "address": row[7],
+        "contact_email": row[8],
+        "bank_account_last4": row[9],
+        "members": members,
+    }
+
+
 @households_bp.route("/households/me", methods=["GET"])
 @require_citizen()
 def my_household():
-    """The caller's own household, or 404. Never returns nic_hmac — see the module docstring."""
+    """The caller's own household, or 404."""
+    try:
+        conn = _get_connection()
+        try:
+            with conn:
+                with conn.cursor() as cur:
+                    household = _read_own_household(cur, g.citizen_id)
+        finally:
+            conn.close()
+    except psycopg2.Error:
+        current_app.logger.exception("household lookup failed")
+        return jsonify({"error": "server_error"}), 500
+
+    if household is None:
+        return jsonify({"error": "not_registered"}), 404
+    return jsonify(household), 200
+
+
+# Registration facts the family cannot change for itself. The area decides which officers and DS
+# office handle its claims (FR-10.6); the members are the NICs behind the duplicate-claim control
+# (FR-10.2). Both change only through the DS office.
+_LOCKED_FIELDS = ("district", "ds_division", "members", "nic", "full_name", "household_ref")
+
+
+@households_bp.route("/households/me", methods=["PATCH"])
+@require_citizen()
+def update_my_household():
+    """A registered family corrects its own contact details, and adds bank details it skipped.
+
+    BANK DETAILS ARE ADD-ONLY. An account number already on file is where the DS office pays the
+    compensation; replacing it self-service would let anyone holding the family's session redirect
+    a payment. A family that skipped the optional step at registration can add one here — until
+    now it had no way to, and the DS office cannot pay a household without one.
+    """
     citizen_id = g.citizen_id
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return jsonify({"error": "invalid_body"}), 400
+
+    locked = sorted(k for k in _LOCKED_FIELDS if k in body)
+    if locked:
+        return jsonify({"error": "not_editable", "fields": locked}), 400
+
+    updates = {}
+    if "address" in body:
+        address = _clean_text(body.get("address"), MAX_ADDRESS_LEN)
+        if not address:
+            # Required since migration 035: it can be corrected, not removed.
+            return jsonify({"error": "missing_fields", "fields": ["address"]}), 400
+        updates["address"] = address
+    if "contact_email" in body:
+        contact_email = _clean_text(body.get("contact_email"))
+        # Registration drops a malformed address silently rather than lose the registration over it;
+        # an edit can simply be refused and retyped.
+        if contact_email is not None and ("@" not in contact_email or " " in contact_email):
+            return jsonify({"error": "invalid_email"}), 400
+        updates["contact_email"] = contact_email  # None clears it: the field is optional
+    if "gn_division" in body:
+        updates["gn_division"] = _clean_text(body.get("gn_division"))
+
+    bank = body.get("bank")
+    if bank is not None:
+        try:
+            ciphertext, last4 = encrypt_bank_details(bank, current_app.config.get("BANK_DETAILS_KEY"))
+        except BankKeyMissing:
+            current_app.logger.error("bank details supplied but BANK_DETAILS_KEY is not configured")
+            return jsonify({"error": "server_misconfigured"}), 500
+        except (ValueError, TypeError):
+            return jsonify({"error": "invalid_bank_details"}), 400
+        updates["bank_details_ciphertext"] = ciphertext
+        updates["bank_account_last4"] = last4
+
+    if not updates:
+        return jsonify({"error": "no_changes"}), 400
 
     try:
         conn = _get_connection()
@@ -361,40 +481,51 @@ def my_household():
             with conn:
                 with conn.cursor() as cur:
                     cur.execute(
-                        """SELECT id, household_ref, district, ds_division, gn_division,
-                                  status, registered_at
+                        """SELECT id, household_ref, address, contact_email, gn_division,
+                                  bank_details_ciphertext, bank_account_last4
                              FROM households
                             WHERE registrant_uid = %s AND status = 'active'
-                            ORDER BY id DESC LIMIT 1""",
+                            ORDER BY id DESC LIMIT 1
+                              FOR UPDATE""",
                         (citizen_id,),
                     )
                     row = cur.fetchone()
                     if not row:
                         return jsonify({"error": "not_registered"}), 404
+                    household_id, household_ref = row[0], row[1]
+                    current = dict(zip(
+                        ("address", "contact_email", "gn_division",
+                         "bank_details_ciphertext", "bank_account_last4"),
+                        row[2:],
+                    ))
+                    if bank is not None and current["bank_details_ciphertext"] is not None:
+                        return jsonify({"error": "bank_details_locked"}), 409
 
-                    cur.execute(
-                        """SELECT full_name, relationship, is_registrant
-                             FROM household_members
-                            WHERE household_id = %s
-                            ORDER BY is_registrant DESC, id""",
-                        (row[0],),
-                    )
-                    members = [
-                        {"full_name": m[0], "relationship": m[1], "is_registrant": m[2]}
-                        for m in cur.fetchall()
-                    ]
+                    changed = sorted({
+                        "bank" if k.startswith("bank_") else k
+                        for k, v in updates.items() if current[k] != v
+                    })
+                    if changed:
+                        merged = {**current, **updates}
+                        cur.execute(
+                            """UPDATE households
+                                  SET address = %s, contact_email = %s, gn_division = %s,
+                                      bank_details_ciphertext = %s, bank_account_last4 = %s,
+                                      updated_at = now()
+                                WHERE id = %s""",
+                            (merged["address"], merged["contact_email"], merged["gn_division"],
+                             merged["bank_details_ciphertext"], merged["bank_account_last4"],
+                             household_id),
+                        )
+                        # Which fields, never their values: the audit trail must not become the PII
+                        # store the rest of this design avoids.
+                        write_audit_log(cur, None, "household_details_updated", citizen_id,
+                                        {"household_ref": household_ref, "fields": changed})
+                    household = _read_own_household(cur, citizen_id)
         finally:
             conn.close()
     except psycopg2.Error:
-        current_app.logger.exception("household lookup failed")
+        current_app.logger.exception("household update failed")
         return jsonify({"error": "server_error"}), 500
 
-    return jsonify({
-        "household_ref": row[1],
-        "district": row[2],
-        "ds_division": row[3],
-        "gn_division": row[4],
-        "status": row[5],
-        "registered_at": row[6].isoformat() if row[6] else None,
-        "members": members,
-    }), 200
+    return jsonify(household), 200

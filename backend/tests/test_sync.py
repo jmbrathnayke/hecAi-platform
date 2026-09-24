@@ -123,6 +123,15 @@ class FakeCursor:
                     "household_id": household_id,
                 }
                 self._result = (self.store["case_pk"],)
+        elif "officer_assessed_at = COALESCE" in sql:
+            # workflow_events.record_officer_assisted_assessment(): an officer-assisted case is
+            # verified and assessed by the submitting officer at the moment it is stored.
+            officer_id, _by, case_id = params
+            self.store.setdefault("assessed", {})[case_id] = officer_id
+            self._result = None
+        elif "INSERT INTO inference_log" in sql:
+            self.store.setdefault("inference", []).append(params)
+            self._result = None
         elif "INSERT INTO audit_log" in sql:
             case_id, event, actor_id, metadata, created_at, hash_, prev_hash = params
             self.store["audit"].append(
@@ -226,8 +235,11 @@ def test_batch_inserts_new_cases(client, store):
     assert len(data["results"]) == 3
     assert all(r["inserted"] for r in data["results"])
     assert len(store["cases"]) == 3
-    assert len(store["audit"]) == 3
-    assert all(a["event"] == "case_synced" for a in store["audit"])
+    # One case_synced per case. The batch now also announces each case (citizen "Submitted"
+    # confirmation, area-officer alert), and each notifier audits its own outcome -- so counting
+    # every audit row would be counting notification channels, not synced cases.
+    synced = [a for a in store["audit"] if a["event"] == "case_synced"]
+    assert len(synced) == 3
 
 
 def test_batch_idempotent_on_retry(client, store):
@@ -237,6 +249,7 @@ def test_batch_idempotent_on_retry(client, store):
     )
     first_ids = {r["offline_id"]: r["canonical_id"] for r in res1.get_json()["results"]}
     seq_after_first = store["seq"]
+    audit_rows_after_first_sync = len(store["audit"])
 
     res2 = client.post(
         "/api/v1/sync/batch", json={"cases": items}, headers=_auth(_officer_token())
@@ -248,7 +261,8 @@ def test_batch_idempotent_on_retry(client, store):
     for r in data2["results"]:
         assert r["canonical_id"] == first_ids[r["offline_id"]]
     assert store["seq"] == seq_after_first  # no new sequence values burned
-    assert len(store["audit"]) == 3  # no new audit rows on retry
+    assert len(store["audit"]) == audit_rows_after_first_sync  # no new audit rows on retry
+    assert len([a for a in store["audit"] if a["event"] == "case_synced"]) == 3
 
 
 def test_batch_mixed_new_and_existing(client, store):
@@ -631,3 +645,40 @@ def test_batch_sync_saves_locale(client, store, estimate_spy):
     stored = store["rows"][item["offline_id"]]
     assert stored["locale"] == "ta"
     assert estimate_spy[0]["ai_severity"] is None
+
+
+# ======================================================================= workflow routing
+# The offline batch now announces exactly like the online submit (workflow_events), so a case an
+# officer collected offline reaches the district administrator when it syncs.
+
+@pytest.fixture
+def announced(monkeypatch):
+    calls = {"staff": [], "citizen": []}
+    monkeypatch.setattr(
+        "app.infrastructure.workflow_events.notify_staff_push",
+        lambda cur, case_id, alert, role, scope, ref, actor:
+            calls["staff"].append({"alert": alert, "role": role}))
+    monkeypatch.setattr(
+        "app.infrastructure.workflow_events.notify_status_change_all",
+        lambda cur, case_id, ref, status, actor, amount_lkr=None:
+            calls["citizen"].append(status))
+    return calls
+
+
+def test_a_synced_officer_assisted_case_is_assessed_and_announced_once(client, store, announced):
+    item = _item("22222222-2222-4222-8222-222222222222", submitted_by_officer=True,
+                 ai_classification={"model_version": "mobilenetv2-1",
+                                    "prediction": "property_damage", "confidence": 0.9})
+    headers = _auth(_officer_token())
+    first = client.post("/api/v1/sync/batch", json={"cases": [item]}, headers=headers)
+    assert first.status_code == 200 and first.get_json()["results"][0]["inserted"] is True
+    assert len(store["assessed"]) == 1
+    assert len(store["inference"]) == 1
+    assert announced["staff"] == [{"alert": "assessment_complete", "role": "admin"}]
+    assert announced["citizen"] == ["Submitted"]
+
+    # The retry the offline queue will inevitably send: no second case, no second announcement.
+    again = client.post("/api/v1/sync/batch", json={"cases": [item]}, headers=headers)
+    assert again.get_json()["results"][0]["inserted"] is False
+    assert len(store["cases"]) == 1
+    assert len(announced["staff"]) == 1 and len(store["inference"]) == 1

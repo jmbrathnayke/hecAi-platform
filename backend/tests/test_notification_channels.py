@@ -16,7 +16,7 @@ import pytest
 
 from app import create_app
 from app.infrastructure.email.email_service import notify_status_change_email
-from app.infrastructure.email.sendgrid_client import email_configured
+from app.infrastructure.email.smtp_client import email_configured
 from app.infrastructure.push.push_service import (
     notify_staff_push,
     notify_status_change_push,
@@ -78,8 +78,8 @@ class FakeCursor:
         elif "FROM email_templates" in s:
             self._one = st.get("email_template", ("HEC claim {ref} — {status}",
                                                   "Claim {ref}. Amount: LKR {amount}."))
-        elif "FROM sms_templates" in s:
-            self._one = st.get("sms_template", ("Claim {ref} approved. LKR {amount}.",))
+        elif "FROM push_templates" in s:
+            self._one = st.get("push_template", ("HEC claim {ref}", "Claim {ref} approved. LKR {amount}."))
         else:  # pragma: no cover
             raise AssertionError(f"unexpected SQL: {s}")
 
@@ -104,7 +104,8 @@ def cur(store):
 def app():
     return create_app({
         "TESTING": True, "DATABASE_URL": "postgresql://fake",
-        "SENDGRID_API_KEY": "SG.test", "SENDGRID_FROM_EMAIL": "noreply@example.lk",
+        "SMTP_HOST": "smtp.example.lk", "SMTP_USERNAME": "user", "SMTP_PASSWORD": "pw",
+        "SMTP_FROM_EMAIL": "noreply@example.lk",
         "VAPID_PUBLIC_KEY": "pub", "VAPID_PRIVATE_KEY": "priv",
         "VAPID_SUBJECT": "mailto:admin@example.lk",
     })
@@ -163,7 +164,7 @@ def test_a_send_failure_is_recorded_as_failed(app, cur, store, monkeypatch):
 def test_a_send_that_raises_does_not_escape(app, cur, store, monkeypatch):
     """If this propagated it would roll back the case's own status transition.
 
-    sendgrid_client.send_email already swallows everything, so in production this cannot happen.
+    smtp_client.send_email already swallows everything, so in production this cannot happen.
     The service defends anyway: the "never raises" guarantee is stated in email_service's docstring,
     and a guarantee enforced only in a collaborator breaks silently the day the collaborator is
     swapped for another transport.
@@ -194,7 +195,7 @@ def test_a_non_approved_status_does_not_choke_on_the_amount_placeholder(app, cur
     assert "{amount}" in body["b"]
 
 
-def test_email_without_a_sendgrid_key_is_skipped_not_failed(cur, store, monkeypatch):
+def test_email_without_smtp_credentials_is_skipped_not_failed(cur, store, monkeypatch):
     """An unprovisioned deployment must not look like a broken one in the audit log.
 
     This is the state the platform is actually in (§7.3): email is implemented and configurable,
@@ -206,7 +207,7 @@ def test_email_without_a_sendgrid_key_is_skipped_not_failed(cur, store, monkeypa
     monkeypatch.setattr("app.infrastructure.email.email_service.send_email",
                         lambda *a: pytest.fail("must not attempt a send with no credentials"))
     unconfigured = create_app({"TESTING": True, "DATABASE_URL": "postgresql://fake",
-                               "SENDGRID_API_KEY": None, "SENDGRID_FROM_EMAIL": None})
+                               "SMTP_HOST": None, "SMTP_USERNAME": None, "SMTP_PASSWORD": None, "SMTP_FROM_EMAIL": None})
     with unconfigured.app_context():
         notify_status_change_email(cur, 1, REF, "Approved", "admin-1", amount_lkr=45000)
     assert events(store) == ["email_skipped_not_configured"]
@@ -222,7 +223,7 @@ def test_a_key_with_no_sender_address_is_still_unconfigured(cur, store, monkeypa
     monkeypatch.setattr("app.infrastructure.email.email_service.send_email",
                         lambda *a: pytest.fail("must not attempt a send without a sender address"))
     half = create_app({"TESTING": True, "DATABASE_URL": "postgresql://fake",
-                       "SENDGRID_API_KEY": "SG.test", "SENDGRID_FROM_EMAIL": None})
+                       "SMTP_HOST": "smtp.example.lk", "SMTP_USERNAME": "user", "SMTP_PASSWORD": "pw", "SMTP_FROM_EMAIL": None})
     with half.app_context():
         notify_status_change_email(cur, 1, REF, "Approved", "admin-1")
     assert events(store) == ["email_skipped_not_configured"]
@@ -238,7 +239,7 @@ def test_no_address_is_reported_even_when_email_is_unconfigured(cur, store):
     """
     store["case_email_row"] = (None, "si")
     unconfigured = create_app({"TESTING": True, "DATABASE_URL": "postgresql://fake",
-                               "SENDGRID_API_KEY": None, "SENDGRID_FROM_EMAIL": None})
+                               "SMTP_HOST": None, "SMTP_USERNAME": None, "SMTP_PASSWORD": None, "SMTP_FROM_EMAIL": None})
     with unconfigured.app_context():
         notify_status_change_email(cur, 1, REF, "Approved", "admin-1")
     assert events(store) == ["email_skipped_no_address"]
@@ -256,18 +257,23 @@ def test_a_configured_deployment_that_fails_still_reports_failed(app, cur, store
     assert events(store) == ["email_failed"]
 
 
-def test_email_configured_requires_both_halves():
+FULL_SMTP = {"SMTP_HOST": "smtp.example.lk", "SMTP_USERNAME": "user",
+             "SMTP_PASSWORD": "pw", "SMTP_FROM_EMAIL": "a@b.lk"}
+
+
+def test_email_configured_requires_every_credential():
     """The predicate itself, including the no-application-context case."""
-    both = create_app({"TESTING": True, "DATABASE_URL": "postgresql://fake",
-                       "SENDGRID_API_KEY": "SG.test", "SENDGRID_FROM_EMAIL": "a@b.lk"})
+    both = create_app({"TESTING": True, "DATABASE_URL": "postgresql://fake", **FULL_SMTP})
     with both.app_context():
         assert email_configured() is True
 
-    for key, sender in ((None, "a@b.lk"), ("SG.test", None), (None, None), ("", "a@b.lk")):
-        partial = create_app({"TESTING": True, "DATABASE_URL": "postgresql://fake",
-                              "SENDGRID_API_KEY": key, "SENDGRID_FROM_EMAIL": sender})
-        with partial.app_context():
-            assert email_configured() is False, f"{key!r}/{sender!r} must not count as configured"
+    # Any one of them missing or blank means mail cannot be sent, so it is not "configured".
+    for missing in FULL_SMTP:
+        for blank in (None, ""):
+            partial = create_app({"TESTING": True, "DATABASE_URL": "postgresql://fake",
+                                  **FULL_SMTP, missing: blank})
+            with partial.app_context():
+                assert email_configured() is False, f"{missing}={blank!r} must not count as configured"
 
     # Outside an application context current_app raises. The notification path must survive that.
     assert email_configured() is False
@@ -377,7 +383,7 @@ def test_the_ds_officer_for_the_division_is_told_a_payment_is_waiting(app, cur, 
 
     assert events(store) == ["staff_push_sent"]
     assert REF in sent[0]["body"]
-    assert sent[0]["title"] == "Payment authorisation required"
+    assert sent[0]["title"] == "Final compensation review required"
 
 
 def test_a_staff_device_in_another_division_is_not_notified(app, cur, store, monkeypatch):
@@ -436,6 +442,9 @@ def test_nobody_subscribed_is_a_skip_not_a_failure(app, cur, store):
     with app.app_context():
         notify_staff_push(cur, 1, "case_submitted", "officer", "Galnewa", REF, "citizen-1")
     assert events(store) == ["staff_push_skipped_no_subscription"]
+    # The intended recipients are still on record: which role, in which area.
+    assert json.loads(store["audit"][-1]["metadata"]) == {
+        "alert": "case_submitted", "role": "officer", "scope": "Galnewa"}
 
 
 def test_a_case_with_no_division_is_recorded_rather_than_dropped(app, cur, store):
@@ -467,7 +476,7 @@ def test_each_device_gets_its_own_language(app, cur, store, monkeypatch):
         notify_staff_push(cur, 1, "payment_pending", "ds_officer", "Galnewa", REF, "admin-1")
 
     assert len(set(titles)) == 2, "each device must be addressed in its own language"
-    assert "Payment authorisation required" in titles
+    assert "Final compensation review required" in titles
 
 
 def test_an_unknown_locale_falls_back_to_english_rather_than_raising(app, cur, store, monkeypatch):
@@ -478,7 +487,7 @@ def test_an_unknown_locale_falls_back_to_english_rather_than_raising(app, cur, s
                         or PushResult(delivered=True))
     with app.app_context():
         notify_staff_push(cur, 1, "payment_pending", "ds_officer", "Galnewa", REF, "admin-1")
-    assert titles == ["Payment authorisation required"]
+    assert titles == ["Final compensation review required"]
 
 
 def test_a_dead_staff_subscription_is_pruned(app, cur, store, monkeypatch):
@@ -554,3 +563,156 @@ def test_a_citizen_push_that_raises_does_not_escape(app, cur, store, monkeypatch
     with app.app_context():
         notify_status_change_push(cur, 1, REF, "Approved", "admin-1")
     assert events(store) == ["push_failed"]
+
+
+# =========================================================== notification click targets
+#
+# A citizen's notification opens the public status page for THAT reference; a staff member's opens
+# the protected work surface for THAT case. Sending a field officer to the citizen's public status
+# page -- which is what happened before -- gave them nothing they could act on.
+from app.infrastructure.push.push_service import (  # noqa: E402
+    STAFF_ALERTS,
+    citizen_target_url,
+    staff_target_url,
+)
+
+
+def test_the_citizen_payload_opens_the_public_status_page_for_that_reference(app, cur, store,
+                                                                            monkeypatch):
+    store["subscriptions"] = _subs(1)
+    captured = {}
+    monkeypatch.setattr("app.infrastructure.push.push_service.send_push",
+                        lambda e, p, a, payload: captured.update(payload) or PushResult(delivered=True))
+    with app.app_context():
+        notify_status_change_push(cur, 1, REF, "Approved", "admin-1")
+    assert captured["url"] == "/status?ref=" + REF
+
+
+@pytest.mark.parametrize("role,expected", [
+    ("officer", "/officer/cases/" + REF),
+    ("admin", "/admin/cases?ref=" + REF),
+    ("ds_officer", "/ds/dashboard?ref=" + REF),
+])
+def test_a_staff_payload_opens_the_protected_case_surface_for_its_role(app, cur, store, monkeypatch,
+                                                                       role, expected):
+    store["staff_subscriptions"] = [_staff(1, role, ["Galnewa"])]
+    sent = []
+    monkeypatch.setattr("app.infrastructure.push.push_service.send_push",
+                        lambda e, p, a, payload: sent.append(payload) or PushResult(delivered=True))
+    alert = {"officer": "case_submitted", "admin": "assessment_complete",
+             "ds_officer": "payment_pending"}[role]
+    with app.app_context():
+        notify_staff_push(cur, 1, alert, role, "Galnewa", REF, "actor-1")
+    assert sent[0]["url"] == expected
+    assert not sent[0]["url"].startswith("/status"), "staff must never land on the public page"
+
+
+def test_target_urls_are_relative_and_encoded():
+    """The service worker only follows same-origin relative paths; a reference is URL-encoded so a
+    malformed value can never break out of its path segment or query parameter."""
+    assert citizen_target_url("HEC 1/2") == "/status?ref=HEC%201%2F2"
+    assert staff_target_url("officer", "a/b") == "/officer/cases/a%2Fb"
+    assert staff_target_url("system_admin", REF) is None
+    assert staff_target_url("officer", "") is None
+
+
+@pytest.mark.parametrize("alert", ["case_submitted", "payment_pending", "assessment_complete",
+                                   "final_decision_recorded", "payment_processed"])
+def test_every_workflow_alert_is_worded_in_all_three_languages(alert):
+    for locale in ("en", "si", "ta"):
+        title, body = STAFF_ALERTS[alert][locale]
+        assert title.strip() and "{ref}" in body
+
+
+def test_staff_payloads_carry_no_personal_data(app, cur, store, monkeypatch):
+    """A staff alert is a case reference, a public area name and a link -- nothing that identifies
+    the family. The key set is pinned so a future field cannot slip in unnoticed."""
+    store["staff_subscriptions"] = [_staff(1, "admin", ["Anuradhapura"])]
+    sent = []
+    monkeypatch.setattr("app.infrastructure.push.push_service.send_push",
+                        lambda e, p, a, payload: sent.append(payload) or PushResult(delivered=True))
+    with app.app_context():
+        notify_staff_push(cur, 1, "assessment_complete", "admin", "Anuradhapura", REF, "officer-1")
+    assert set(sent[0]) == {"title", "body", "ref", "status", "url"}
+
+
+def test_citizen_payloads_carry_no_personal_data(app, cur, store, monkeypatch):
+    store["subscriptions"] = _subs(1)
+    captured = {}
+    monkeypatch.setattr("app.infrastructure.push.push_service.send_push",
+                        lambda e, p, a, payload: captured.update(payload) or PushResult(delivered=True))
+    with app.app_context():
+        notify_status_change_push(cur, 1, REF, "Submitted", "citizen-1")
+    assert set(captured) == {"title", "body", "ref", "status", "url"}
+
+
+
+# =========================================================== push + email are the only channels
+#
+# SMS was retired (migration 034). These pin the notification model: citizen -> push then email;
+# staff -> push. No phone number is needed anywhere, and no SMS capability can quietly return.
+import inspect  # noqa: E402
+import pathlib  # noqa: E402
+
+from app.infrastructure import notifications  # noqa: E402
+
+APP_DIR = pathlib.Path(__file__).resolve().parent.parent / "app"
+
+
+def test_the_citizen_dispatcher_calls_push_then_email_and_nothing_else(monkeypatch):
+    calls = []
+    monkeypatch.setattr(notifications, "notify_status_change_push",
+                        lambda cur, case_id, ref, status, actor, amount_lkr=None: calls.append("push"))
+    monkeypatch.setattr(notifications, "notify_status_change_email",
+                        lambda cur, case_id, ref, status, actor, amount_lkr=None: calls.append("email"))
+    notifications.notify_status_change_all(None, 1, REF, "Approved", "admin-1", amount_lkr=100.0)
+    assert calls == ["push", "email"]
+
+
+def test_no_phone_number_is_part_of_the_notification_contract():
+    params = list(inspect.signature(notifications.notify_status_change_all).parameters)
+    assert params == ["cur", "case_id", "canonical_id", "new_status", "actor_id", "amount_lkr"]
+    assert not any("mobile" in p or "phone" in p for p in params)
+
+
+def test_push_wording_comes_from_push_templates_only(app, cur, store, monkeypatch):
+    store["subscriptions"] = _subs(1)
+    store["push_template"] = ("HEC claim {ref} approved", "Claim {ref}: LKR {amount}.")
+    captured = {}
+    monkeypatch.setattr("app.infrastructure.push.push_service.send_push",
+                        lambda e, p, a, payload: captured.update(payload) or PushResult(delivered=True))
+    with app.app_context():
+        notify_status_change_push(cur, 1, REF, "Final Decision", "ds-1", amount_lkr=38500)
+    assert captured["title"] == f"HEC claim {REF} approved"
+    assert captured["body"] == f"Claim {REF}: LKR 38,500.00."
+    queried = " ".join(sql for sql, _ in store["sql"])
+    assert "push_templates" in queried
+    assert "sms_templates" not in queried and "email_templates" not in queried
+
+
+def test_a_missing_push_template_is_audited_not_raised(app, cur, store):
+    store["subscriptions"] = _subs(1)
+    store["push_template"] = None
+    with app.app_context():
+        notify_status_change_push(cur, 1, REF, "Approved", "admin-1")
+    assert events(store) == ["push_template_missing"]
+
+
+def test_no_sms_capability_remains_in_the_application():
+    """No SMS module, route, transport, config key or audit outcome exists in app/."""
+    assert not (APP_DIR / "infrastructure" / "sms").exists()
+    assert not (APP_DIR / "api" / "v1" / "sms.py").exists()
+    offenders = []
+    for path in APP_DIR.rglob("*.py"):
+        text = path.read_text(encoding="utf-8")
+        for needle in ("twilio", "send_sms", '"sms_', "sms_templates", "TWILIO_", "/sms/"):
+            if needle in text:
+                offenders.append(f"{path.relative_to(APP_DIR).as_posix()}: {needle}")
+    assert offenders == []
+
+
+def test_the_app_registers_no_sms_route_and_no_twilio_config():
+    application = create_app({"TESTING": True, "DATABASE_URL": "postgresql://fake"})
+    rules = [rule.rule for rule in application.url_map.iter_rules()]
+    assert not [r for r in rules if "sms" in r.lower()]
+    assert not [k for k in application.config if k.startswith("TWILIO")]

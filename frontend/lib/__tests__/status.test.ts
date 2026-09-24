@@ -14,7 +14,9 @@ import {
   isTranslatedStatus,
   isValidReference,
   journeyIndex,
-  showApprovedAmount,
+  WORKFLOW_STAGES,
+  isKnownStage,
+  showFinalAmount,
   statusKey,
 } from "@/lib/status";
 
@@ -48,11 +50,35 @@ describe("statusKey", () => {
   });
 });
 
-describe("showApprovedAmount", () => {
-  it("only when status is Approved and an amount is present", () => {
-    expect(showApprovedAmount({ status: "Approved", approved_amount: 5000 })).toBe(true);
-    expect(showApprovedAmount({ status: "Approved" })).toBe(false);
-    expect(showApprovedAmount({ status: "Submitted", approved_amount: 5000 })).toBe(false);
+describe("showFinalAmount", () => {
+  it("only once the Divisional Secretariat has decided the amount", () => {
+    expect(showFinalAmount({ status: "Approved", final_amount: 5000 })).toBe(true);
+    expect(showFinalAmount({ status: "Payment Processed", final_amount: 5000 })).toBe(true);
+    // Approved by DWC but no DS decision yet: nothing to show.
+    expect(showFinalAmount({ status: "Approved" })).toBe(false);
+    expect(showFinalAmount({ status: "Submitted", final_amount: 5000 })).toBe(false);
+    expect(showFinalAmount({ status: "Rejected", final_amount: 5000 })).toBe(false);
+  });
+});
+
+describe("workflow stages", () => {
+  it("recognises only the stages the backend derives", () => {
+    expect(isKnownStage("dwc_approved")).toBe(true);
+    expect(isKnownStage("final")).toBe(false);
+    expect(isKnownStage(undefined)).toBe(false);
+  });
+
+  it("every stage has a label and an explanation in all three languages", () => {
+    const missing: string[] = [];
+    for (const [lang, messages] of Object.entries(CATALOGUES)) {
+      const labels = (messages as Record<string, unknown>).stageLabels as Record<string, string>;
+      const next = (messages as Record<string, unknown>).stageNext as Record<string, string>;
+      for (const stage of WORKFLOW_STAGES) {
+        if (!labels?.[stage]) missing.push(`${lang}.stageLabels.${stage}`);
+        if (!next?.[stage]) missing.push(`${lang}.stageNext.${stage}`);
+      }
+    }
+    expect(missing).toEqual([]);
   });
 });
 

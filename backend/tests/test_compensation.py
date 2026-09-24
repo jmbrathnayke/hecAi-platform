@@ -64,11 +64,22 @@ class FakeCursor:
                 raise RuntimeError("simulated DB error on INSERT INTO compensation_estimates")
             (case_id, amount_lkr, raw_estimate_lkr, capped, feature_values_json,
              model_version, dataset_version) = params
-            self.store["estimates"].append({
+            row = {
                 "case_id": case_id, "amount_lkr": amount_lkr, "raw_estimate_lkr": raw_estimate_lkr,
                 "capped": capped, "feature_values_json": feature_values_json,
                 "model_version": model_version, "dataset_version": dataset_version,
-            })
+            }
+            if "ON CONFLICT (case_id) DO UPDATE" in sql:
+                # Mirrors the UNIQUE(case_id) upsert: the existing row is replaced, never duplicated.
+                self.store["estimates"] = [e for e in self.store["estimates"]
+                                           if e["case_id"] != case_id] + [row]
+                self.store.setdefault("upserts", 0)
+                self.store["upserts"] += 1
+            elif any(e["case_id"] == case_id for e in self.store["estimates"]):
+                # A plain INSERT against an existing case_id is a UNIQUE violation in Postgres.
+                raise RuntimeError("duplicate key value violates unique constraint")
+            else:
+                self.store["estimates"].append(row)
             self._result = None
         else:  # pragma: no cover - unexpected SQL
             raise AssertionError(f"unexpected SQL: {sql}")
@@ -87,10 +98,12 @@ def reset_module_caches():
     """These are lazily-loaded module globals -- reset between tests so one test's
     monkeypatched bundle/lookup never leaks into the next."""
     compensation._bundle = None
+    compensation._crop_bundle = None
     compensation._prior_year_lookup = None
     compensation._district_reference = None
     yield
     compensation._bundle = None
+    compensation._crop_bundle = None
     compensation._prior_year_lookup = None
     compensation._district_reference = None
 
@@ -326,9 +339,12 @@ def test_feature_values_contains_no_pii(store):
     assert result is not None
     keys = set(result["feature_values"].keys())
     assert keys == {
+        # the model's own inputs
         "damage_type", "district", "ds_division", "year", "prior_year_amount",
         "prior_year_incident_count", "prior_year_had_payout", "ai_severity",
         "severity_multiplier",
+        # provenance, stored with every estimate so a row can be read without the documentation
+        "model_version", "synthetic_model", "decision_support_only", "is_final_decision",
     }
     for pii_key in ("nic", "offline_id", "submitter_identity_hash", "officer_id"):
         assert pii_key not in keys
@@ -422,3 +438,50 @@ def test_savepoint_open_failure_itself_degrades_gracefully(store, monkeypatch):
     )
     assert result is None
     assert store["estimates"] == []
+
+
+# --- estimate_and_store(replace=True): officer-assessment regeneration -----------------------
+#
+# The officer's on-device classification supplies an ai_severity the citizen submission never has,
+# so the AI-assisted estimate is regenerated for the SAME case. compensation_estimates is UNIQUE on
+# case_id: a plain second INSERT is a constraint violation (swallowed by the savepoint, estimate
+# silently lost), which is exactly why the regeneration path must upsert.
+
+
+def test_replace_regenerates_an_existing_estimate_without_duplicating_it(store):
+    log_amount = np.log1p(100000.0)
+    compensation._bundle = make_bundle(gate=True, log_amount=log_amount)
+    first = compensation.estimate_and_store(FakeCursor(store), 9, "property", None, SUBMITTED_AT)
+    assert first["amount_lkr"] == pytest.approx(100000.0, rel=1e-6)
+
+    second = compensation.estimate_and_store(
+        FakeCursor(store), 9, "property", None, SUBMITTED_AT, ai_severity="Severe", replace=True,
+    )
+    assert second is not None
+    # Severe multiplies by 1.3 -- the regenerated figure reflects the officer's assessment.
+    assert second["amount_lkr"] == pytest.approx(130000.0, rel=1e-6)
+    assert [e["case_id"] for e in store["estimates"]] == [9]
+    assert store["estimates"][0]["amount_lkr"] == pytest.approx(130000.0, rel=1e-6)
+    assert store["upserts"] == 1
+
+
+def test_without_replace_a_second_estimate_for_the_same_case_is_not_written(store):
+    log_amount = np.log1p(100000.0)
+    compensation._bundle = make_bundle(gate=True, log_amount=log_amount)
+    compensation.estimate_and_store(FakeCursor(store), 9, "property", None, SUBMITTED_AT)
+    again = compensation.estimate_and_store(
+        FakeCursor(store), 9, "property", None, SUBMITTED_AT, ai_severity="Severe",
+    )
+    # The unique violation is isolated by the savepoint and reported as "no estimate", never raised.
+    assert again is None
+    assert store["savepoint_events"][-1] == "ROLLBACK"
+    assert store["estimates"][0]["amount_lkr"] == pytest.approx(100000.0, rel=1e-6)
+
+
+def test_replace_on_a_case_with_no_estimate_simply_inserts(store):
+    compensation._bundle = make_bundle(gate=True, log_amount=np.log1p(50000.0))
+    result = compensation.estimate_and_store(
+        FakeCursor(store), 11, "crop", None, SUBMITTED_AT, ai_severity="Minor", replace=True,
+    )
+    assert result["amount_lkr"] == pytest.approx(35000.0, rel=1e-6)
+    assert len(store["estimates"]) == 1

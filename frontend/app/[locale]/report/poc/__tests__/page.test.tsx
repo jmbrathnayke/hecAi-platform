@@ -4,6 +4,7 @@ import { getCase } from "@/lib/indexeddb";
 import { getDraftId } from "@/lib/draft";
 import { getAccessToken } from "@/lib/auth";
 import { buildPoC, submitCaseOnline } from "@/lib/poc";
+import { markCitizenSubmission } from "@/lib/citizenOutbox";
 
 const replace = jest.fn();
 const mockRouter = { replace };
@@ -38,6 +39,10 @@ jest.mock("@/lib/indexeddb", () => ({
 
 jest.mock("@/lib/auth", () => ({
   getAccessToken: jest.fn(),
+}));
+
+jest.mock("@/lib/citizenOutbox", () => ({
+  markCitizenSubmission: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock("@/lib/poc", () => ({
@@ -91,6 +96,23 @@ describe("PoCPage", () => {
     expect(await screen.findByText("draft-1")).toBeInTheDocument();
   });
 
+  it("queues the report for automatic delivery before trying to send it", async () => {
+    mockGetCase.mockResolvedValue({ offline_id: "draft-1" });
+    mockBuildPoC.mockResolvedValue(pocRecord());
+    render(<PoCPage />);
+    await screen.findByText("draft-1");
+    await waitFor(() => expect(markCitizenSubmission).toHaveBeenCalledWith("draft-1", expect.anything()));
+  });
+
+  it("does not re-queue a report the server already confirmed", async () => {
+    mockGetCase.mockResolvedValue({ offline_id: "draft-1", canonical_id: "HEC-2026-0007" });
+    (markCitizenSubmission as jest.Mock).mockClear();
+    mockBuildPoC.mockResolvedValue(pocRecord({ sync_status: "synced" }));
+    render(<PoCPage />);
+    await screen.findByText("HEC-2026-0007");
+    expect(markCitizenSubmission).not.toHaveBeenCalled();
+  });
+
   it("shows the canonical id once the one-shot online submit succeeds", async () => {
     mockGetCase.mockResolvedValue({ offline_id: "draft-1" });
     mockBuildPoC.mockResolvedValue(pocRecord());
@@ -135,6 +157,44 @@ describe("PoCPage", () => {
     );
 
     expect(screen.queryByText("HEC-2026-9999")).not.toBeInTheDocument();
+  });
+
+  // The defect behind "the reference on my downloaded receipt is wrong": the one-shot submit took
+  // ~10 s against a remote database, and a receipt downloaded in that window carried the 36-char
+  // offline UUID, which citizens then mistyped on the status page.
+  it("while the HEC number may still arrive, says so and holds Download instead of showing the UUID", async () => {
+    mockGetCase.mockResolvedValue({ offline_id: "draft-1" });
+    mockBuildPoC.mockResolvedValue(pocRecord());
+    mockGetAccessToken.mockResolvedValue("tok-1");
+    let finish!: (v: unknown) => void;
+    mockSubmit.mockReturnValue(new Promise((resolve) => (finish = resolve)));
+
+    render(<PoCPage />);
+
+    expect(await screen.findByText("assigningRef")).toBeInTheDocument();
+    expect(screen.queryByText("draft-1")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "download" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "print" })).toBeDisabled();
+
+    finish({ canonical_id: "HEC-2026-0007", offline_id: "draft-1" });
+
+    expect(await screen.findByText("HEC-2026-0007")).toBeInTheDocument();
+    expect(screen.queryByText("assigningRef")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "download" })).toBeEnabled();
+  });
+
+  it("when the submit fails, falls back to the offline id labelled as temporary, and allows saving it", async () => {
+    mockGetCase.mockResolvedValue({ offline_id: "draft-1" });
+    mockBuildPoC.mockResolvedValue(pocRecord());
+    mockGetAccessToken.mockResolvedValue("tok-1");
+    mockSubmit.mockResolvedValue(null);
+
+    render(<PoCPage />);
+
+    expect(await screen.findByText("draft-1")).toBeInTheDocument();
+    expect(screen.getByText("temporaryLabel")).toBeInTheDocument();
+    expect(screen.getByText("temporaryHint")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "download" })).toBeEnabled();
   });
 
   it("does not miss a hec-case-synced event that fires before the async draft/poc load resolves (review patch)", async () => {

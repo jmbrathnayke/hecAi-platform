@@ -7,8 +7,8 @@
 WHY THIS STORES NO PERSONAL DATA. A push subscription is an opaque endpoint URL minted by the
 browser's own push service, plus the public half of a keypair used to encrypt payloads to that one
 browser install. It names nobody, reaches nobody by any other route, and dies when the user clears
-site data. So unlike the SMS path (which needs a plaintext mobile) and the email path (a plaintext
-address), this channel carries no citizen PII and needs no amendment to NFR-3.1.
+site data. So unlike the email path (a plaintext address), this channel carries no citizen PII
+and needs no amendment to NFR-3.1.
 
 THE KEY ENDPOINT IS DELIBERATELY UNAUTHENTICATED. A VAPID public key is public by construction --
 it is handed to every browser that subscribes and travels in the clear to the push service. Gating
@@ -243,3 +243,110 @@ def unsubscribe():
     finally:
         if conn is not None:
             conn.close()
+
+
+# ---------------------------------------------------------------------------- the notification feed
+#
+# WHY THIS READS audit_log AND ADDS NO TABLE. The audience of every notification is already
+# recorded. notify_staff_push() writes exactly one audit row per alert carrying
+# {"alert", "role", "scope"} in its metadata (push_service.py), and it writes that row WHETHER OR
+# NOT anyone was subscribed -- `staff_push_skipped_no_subscription` is as much a record of "this
+# division was told" as `staff_push_sent`. So the routing decision, which is the hard part, is
+# already durable, and a feed is a query rather than a second write path that could disagree with
+# the first.
+#
+# It also means the feed works on a deployment where nobody has granted push permission, which is
+# the normal state: the bell is the surface for people who never enabled the browser prompt.
+#
+# READ STATE IS NOT HERE, DELIBERATELY. audit_log is hash-chained and INSERT/SELECT only -- the
+# database role holds no UPDATE grant (migration 003) -- so a read flag cannot live on these rows
+# without breaking the chain that makes them evidence. The client keeps the highest id it has seen
+# in localStorage; the worst outcome of losing it is that a viewer sees their own history as unread
+# once, which is the right way round for a convenience.
+
+# One row per status change on the citizen side: notify_status_change_push() writes exactly one of
+# these per call, so matching the family counts announcements without double-counting the email
+# that follows. `staff_push_*` does not match -- LIKE anchors at the start.
+_CITIZEN_EVENT_PREFIX = r"push\_%"
+_STAFF_EVENT_PREFIX = r"staff\_push\_%"
+
+# The feed is a glance, not an archive; the case history already holds the full record.
+MAX_FEED_ROWS = 50
+
+
+@notifications_bp.route("/notifications/feed", methods=["GET"])
+def notification_feed():
+    """What this account has been notified about, newest first.
+
+    Scoped from the SIGNATURE-VERIFIED token exactly as the subscribe route is: an officer sees the
+    divisions assigned to them, an administrator their district, a citizen their own household. A
+    caller cannot widen their own feed, because nothing here is read from the request.
+    """
+    claims, error = authenticated_claims()
+    if error:
+        return error
+    account_id = claims.get("sub")
+    if not account_id:
+        return jsonify({"error": "invalid_token"}), 401
+
+    role = authz_role(claims)
+    conn = None
+    try:
+        conn = _get_connection()
+        with conn:
+            with conn.cursor() as cur:
+                if role in STAFF_ROLES:
+                    scope = _staff_scope(role, authz_metadata(claims))
+                    if not scope:
+                        # A system administrator holds no district or division claim, and no
+                        # notify_staff_push() call targets that role -- /system provisions accounts
+                        # and touches no case. An empty feed with a reason is the honest answer, and
+                        # it is the same answer an officer with no assigned division gets.
+                        return jsonify({"notifications": [], "count": 0,
+                                        "reason": "no_scope"}), 200
+                    cur.execute(
+                        """SELECT a.id, a.event, a.metadata->>'alert', c.canonical_id,
+                                  a.metadata->>'scope', a.created_at
+                             FROM audit_log a
+                             LEFT JOIN cases c ON c.id = a.case_id
+                            WHERE a.event LIKE %s
+                              AND a.metadata->>'role' = %s
+                              AND a.metadata->>'scope' = ANY(%s)
+                            ORDER BY a.id DESC
+                            LIMIT %s""",
+                        (_STAFF_EVENT_PREFIX, role, scope, MAX_FEED_ROWS),
+                    )
+                else:
+                    # Citizens route by household, matching push_subscriptions and
+                    # households.contact_email. Someone who has not registered yet has no cases and
+                    # therefore no feed -- correct, not an error.
+                    cur.execute(
+                        """SELECT a.id, a.event, a.metadata->>'status', c.canonical_id,
+                                  NULL, a.created_at
+                             FROM audit_log a
+                             JOIN cases c ON c.id = a.case_id
+                             JOIN households h ON h.id = c.household_id
+                            WHERE h.registrant_uid = %s
+                              AND a.event LIKE %s
+                            ORDER BY a.id DESC
+                            LIMIT %s""",
+                        (account_id, _CITIZEN_EVENT_PREFIX, MAX_FEED_ROWS),
+                    )
+                rows = cur.fetchall()
+    except psycopg2.Error:
+        current_app.logger.exception("notification feed failed")
+        return jsonify({"error": "server_error"}), 500
+    finally:
+        if conn is not None:
+            conn.close()
+
+    # No actor_id and no metadata beyond the alert/status and scope: who acted is in the case's own
+    # audit trail, which is gated separately, and a feed is read by every role including citizens.
+    return jsonify({
+        "notifications": [
+            {"id": r[0], "event": r[1], "subject": r[2], "canonical_id": r[3],
+             "scope": r[4], "created_at": r[5].isoformat() if r[5] else None}
+            for r in rows
+        ],
+        "count": len(rows),
+    }), 200

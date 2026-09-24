@@ -43,6 +43,16 @@ def _case(canonical, division, status="Submitted", household_ref="HH-2026-0001")
         "approved_amount": None,
         "ds_division_id": division,
         "household_ref": household_ref,
+        # Migration 033 / final governance workflow:
+        "ai_estimate": 45000.0,
+        "ai_model_version": "rf_compensation_v2",
+        "district": "අනුරාධපුරය",
+        "officer_assessed": True,
+        "ds_final_amount": None,
+        "ds_final_reason": None,
+        "ds_final_at": None,
+        "ds_authorized_at": None,
+        "bank_account_last4": "5678",
         # PII that must never appear in a response:
         "citizen_nic_plain": "200012345678",
         "submitter_identity_hash": "deadbeef",
@@ -52,6 +62,9 @@ def _case(canonical, division, status="Submitted", household_ref="HH-2026-0001")
 _PROJECTION = (
     "canonical_id", "offline_id", "status", "damage_category", "submitted_via",
     "submitted_at", "updated_at", "approved_amount", "household_ref",
+    "ai_estimate", "ai_model_version", "district", "officer_assessed",
+    "ds_final_amount", "ds_final_reason", "ds_final_at", "ds_authorized_at",
+    "bank_account_last4",
 )
 
 
@@ -232,3 +245,27 @@ def test_a_read_is_audit_logged(client, store):
     metadata = json.loads(entry["metadata"])
     assert metadata["ds_division"] == THALAWA
     assert metadata["result_count"] == 2
+
+
+# --------------------------------------------------------------------- final governance fields
+def test_each_case_carries_the_ai_estimate_labelled_as_not_final(client):
+    case = client.get("/api/v1/ds/cases", headers=_auth()).get_json()["cases"][0]
+    assert case["ai_estimate"] == {"amount_lkr": 45000.0, "model_version": "rf_compensation_v2",
+                                   "is_final_decision": False, "decision_support_only": True,
+                                   # A property case, priced by the historical model rather than
+                                   # the synthetic crop prototype.
+                                   "synthetic_model": False}
+    assert case["officer_assessed"] is True
+    assert case["final_decision"] is None
+    assert case["payment_authorized"] is False
+
+
+def test_a_recorded_final_decision_is_listed(client, store):
+    store["cases"][1].update(ds_final_amount=42000.0, ds_final_reason="Confirmed on site visit.",
+                             ds_final_at=datetime(2026, 8, 21, 10, 0))
+    cases = {c["canonical_id"]: c for c in
+             client.get("/api/v1/ds/cases", headers=_auth()).get_json()["cases"]}
+    assert cases["HEC-2026-0002"]["final_decision"] == {
+        "amount_lkr": 42000.0, "reason": "Confirmed on site visit.",
+        "decided_at": "2026-08-21T10:00:00",
+    }

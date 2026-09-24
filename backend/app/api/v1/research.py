@@ -24,7 +24,7 @@ THREE DELIBERATE INVERSIONS OF STORY 7.2's /admin/export — none of them accide
    which is precisely why require_research() rejects the `admin` role rather than reusing it.
 
 PII (AC2/NFR-3.3): the SELECT is an explicit column list, never SELECT *. Beyond the obvious
-exclusions (submitter_identity_hash, citizen_nic_plain, citizen_mobile_plain, gps_lat/lng,
+exclusions (submitter_identity_hash, gps_lat/lng,
 officer_id, citizen_id) two columns on inference_log itself are excluded for reasons a
 column-name review would miss:
   - `input_features` is JSONB literally containing officer_id (see inference.py's write path).

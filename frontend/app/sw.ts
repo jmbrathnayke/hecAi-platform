@@ -3,6 +3,7 @@
 import { defaultCache } from "@serwist/next/worker";
 import type { PrecacheEntry, SerwistGlobalConfig } from "serwist";
 import { BackgroundSyncPlugin, NetworkOnly, Serwist } from "serwist";
+import { notificationTarget, type NotificationData } from "@/lib/notificationTarget";
 
 // The build injects the precache manifest (app shell + additionalPrecacheEntries) here.
 declare global {
@@ -46,16 +47,17 @@ serwist.addEventListeners();
 // Status notifications. The backend encrypts each payload to this browser's own subscription keys
 // (app/infrastructure/push/), so what arrives here is readable by this install and nothing else.
 //
-// WHY PUSH AT ALL. SMS to Sri Lankan networks needs a sender identity registered with each
-// operator, which needs a registered business entity — unavailable to this project (see §7.2 of
-// the dissertation). Push has no such gate, and unlike SMS or email it needs no personal data:
-// the subscription is an opaque endpoint, not a contact detail.
+// Push is one of the platform's two notification channels (citizens: push, then email; staff:
+// push). Unlike email it needs no personal data: the subscription is an opaque endpoint, not a
+// contact detail.
 
 interface PushPayload {
   title?: string;
   body?: string;
   ref?: string;
   status?: string;
+  /** Where a tap should open, chosen by the backend per recipient role (see notificationTarget). */
+  url?: string;
 }
 
 self.addEventListener("push", (event: PushEvent) => {
@@ -84,7 +86,7 @@ self.addEventListener("push", (event: PushEvent) => {
     // back to the latest status, not five stacked cards describing the same claim's history.
     tag: ref ? `hec-case-${ref}` : "hec",
     renotify: Boolean(ref),
-    data: { ref, status: payload.status ?? "" },
+    data: { ref, status: payload.status ?? "", url: payload.url ?? null } satisfies NotificationData,
   };
 
   event.waitUntil(self.registration.showNotification(title, options));
@@ -93,10 +95,11 @@ self.addEventListener("push", (event: PushEvent) => {
 self.addEventListener("notificationclick", (event: NotificationEvent) => {
   event.notification.close();
 
-  const ref = (event.notification.data as { ref?: string } | undefined)?.ref;
-  // The public status page needs no login (FR-6.1), so the notification stays actionable even
-  // after the session has expired — which, for a claim that takes weeks, is the normal case.
-  const target = ref ? `/status?ref=${encodeURIComponent(ref)}` : "/";
+  // A citizen's notification opens the public status page, which needs no login (FR-6.1), so it
+  // stays actionable after the session has expired. A staff notification opens that role's
+  // protected case page for the exact case; an expired staff session is sent to its login first
+  // by the middleware. Only same-origin relative paths are ever followed.
+  const target = notificationTarget(event.notification.data as NotificationData | undefined);
 
   event.waitUntil(
     (async () => {

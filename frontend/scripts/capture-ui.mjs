@@ -56,8 +56,8 @@ const SHOTS = [
 
 mkdirSync(OUT, { recursive: true });
 
-// The citizen has no password sign-in - the login is one-time-code only, and SMS is undeliverable
-// (section 7.3) while an email code needs an inbox nobody here owns. Supabase's admin
+// The citizen has no password sign-in - the login is an emailed one-time link, which needs an
+// inbox nobody here owns. Supabase's admin
 // generate_link mints the same link that email would have carried and returns it instead of
 // sending it, so a real browser can follow it and end up genuinely signed in.
 // Read from the backend env; never printed.

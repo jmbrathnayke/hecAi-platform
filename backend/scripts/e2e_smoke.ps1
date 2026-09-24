@@ -151,7 +151,7 @@ try {
     }
   if ($exp) {
     $rows = $exp.Content | ConvertFrom-Json
-    $pii  = @('citizen_nic_plain','submitter_identity_hash','citizen_mobile_plain','gps_lat',
+    $pii  = @('submitter_identity_hash','gps_lat',
               'gps_lng','officer_id','citizen_id','input_features','override_reason')
     $names = @($rows[0].PSObject.Properties.Name)
     $leak = $pii | Where-Object { $names -contains $_ }

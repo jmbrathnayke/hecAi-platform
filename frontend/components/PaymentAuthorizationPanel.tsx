@@ -16,6 +16,8 @@ interface Props {
   canonicalId: string;
   t: (key: string, values?: Record<string, string | number>) => string;
   onClose: () => void;
+  /** Offered when the family has given no account: the DS office records one (Epic 8 gap). */
+  onRecordBankDetails?: () => void;
 }
 
 /** Which message explains this refusal. Each has a different person who must act on it. */
@@ -25,6 +27,8 @@ function failureKey(f: PaymentFailure): string {
       return "payment.error.notFound";
     case "not-approved":
       return "payment.error.notApproved";
+    case "final-decision-required":
+      return "payment.error.finalDecisionRequired";
     case "no-household":
       return "payment.error.noHousehold";
     case "no-bank-details":
@@ -40,7 +44,7 @@ function failureKey(f: PaymentFailure): string {
   }
 }
 
-export function PaymentAuthorizationPanel({ canonicalId, t, onClose }: Props) {
+export function PaymentAuthorizationPanel({ canonicalId, t, onClose, onRecordBankDetails }: Props) {
   const [busy, setBusy] = useState(false);
   const [auth, setAuth] = useState<PaymentAuthorization | null>(null);
   const [failure, setFailure] = useState<PaymentFailure | null>(null);
@@ -86,6 +90,18 @@ export function PaymentAuthorizationPanel({ canonicalId, t, onClose }: Props) {
         </p>
       )}
 
+      {/* The one refusal this screen can resolve itself: the family gave no account, and this is
+          the office that records one. */}
+      {failure?.reason === "no-bank-details" && onRecordBankDetails && (
+        <button
+          type="button"
+          onClick={onRecordBankDetails}
+          className="min-h-touch-target self-start rounded-md border border-forest px-design-4 text-label font-semibold text-forest"
+        >
+          {t("bankDetails.record")}
+        </button>
+      )}
+
       {auth && (
         <dl className="flex flex-col gap-design-2" data-testid="bank-details">
           <div>
@@ -113,7 +129,7 @@ export function PaymentAuthorizationPanel({ canonicalId, t, onClose }: Props) {
             </div>
           )}
           <div>
-            <dt className="text-caption text-ink-secondary">{t("payment.amount")}</dt>
+            <dt className="text-caption text-ink-secondary">{t("payment.finalAmount")}</dt>
             <dd className="text-body font-semibold text-ink-primary">
               {auth.amount_lkr === null ? "—" : `Rs. ${auth.amount_lkr.toLocaleString()}`}
             </dd>

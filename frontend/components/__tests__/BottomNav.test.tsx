@@ -4,6 +4,7 @@ import { OfficerBottomNav } from "@/components/OfficerBottomNav";
 import { usePathname as useCitizenPathname } from "@/navigation";
 import { usePathname as useOfficerPathname } from "next/navigation";
 import { getQueuedItems } from "@/lib/syncQueue";
+import { getAccessToken } from "@/lib/auth";
 
 jest.mock("next-intl", () => ({
   useTranslations: () => (key: string) => key,
@@ -38,9 +39,12 @@ jest.mock("@/lib/syncQueue", () => ({
   getQueuedItems: jest.fn(),
 }));
 
+jest.mock("@/lib/auth", () => ({ getAccessToken: jest.fn().mockResolvedValue(null) }));
+
 const mockCitizenPathname = useCitizenPathname as jest.Mock;
 const mockOfficerPathname = useOfficerPathname as jest.Mock;
 const mockGetQueuedItems = getQueuedItems as jest.Mock;
+const mockGetAccessToken = getAccessToken as jest.Mock;
 
 describe("CitizenBottomNav", () => {
   afterEach(() => jest.clearAllMocks());
@@ -82,6 +86,25 @@ describe("CitizenBottomNav", () => {
     render(<CitizenBottomNav />);
     expect(screen.getByTestId("bottom-nav")).toBeInTheDocument();
   });
+
+  it("offers a guest Sign in, not a profile", async () => {
+    mockGetAccessToken.mockResolvedValue(null);
+    mockCitizenPathname.mockReturnValue("/");
+    render(<CitizenBottomNav />);
+    expect(await screen.findByRole("link", { name: /navSignIn/ })).toHaveAttribute("href", "/login");
+    expect(screen.queryByRole("link", { name: /navProfile/ })).not.toBeInTheDocument();
+  });
+
+  it("offers a signed-in citizen their profile, marked active on /profile", async () => {
+    mockGetAccessToken.mockResolvedValue("tok-1");
+    mockCitizenPathname.mockReturnValue("/profile");
+    render(<CitizenBottomNav />);
+    await waitFor(() => expect(mockGetAccessToken).toHaveBeenCalled());
+    const profile = await screen.findByRole("link", { name: /navProfile/ });
+    expect(profile).toHaveAttribute("href", "/profile");
+    expect(profile).toHaveAttribute("aria-current", "page");
+    expect(screen.queryByRole("link", { name: /navSignIn/ })).not.toBeInTheDocument();
+  });
 });
 
 describe("OfficerBottomNav", () => {
@@ -97,6 +120,7 @@ describe("OfficerBottomNav", () => {
       "/officer/dashboard",
     );
     expect(screen.getByRole("link", { name: /navQueue/ })).toHaveAttribute("href", "/officer/sync");
+    expect(screen.getByRole("link", { name: /navProfile/ })).toHaveAttribute("href", "/officer/profile");
 
     const current = screen.getAllByRole("link", { current: "page" });
     expect(current).toHaveLength(1);

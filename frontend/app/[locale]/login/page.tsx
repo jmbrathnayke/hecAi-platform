@@ -1,13 +1,19 @@
 "use client";
-// Citizen login via phone OTP (Story 4.0). Localized (app/[locale]) — unlike the English-only
-// officer portal. Anonymous reporting stays available; this is the OPTIONAL account for "My Cases".
-// Supabase sends the SMS OTP via its configured provider (Twilio); phone signups auto-create the
-// user on first verify, so one flow covers both sign-in and sign-up.
+// Citizen sign-in (Story 4.0). Localized (app/[locale]) — unlike the English-only staff portals.
+// Anonymous reporting stays available; this is the OPTIONAL account for "My Cases".
+//
+// TWO WAYS IN, AND WHY BOTH. Email + password is the everyday one. The one-time email link remains,
+// and is what CREATES an account: opening it is what proves the address belongs to the person, so a
+// password is only ever set on a verified address (the citizen sets it afterwards in their profile).
+// The link is also the recovery path, so a forgotten password never locks a family out of a claim.
+//
+// There is no phone or SMS option: the platform does not send SMS for any purpose, and no phone
+// number is needed to sign in or to receive notifications.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase";
-import { toE164SriLanka } from "@/lib/validation";
+import { MIN_PASSWORD_LENGTH } from "@/lib/password";
 
 type SupabaseClient = ReturnType<typeof createClient>;
 
@@ -23,22 +29,15 @@ export default function CitizenLoginPage() {
     return supabaseRef.current;
   }, []);
 
-  // Three phases, because the two channels genuinely differ. Supabase's default email template
-  // sends a magic LINK, not a token, so asking for a six-digit code after an email would be
-  // asking for something that never arrives. SMS does send a code. Verified 2026-09-01.
-  const [phase, setPhase] = useState<"identify" | "otp" | "link-sent">("identify");
-  // The E.164 form actually sent to Supabase. Kept in state because verifyOtp() must be given
-  // the SAME string signInWithOtp() was given — verifying against the raw "0714790447" the user
-  // typed would fail even after a code arrived.
-  const [e164, setE164] = useState("");
-  // Channel. Phone SMS requires an SMS provider configured on the Supabase project; email uses
-  // Supabase's built-in sender and needs no external service. Verified 2026-09-01: this project
-  // has phone OFF and email ON, so email is the default and phone is kept for when SMS is
-  // provisioned.
-  const [channel, setChannel] = useState<"email" | "phone">("email");
+  // "password" is the everyday way in; "signup" creates an account with a password the citizen
+  // chooses; "link" is the recovery path, and the two "-sent" modes tell them to open their inbox
+  // rather than wait on this screen.
+  const [mode, setMode] = useState<"password" | "signup" | "link" | "link-sent" | "confirm-sent">(
+    "password",
+  );
   const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
-  const [code, setCode] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -51,58 +50,20 @@ export default function CitizenLoginPage() {
     };
   }, []);
 
-  async function handleSendCode(e: React.FormEvent) {
+  async function handlePasswordSignIn(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     setSubmitting(true);
     try {
-      let sendError;
-      if (channel === "email") {
-        ({ error: sendError } = await getSupabase().auth.signInWithOtp({
-          email: email.trim(),
-          // A six-digit code, not a magic link: the code can be read on a phone and typed on the
-          // laptop under test, which a link cannot.
-          options: { shouldCreateUser: true },
-        }));
-      } else {
-        // Supabase requires E.164. Converting here rather than asking the citizen to type
-        // "+94..." — 07X XXX XXXX is how the number is written on every form in the country.
-        const normalised = toE164SriLanka(phone);
-        if (!normalised) {
-          setError(t("invalidPhone"));
-          return;
-        }
-        setE164(normalised);
-        ({ error: sendError } = await getSupabase().auth.signInWithOtp({ phone: normalised }));
-      }
+      const { error: signInError } = await getSupabase().auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
       if (!mountedRef.current) return;
-      if (sendError) {
-        setError(t("sendError"));
-        return;
-      }
-      // Email gets a link to click; SMS gets a code to type.
-      setPhase(channel === "email" ? "link-sent" : "otp");
-    } catch {
-      if (mountedRef.current) setError(t("networkError"));
-    } finally {
-      if (mountedRef.current) setSubmitting(false);
-    }
-  }
-
-  async function handleVerify(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    setSubmitting(true);
-    try {
-      // Verify against the SAME identifier the code was sent to.
-      const { error: verifyError } = await getSupabase().auth.verifyOtp(
-        channel === "email"
-          ? { email: email.trim(), token: code, type: "email" }
-          : { phone: e164, token: code, type: "sms" },
-      );
-      if (!mountedRef.current) return;
-      if (verifyError) {
-        setError(t("verifyError"));
+      if (signInError) {
+        // Supabase does not say WHICH of the two was wrong, and neither should this screen: that
+        // is what stops it being used to find out which addresses have accounts.
+        setError(t("wrongCredentials"));
         return;
       }
       router.push(`/${locale}/my-cases`);
@@ -113,6 +74,68 @@ export default function CitizenLoginPage() {
     }
   }
 
+  async function handleSignUp(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    if (password.length < MIN_PASSWORD_LENGTH) {
+      setError(t("passwordTooShort"));
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError(t("passwordMismatch"));
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const { data, error: signUpError } = await getSupabase().auth.signUp({
+        email: email.trim(),
+        password,
+      });
+      if (!mountedRef.current) return;
+      if (signUpError) {
+        const already = /already|registered|exists/i.test(signUpError.message ?? "");
+        setError(already ? t("emailTaken") : t("signUpError"));
+        return;
+      }
+      // Whether a session comes back depends on the project's "confirm email" setting: with it on,
+      // the address must be confirmed first, so say so instead of dropping them on a signed-out app.
+      if (data.session) {
+        router.push(`/${locale}/my-cases`);
+        return;
+      }
+      setMode("confirm-sent");
+    } catch {
+      if (mountedRef.current) setError(t("networkError"));
+    } finally {
+      if (mountedRef.current) setSubmitting(false);
+    }
+  }
+
+  async function handleSendLink(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setSubmitting(true);
+    try {
+      const { error: sendError } = await getSupabase().auth.signInWithOtp({
+        email: email.trim(),
+        options: { shouldCreateUser: true },
+      });
+      if (!mountedRef.current) return;
+      if (sendError) {
+        setError(t("sendError"));
+        return;
+      }
+      setMode("link-sent");
+    } catch {
+      if (mountedRef.current) setError(t("networkError"));
+    } finally {
+      if (mountedRef.current) setSubmitting(false);
+    }
+  }
+
+  const FIELD =
+    "w-full min-h-touch-target border border-border-default rounded-md px-design-3 py-design-2 text-body";
+
   return (
     <main className="min-h-screen bg-surface-base flex items-center justify-center px-design-4">
       <div className="w-full max-w-sm bg-surface-raised rounded-lg border border-border-default p-design-6 space-y-design-4">
@@ -121,62 +144,195 @@ export default function CitizenLoginPage() {
           <p className="text-caption text-ink-secondary">{t("subtitle")}</p>
         </div>
 
-        {phase === "identify" ? (
-          <form onSubmit={handleSendCode} className="space-y-design-3">
-            <div className="flex gap-design-2" role="group" aria-label={t("channelLabel")}>
-              {(["email", "phone"] as const).map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  onClick={() => {
-                    setChannel(c);
-                    setError(null);
-                  }}
-                  aria-pressed={channel === c}
-                  className={`flex-1 min-h-touch-target rounded-md border text-label font-semibold ${
-                    channel === c
-                      ? "border-forest bg-forest text-ink-on-dark"
-                      : "border-border-default text-ink-primary"
-                  }`}
-                >
-                  {t(c === "email" ? "useEmail" : "usePhone")}
-                </button>
-              ))}
-            </div>
-
-            {channel === "email" ? (
+        {mode === "password" && (
+          <form onSubmit={handlePasswordSignIn} className="space-y-design-3">
+            <div className="space-y-design-1">
+              <label htmlFor="login-email" className="text-label font-medium text-ink-primary">
+                {t("email")}
+              </label>
               <input
+                id="login-email"
                 type="email"
                 inputMode="email"
                 autoComplete="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder={t("emailPlaceholder")}
-                aria-label={t("email")}
                 required
-                className="w-full border border-border-default rounded-md px-design-3 py-design-2 text-body"
+                className={FIELD}
               />
-            ) : (
-            <input
-              type="tel"
-              inputMode="tel"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              placeholder={t("phonePlaceholder")}
-              aria-label={t("phone")}
-              required
-              className="w-full border border-border-default rounded-md px-design-3 py-design-2 text-body"
-            />
-            )}
+            </div>
+            <div className="space-y-design-1">
+              <label htmlFor="login-password" className="text-label font-medium text-ink-primary">
+                {t("password")}
+              </label>
+              <input
+                id="login-password"
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                className={FIELD}
+              />
+            </div>
             <button
               type="submit"
               disabled={submitting}
               className="w-full min-h-touch-target bg-amber text-ink-on-amber text-label font-semibold rounded-md disabled:opacity-60"
             >
-              {t(channel === "email" ? "sendLink" : "sendCode")}
+              {submitting ? t("signingIn") : t("signIn")}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setMode("signup");
+                setError(null);
+              }}
+              className="w-full min-h-touch-target rounded-md border border-forest text-label font-semibold text-forest"
+            >
+              {t("createAccount")}
+            </button>
+
+            <p className="text-caption text-ink-secondary">{t("newHere")}</p>
+            <button
+              type="button"
+              onClick={() => {
+                setMode("link");
+                setError(null);
+              }}
+              className="w-full min-h-touch-target text-label font-semibold text-forest"
+            >
+              {t("useLink")}
             </button>
           </form>
-        ) : phase === "link-sent" ? (
+        )}
+
+        {mode === "signup" && (
+          <form onSubmit={handleSignUp} className="space-y-design-3">
+            <p className="text-caption text-ink-secondary">{t("createAccountHint")}</p>
+            <div className="space-y-design-1">
+              <label htmlFor="signup-email" className="text-label font-medium text-ink-primary">
+                {t("email")}
+              </label>
+              <input
+                id="signup-email"
+                type="email"
+                inputMode="email"
+                autoComplete="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder={t("emailPlaceholder")}
+                required
+                className={FIELD}
+              />
+            </div>
+            <div className="space-y-design-1">
+              <label htmlFor="signup-password" className="text-label font-medium text-ink-primary">
+                {t("choosePassword")}
+              </label>
+              <input
+                id="signup-password"
+                type="password"
+                autoComplete="new-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                className={FIELD}
+              />
+            </div>
+            <div className="space-y-design-1">
+              <label htmlFor="signup-confirm" className="text-label font-medium text-ink-primary">
+                {t("confirmPassword")}
+              </label>
+              <input
+                id="signup-confirm"
+                type="password"
+                autoComplete="new-password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                required
+                className={FIELD}
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="w-full min-h-touch-target bg-amber text-ink-on-amber text-label font-semibold rounded-md disabled:opacity-60"
+            >
+              {submitting ? t("signingUp") : t("signUp")}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setMode("password");
+                setError(null);
+              }}
+              className="w-full min-h-touch-target text-label font-semibold text-forest"
+            >
+              {t("haveAccount")}
+            </button>
+          </form>
+        )}
+
+        {mode === "confirm-sent" && (
+          <div className="space-y-design-3">
+            <p role="status" className="text-body text-ink-primary text-center">
+              {t("confirmSent")}
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setMode("password");
+                setError(null);
+              }}
+              className="w-full min-h-touch-target text-label font-semibold text-forest"
+            >
+              {t("haveAccount")}
+            </button>
+          </div>
+        )}
+
+        {mode === "link" && (
+          <form onSubmit={handleSendLink} className="space-y-design-3">
+            <div className="space-y-design-1">
+              <label htmlFor="link-email" className="text-label font-medium text-ink-primary">
+                {t("email")}
+              </label>
+              <input
+                id="link-email"
+                type="email"
+                inputMode="email"
+                autoComplete="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder={t("emailPlaceholder")}
+                required
+                className={FIELD}
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="w-full min-h-touch-target bg-amber text-ink-on-amber text-label font-semibold rounded-md disabled:opacity-60"
+            >
+              {t("sendLink")}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setMode("password");
+                setError(null);
+              }}
+              className="w-full min-h-touch-target text-label font-semibold text-forest"
+            >
+              {t("backToPassword")}
+            </button>
+          </form>
+        )}
+
+        {mode === "link-sent" && (
           <div className="space-y-design-3">
             <p role="status" className="text-body text-ink-primary text-center">
               {t("linkSent")}
@@ -185,7 +341,7 @@ export default function CitizenLoginPage() {
             <button
               type="button"
               onClick={() => {
-                setPhase("identify");
+                setMode("link");
                 setError(null);
               }}
               className="w-full min-h-touch-target text-label font-semibold text-forest"
@@ -193,41 +349,6 @@ export default function CitizenLoginPage() {
               {t("changeEmail")}
             </button>
           </div>
-        ) : (
-          <form onSubmit={handleVerify} className="space-y-design-3">
-            <p role="status" className="text-caption text-ink-secondary text-center">
-              {t("codeSent")}
-            </p>
-            <input
-              type="text"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-              placeholder={t("codePlaceholder")}
-              aria-label={t("code")}
-              required
-              className="w-full border border-border-default rounded-md px-design-3 py-design-2 text-body text-center tracking-widest"
-            />
-            <button
-              type="submit"
-              disabled={submitting}
-              className="w-full min-h-touch-target bg-amber text-ink-on-amber text-label font-semibold rounded-md disabled:opacity-60"
-            >
-              {t("verify")}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setPhase("identify");
-                setCode("");
-                setError(null);
-              }}
-              className="w-full text-caption text-forest underline"
-            >
-              {t("changeNumber")}
-            </button>
-          </form>
         )}
 
         {error && (

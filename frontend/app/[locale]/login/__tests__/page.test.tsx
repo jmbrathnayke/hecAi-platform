@@ -1,154 +1,191 @@
+/**
+ * Citizen sign-in: email + password every day, the one-time email link to create an account or to
+ * recover a forgotten password.
+ */
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import CitizenLoginPage from "../page";
+import CitizenLoginPage from "@/app/[locale]/login/page";
+import { createClient } from "@/lib/supabase";
 
-// next-intl: passthrough translator (key -> key) + fixed locale.
+const push = jest.fn();
+jest.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
 jest.mock("next-intl", () => ({
   useTranslations: () => (k: string) => k,
   useLocale: () => "en",
 }));
 
-const mockPush = jest.fn();
-jest.mock("next/navigation", () => ({
-  useRouter: () => ({ push: (...a: unknown[]) => mockPush(...a) }),
-}));
-
-const mockSignInWithOtp = jest.fn();
-const mockVerifyOtp = jest.fn();
+const signInWithPassword = jest.fn();
+const signInWithOtp = jest.fn();
+const signUp = jest.fn();
 jest.mock("@/lib/supabase", () => ({
-  createClient: () => ({
+  createClient: jest.fn(() => ({
     auth: {
-      signInWithOtp: (...a: unknown[]) => mockSignInWithOtp(...a),
-      verifyOtp: (...a: unknown[]) => mockVerifyOtp(...a),
+      signInWithPassword: (...a: unknown[]) => signInWithPassword(...a),
+      signInWithOtp: (...a: unknown[]) => signInWithOtp(...a),
+      signUp: (...a: unknown[]) => signUp(...a),
     },
-  }),
+  })),
 }));
 
 beforeEach(() => {
-  mockPush.mockReset();
-  mockSignInWithOtp.mockReset().mockResolvedValue({ error: null });
-  mockVerifyOtp.mockReset().mockResolvedValue({ error: null });
+  push.mockReset();
+  (createClient as jest.Mock).mockClear();
+  signInWithPassword.mockReset().mockResolvedValue({ error: null });
+  signInWithOtp.mockReset().mockResolvedValue({ error: null });
+  signUp.mockReset().mockResolvedValue({ data: { session: null }, error: null });
 });
 
-function enterPhoneAndSend(phone = "+94714790447") {
-  // The form opens on the EMAIL channel, so the phone field does not exist until SMS is chosen.
-  // Email is the default deliberately: SMS to Sri Lankan networks needs a sender identity
-  // registered with each operator, which this project cannot obtain (§7.2), so the channel that
-  // actually works is the one a citizen should meet first.
-  fireEvent.click(screen.getByRole("button", { name: "usePhone" }));
-  fireEvent.change(screen.getByLabelText("phone"), { target: { value: phone } });
-  fireEvent.click(screen.getByRole("button", { name: "sendCode" }));
+function fillSignUp(password: string, confirm = password, email = "new@example.lk") {
+  fireEvent.click(screen.getByText("createAccount"));
+  fireEvent.change(screen.getByLabelText("email"), { target: { value: email } });
+  fireEvent.change(screen.getByLabelText("choosePassword"), { target: { value: password } });
+  fireEvent.change(screen.getByLabelText("confirmPassword"), { target: { value: confirm } });
+  fireEvent.click(screen.getByText("signUp"));
 }
 
-test("sending the code moves to the OTP phase", async () => {
-  render(<CitizenLoginPage />);
-  enterPhoneAndSend();
-  await waitFor(() => expect(mockSignInWithOtp).toHaveBeenCalledWith({ phone: "+94714790447" }));
-  // OTP phase visible
-  expect(await screen.findByRole("status")).toHaveTextContent("codeSent");
-  expect(screen.getByRole("button", { name: "verify" })).toBeInTheDocument();
+describe("creating an account with a chosen password", () => {
+  it("signs the citizen straight in when the project returns a session", async () => {
+    signUp.mockResolvedValue({ data: { session: { user: { id: "u-1" } } }, error: null });
+    render(<CitizenLoginPage />);
+    fillSignUp("correct-horse");
+
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/en/my-cases"));
+    expect(signUp).toHaveBeenCalledWith({ email: "new@example.lk", password: "correct-horse" });
+  });
+
+  it("asks the citizen to confirm the address when no session comes back", async () => {
+    signUp.mockResolvedValue({ data: { session: null }, error: null });
+    render(<CitizenLoginPage />);
+    fillSignUp("correct-horse");
+
+    expect(await screen.findByText("confirmSent")).toBeInTheDocument();
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["short", "short", "passwordTooShort"],
+    ["correct-horse", "different-horse", "passwordMismatch"],
+  ])("refuses %p / %p before calling Supabase", async (password, confirm, message) => {
+    render(<CitizenLoginPage />);
+    fillSignUp(password, confirm);
+    expect(await screen.findByRole("alert")).toHaveTextContent(message);
+    expect(signUp).not.toHaveBeenCalled();
+  });
+
+  it("sends an existing address back to signing in, instead of a generic failure", async () => {
+    signUp.mockResolvedValue({ data: {}, error: { message: "User already registered" } });
+    render(<CitizenLoginPage />);
+    fillSignUp("correct-horse");
+    expect(await screen.findByRole("alert")).toHaveTextContent("emailTaken");
+  });
+
+  it("reports any other refusal without blaming the citizen's password", async () => {
+    signUp.mockResolvedValue({ data: {}, error: { message: "Database error saving new user" } });
+    render(<CitizenLoginPage />);
+    fillSignUp("correct-horse");
+    expect(await screen.findByRole("alert")).toHaveTextContent("signUpError");
+  });
 });
 
-test("verifying a valid code redirects to the localized My Cases page", async () => {
-  render(<CitizenLoginPage />);
-  enterPhoneAndSend();
-  await screen.findByRole("button", { name: "verify" });
-  fireEvent.change(screen.getByLabelText("code"), { target: { value: "123456" } });
-  fireEvent.click(screen.getByRole("button", { name: "verify" }));
+function fillCredentials(email = "family@example.lk", password = "correct-horse") {
+  fireEvent.change(screen.getByLabelText("email"), { target: { value: email } });
+  fireEvent.change(screen.getByLabelText("password"), { target: { value: password } });
+}
 
-  await waitFor(() =>
-    expect(mockVerifyOtp).toHaveBeenCalledWith({
-      phone: "+94714790447",
-      token: "123456",
-      type: "sms",
-    }),
-  );
-  await waitFor(() => expect(mockPush).toHaveBeenCalledWith("/en/my-cases"));
+// Kept from the SMS removal (migration 034): neither way in may offer a phone or an SMS code.
+it.each([
+  ["password", () => {}],
+  ["email link", () => fireEvent.click(screen.getByText("useLink"))],
+])("citizen sign-in by %s is email only: no phone field, no SMS", (_mode, switchMode) => {
+  const { container } = render(<CitizenLoginPage />);
+  switchMode();
+  expect(screen.getByLabelText("email")).toBeInTheDocument();
+  expect(container.querySelector('input[type="tel"]')).toBeNull();
+  expect(screen.queryByRole("button", { name: /sms|phone/i })).not.toBeInTheDocument();
+  expect(container.textContent ?? "").not.toMatch(/sms/i);
 });
 
-test("a send failure shows an error and stays on the phone phase", async () => {
-  mockSignInWithOtp.mockResolvedValue({ error: { message: "bad number" } });
+it("never sends a phone number to Supabase, by either route", async () => {
   render(<CitizenLoginPage />);
-  enterPhoneAndSend();
+  fillCredentials();
+  fireEvent.click(screen.getByText("signIn"));
+  await waitFor(() => expect(signInWithPassword).toHaveBeenCalled());
+  expect(signInWithPassword.mock.calls[0][0]).not.toHaveProperty("phone");
+
+  fireEvent.click(screen.getByText("useLink"));
+  fireEvent.change(screen.getByLabelText("email"), { target: { value: "new@example.lk" } });
+  fireEvent.click(screen.getByText("sendLink"));
+  await waitFor(() => expect(signInWithOtp).toHaveBeenCalled());
+  expect(signInWithOtp.mock.calls[0][0]).not.toHaveProperty("phone");
+});
+
+it("signs in with a password and goes to the citizen's own cases", async () => {
+  render(<CitizenLoginPage />);
+  fillCredentials();
+  fireEvent.click(screen.getByText("signIn"));
+
+  await waitFor(() => expect(push).toHaveBeenCalledWith("/en/my-cases"));
+  expect(signInWithPassword).toHaveBeenCalledWith({
+    email: "family@example.lk",
+    password: "correct-horse",
+  });
+  expect(signInWithOtp).not.toHaveBeenCalled();
+});
+
+it("does not say WHICH of the email or password was wrong", async () => {
+  signInWithPassword.mockResolvedValue({ error: { message: "Invalid login credentials" } });
+  render(<CitizenLoginPage />);
+  fillCredentials("nobody@example.lk");
+  fireEvent.click(screen.getByText("signIn"));
+
+  // Naming the field would turn this form into a way to find out which addresses have accounts.
+  const alert = await screen.findByRole("alert");
+  expect(alert).toHaveTextContent("wrongCredentials");
+  expect(alert.textContent).not.toMatch(/nobody@example\.lk/);
+  expect(push).not.toHaveBeenCalled();
+});
+
+it("trims the email but never the password", async () => {
+  render(<CitizenLoginPage />);
+  fillCredentials("  family@example.lk  ", "  spaces are allowed  ");
+  fireEvent.click(screen.getByText("signIn"));
+  await waitFor(() => expect(signInWithPassword).toHaveBeenCalled());
+  expect(signInWithPassword).toHaveBeenCalledWith({
+    email: "family@example.lk",
+    password: "  spaces are allowed  ",
+  });
+});
+
+it("falls back to the email link, which is also what creates an account", async () => {
+  render(<CitizenLoginPage />);
+  fireEvent.click(screen.getByText("useLink"));
+
+  expect(screen.queryByLabelText("password")).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("email"), { target: { value: "new@example.lk" } });
+  fireEvent.click(screen.getByText("sendLink"));
+
+  expect(await screen.findByText("linkSent")).toBeInTheDocument();
+  expect(signInWithOtp).toHaveBeenCalledWith({
+    email: "new@example.lk",
+    options: { shouldCreateUser: true },
+  });
+});
+
+it("explains a link that could not be sent, and can be returned to the password form", async () => {
+  signInWithOtp.mockResolvedValue({ error: { message: "over_email_send_rate_limit" } });
+  render(<CitizenLoginPage />);
+  fireEvent.click(screen.getByText("useLink"));
+  fireEvent.change(screen.getByLabelText("email"), { target: { value: "new@example.lk" } });
+  fireEvent.click(screen.getByText("sendLink"));
+
   expect(await screen.findByRole("alert")).toHaveTextContent("sendError");
-  // still on the phone phase (no OTP input)
-  expect(screen.getByRole("button", { name: "sendCode" })).toBeInTheDocument();
+  fireEvent.click(screen.getByText("backToPassword"));
+  expect(screen.getByLabelText("password")).toBeInTheDocument();
 });
 
-test("a bad OTP shows an error and does not redirect", async () => {
-  mockVerifyOtp.mockResolvedValue({ error: { message: "invalid otp" } });
+it("reports a transport failure as a network problem, not a wrong password", async () => {
+  signInWithPassword.mockRejectedValue(new TypeError("Failed to fetch"));
   render(<CitizenLoginPage />);
-  enterPhoneAndSend();
-  await screen.findByRole("button", { name: "verify" });
-  fireEvent.change(screen.getByLabelText("code"), { target: { value: "000000" } });
-  fireEvent.click(screen.getByRole("button", { name: "verify" }));
-
-  expect(await screen.findByRole("alert")).toHaveTextContent("verifyError");
-  expect(mockPush).not.toHaveBeenCalled();
-});
-
-test("a thrown network failure shows a generic error", async () => {
-  mockSignInWithOtp.mockRejectedValue(new Error("network down"));
-  render(<CitizenLoginPage />);
-  enterPhoneAndSend();
+  fillCredentials();
+  fireEvent.click(screen.getByText("signIn"));
   expect(await screen.findByRole("alert")).toHaveTextContent("networkError");
-});
-
-// ---------------------------------------------------------------- email channel (the default)
-//
-// Email is what a citizen actually meets first, and what actually works: SMS to Sri Lankan
-// networks requires a sender identity registered with each operator under a registered business
-// entity, which this project cannot obtain (§7.2). These tests exist because the default path was
-// previously covered only by the SMS tests, which no longer exercise it at all.
-
-function enterEmailAndSend(address = "villager@example.lk") {
-  fireEvent.change(screen.getByLabelText("email"), { target: { value: address } });
-  fireEvent.click(screen.getByRole("button", { name: "sendLink" }));
-}
-
-test("the form opens on the email channel, not SMS", () => {
-  render(<CitizenLoginPage />);
-  expect(screen.getByLabelText("email")).toBeInTheDocument();
-  expect(screen.queryByLabelText("phone")).not.toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "useEmail" })).toHaveAttribute("aria-pressed", "true");
-});
-
-test("sending to an email address calls Supabase with the email, never a phone", async () => {
-  render(<CitizenLoginPage />);
-  enterEmailAndSend();
-  await waitFor(() =>
-    expect(mockSignInWithOtp).toHaveBeenCalledWith({
-      email: "villager@example.lk",
-      options: { shouldCreateUser: true },
-    }),
-  );
-  // A body carrying both identifiers would be ambiguous to Supabase and is a real past bug shape.
-  expect(mockSignInWithOtp.mock.calls[0][0]).not.toHaveProperty("phone");
-});
-
-test("the email address is trimmed before it is sent", async () => {
-  render(<CitizenLoginPage />);
-  enterEmailAndSend("  villager@example.lk  ");
-  await waitFor(() =>
-    expect(mockSignInWithOtp).toHaveBeenCalledWith(
-      expect.objectContaining({ email: "villager@example.lk" }),
-    ),
-  );
-});
-
-test("a failed send surfaces an error and stays on the identify phase", async () => {
-  mockSignInWithOtp.mockResolvedValue({ error: { message: "nope" } });
-  render(<CitizenLoginPage />);
-  enterEmailAndSend();
-  expect(await screen.findByRole("alert")).toHaveTextContent("sendError");
-  expect(screen.getByLabelText("email")).toBeInTheDocument();
-});
-
-test("switching channels clears a stale error", async () => {
-  mockSignInWithOtp.mockResolvedValue({ error: { message: "nope" } });
-  render(<CitizenLoginPage />);
-  enterEmailAndSend();
-  await screen.findByRole("alert");
-  fireEvent.click(screen.getByRole("button", { name: "usePhone" }));
-  // An error about the email send must not sit above the phone field it does not describe.
-  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 });

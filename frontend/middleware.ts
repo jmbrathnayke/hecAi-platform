@@ -5,6 +5,9 @@ import { routing } from "./routing";
 
 const intlMiddleware = createMiddleware(routing);
 
+const AUTH_CODE_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const HOME_PATH_RE = /^\/((si|ta|en)\/?)?$/;
+
 export default async function middleware(request: NextRequest) {
   const path = request.nextUrl.pathname;
 
@@ -38,6 +41,17 @@ export default async function middleware(request: NextRequest) {
   // /si/auth/callback/, dropping the ?code — precisely the failure this bypass prevents.
   if (lowerPath === "/auth/callback" || lowerPath.startsWith("/auth/callback/")) {
     return NextResponse.next();
+  }
+
+  // Supabase allowlists only the site root as a redirect target, so an emailed sign-in link returns
+  // to "/?code=<uuid>" instead of /auth/callback. Unforwarded, the code is never exchanged and the
+  // citizen stays signed out however many links they click.
+  const landingCode = request.nextUrl.searchParams.get("code");
+  if (landingCode && AUTH_CODE_RE.test(landingCode) && HOME_PATH_RE.test(lowerPath)) {
+    const callback = new URL("/auth/callback", request.url);
+    callback.searchParams.set("code", landingCode);
+    callback.searchParams.set("next", path);
+    return NextResponse.redirect(callback);
   }
 
   const isAdminRoute = lowerPath === "/admin" || lowerPath.startsWith("/admin/");
@@ -200,11 +214,11 @@ export default async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Citizen account routes (Story 4.0) — localized and session-protected. ONLY the "My Cases"
-  // account view is gated; report/* and status/* stay public so anonymous reporting is unaffected.
-  // Matches the locale-prefixed form (/si|/ta|/en/my-cases…); an unprefixed /my-cases is first
-  // locale-redirected by intlMiddleware, then re-enters here prefixed.
-  const citizenMatch = lowerPath.match(/^\/(si|ta|en)\/my-cases(\/|$)/);
+  // Citizen account routes (Story 4.0) — localized and session-protected. Only the account views
+  // (My Cases, Profile) are gated; report/* and status/* stay public so anonymous reporting is
+  // unaffected. Matches the locale-prefixed form (/si|/ta|/en/my-cases…); an unprefixed /my-cases
+  // is first locale-redirected by intlMiddleware, then re-enters here prefixed.
+  const citizenMatch = lowerPath.match(/^\/(si|ta|en)\/(my-cases|profile)(\/|$)/);
   if (citizenMatch) {
     const routeLocale = citizenMatch[1];
     let response = NextResponse.next({ request });

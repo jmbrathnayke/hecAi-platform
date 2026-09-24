@@ -1,10 +1,9 @@
 // Web Push subscription client.
 //
-// WHY THIS CHANNEL EXISTS. SMS to Sri Lankan networks requires a sender identity registered with
-// each operator, which requires a registered business entity — see §7.2 of the dissertation. Push
-// has no such gate. It also carries no personal data: the subscription is an opaque endpoint URL
-// the browser mints, not a phone number or an address, so nothing here needs the protection the
-// NIC and bank fields need in lib/households.ts.
+// ONE OF TWO NOTIFICATION CHANNELS. Citizens are notified by Web Push, then email; staff by Web
+// Push. Push needs no vendor account, and it carries no personal data: the subscription is an
+// opaque endpoint URL the browser mints, not a phone number or an address, so nothing here needs
+// the protection the NIC and bank fields need in lib/households.ts.
 //
 // EVERY FUNCTION RESOLVES, NONE THROW. Notifications are an enhancement layered on top of a system
 // that already works without them (the public status page needs no login, no permission and no

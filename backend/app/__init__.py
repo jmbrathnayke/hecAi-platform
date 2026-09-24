@@ -101,29 +101,28 @@ def create_app(config=None):
     # decrypt-old/encrypt-new migration over every row, and no such script exists yet.
     app.config["BANK_DETAILS_KEY"] = os.getenv("BANK_DETAILS_KEY")
 
-    # Twilio SMS fallback (Story 3.6). Absent in tests (mocked) and until the DWC Twilio number
-    # is provisioned; the webhook fails signature validation closed when TWILIO_AUTH_TOKEN is unset.
-    app.config["TWILIO_ACCOUNT_SID"] = os.getenv("TWILIO_ACCOUNT_SID")
-    app.config["TWILIO_AUTH_TOKEN"] = os.getenv("TWILIO_AUTH_TOKEN")
-    app.config["TWILIO_FROM_NUMBER"] = os.getenv("TWILIO_FROM_NUMBER")
-    app.config["TWILIO_PUBLIC_WEBHOOK_URL"] = os.getenv("TWILIO_PUBLIC_WEBHOOK_URL")
-
-    # SendGrid email notifications. Absent in tests (mocked) and in any deployment that has not
-    # provisioned email; sendgrid_client.send_email() treats an unset key as "not configured" and
+    # SMTP email notifications. Absent in tests (mocked) and in any deployment that has not
+    # provisioned email; smtp_client.send_email() treats unset credentials as "not configured" and
     # returns False rather than raising, so an unconfigured install degrades to the public status
     # page instead of failing a case action.
+    #
+    # The same mailbox Supabase Auth is given for its confirmation and sign-in mail: one provider
+    # account serves both, and swapping provider is five env vars rather than a code change.
     # Supabase Auth Admin API. Required only by the staff-provisioning API (FR-11): app_metadata
     # is writable with this key alone, which is precisely what makes the role claim trustworthy —
     # a citizen cannot call auth.updateUser() and name themselves an administrator. Absent, that
     # API returns 503 rather than degrading to something that appears to work.
     app.config["SUPABASE_SERVICE_ROLE_KEY"] = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 
-    app.config["SENDGRID_API_KEY"] = os.getenv("SENDGRID_API_KEY")
-    app.config["SENDGRID_FROM_EMAIL"] = os.getenv("SENDGRID_FROM_EMAIL")
-    app.config["SENDGRID_FROM_NAME"] = os.getenv("SENDGRID_FROM_NAME")
+    app.config["SMTP_HOST"] = os.getenv("SMTP_HOST")
+    app.config["SMTP_PORT"] = os.getenv("SMTP_PORT")
+    app.config["SMTP_USERNAME"] = os.getenv("SMTP_USERNAME")
+    app.config["SMTP_PASSWORD"] = os.getenv("SMTP_PASSWORD")
+    app.config["SMTP_FROM_EMAIL"] = os.getenv("SMTP_FROM_EMAIL")
+    app.config["SMTP_FROM_NAME"] = os.getenv("SMTP_FROM_NAME")
 
     # Web Push (VAPID). Self-generated keypair, no vendor account and no registered business
-    # entity -- unlike SMS. The private key signs push requests; the public key is handed to the
+    # entity. The private key signs push requests; the public key is handed to the
     # browser at subscribe time. Unset means the subscribe endpoint reports push unavailable.
     app.config["VAPID_PUBLIC_KEY"] = os.getenv("VAPID_PUBLIC_KEY")
     app.config["VAPID_PRIVATE_KEY"] = os.getenv("VAPID_PRIVATE_KEY")
@@ -152,7 +151,7 @@ def create_app(config=None):
     from app.api.v1.status import status_bp
     from app.api.v1.inference import inference_bp
     from app.api.v1.officer import officer_bp
-    from app.api.v1.sms import sms_bp
+    from app.api.v1.officer_cases import officer_cases_bp
     from app.api.v1.citizen import citizen_bp
     from app.api.v1.sync import sync_bp
     from app.api.v1.admin import admin_bp
@@ -167,7 +166,7 @@ def create_app(config=None):
     app.register_blueprint(status_bp, url_prefix="/api/v1/cases/status")
     app.register_blueprint(inference_bp, url_prefix="/api/v1")
     app.register_blueprint(officer_bp, url_prefix="/api/v1")
-    app.register_blueprint(sms_bp, url_prefix="/api/v1")
+    app.register_blueprint(officer_cases_bp, url_prefix="/api/v1")
     app.register_blueprint(citizen_bp, url_prefix="/api/v1")
     app.register_blueprint(sync_bp, url_prefix="/api/v1/sync")
     app.register_blueprint(admin_bp, url_prefix="/api/v1")

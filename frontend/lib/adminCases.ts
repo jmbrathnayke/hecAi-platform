@@ -21,6 +21,14 @@ export interface AdminCaseListItem {
    * This is the only field that distinguishes the two — `submitted_via` is "app" for both.
    */
   submitted_by_officer: boolean;
+  // --- final governance workflow (migration 033). Optional: an older backend omits them. ---
+  ds_division?: string | null;
+  /** The field officer responsible for the case (assigned reviewer, or the submitting officer). */
+  responsible_officer_id?: string | null;
+  /** A field officer has verified the case and recorded the on-device assessment. */
+  officer_assessed?: boolean;
+  /** The Divisional Secretariat has recorded the final compensation decision. */
+  ds_final_decided?: boolean;
 }
 
 export interface AdminCaseKpis {
@@ -44,6 +52,12 @@ export interface AdminCaseListParams {
   to?: string | null;
   type?: string | null;
   division?: string | null;
+  /** "assessed" | "pending" -- organise the queue by officer verification. */
+  assessment?: string | null;
+  /** Responsible officer account id (exact). */
+  officer?: string | null;
+  /** One case by reference: a staff notification opens /admin/cases?ref=HEC-…. */
+  ref?: string | null;
   page?: number;
   limit?: number;
   sort?: string;

@@ -38,6 +38,14 @@ interface CaseActionPanelProps {
   hasEstimate: boolean;
   estimateAmountLkr: number | null;
   onActionComplete: (updated: AdminCaseDetailResponse) => void;
+  /**
+   * Final governance workflow. false = a citizen report no field officer has verified yet; the
+   * backend refuses to approve it (409 officer_assessment_required). undefined = unknown (older
+   * backend) and treated as before.
+   */
+  officerAssessed?: boolean;
+  /** false = approved and forwarded, awaiting the Divisional Secretariat's final decision. */
+  dsFinalDecided?: boolean;
 }
 
 function isClosed(status: string): boolean {
@@ -50,7 +58,10 @@ export function CaseActionPanel({
   hasEstimate,
   estimateAmountLkr,
   onActionComplete,
+  officerAssessed,
+  dsFinalDecided,
 }: CaseActionPanelProps) {
+  const approvalBlocked = officerAssessed === false;
   const router = useRouter();
   const t = useTranslations("admin");
   const [activeAction, setActiveAction] = useState<AdminCaseAction | null>(null);
@@ -111,7 +122,11 @@ export function CaseActionPanel({
       return;
     }
     if (!result) {
-      setError(t("action.actionError"));
+      setError(
+        activeAction === "approve" && approvalBlocked
+          ? t("action.assessmentRequired")
+          : t("action.actionError"),
+      );
       return;
     }
     onActionComplete(result);
@@ -131,7 +146,13 @@ export function CaseActionPanel({
       {/* was `text-heading-3` — undefined token; see AIResultPanel. DESIGN.md § Typography. */}
       <h3 className="text-headline text-ink-primary">{t("action.heading")}</h3>
 
-      {status === "Approved" ? (
+      {status === "Approved" && dsFinalDecided === false ? (
+        // Approved means forwarded. The Divisional Secretariat decides the final amount and
+        // authorises payment from its own portal; there is nothing for the administrator to pay.
+        <p className="rounded-md bg-surface-tint p-design-3 text-body text-ink-secondary" data-testid="awaiting-ds-decision">
+          {t("action.awaitingDsDecision")}
+        </p>
+      ) : status === "Approved" ? (
         <button
           type="button"
           onClick={() => openDialog("mark_paid")}
@@ -141,10 +162,16 @@ export function CaseActionPanel({
         </button>
       ) : (
         <div className="grid grid-cols-2 gap-design-2">
+          {approvalBlocked && (
+            <p role="note" className="col-span-2 rounded-md bg-status-warning/25 p-design-3 text-body text-ink-primary" data-testid="assessment-required">
+              {t("action.assessmentRequired")}
+            </p>
+          )}
           <button
             type="button"
             onClick={() => openDialog("approve")}
-            className="min-h-touch-target rounded-md bg-forest px-design-4 text-label font-semibold text-ink-on-dark"
+            disabled={approvalBlocked}
+            className="min-h-touch-target rounded-md bg-forest px-design-4 text-label font-semibold text-ink-on-dark disabled:opacity-50"
           >
             {t("action.approve")}
           </button>
@@ -190,6 +217,7 @@ export function CaseActionPanel({
                 onChange={(e) => setAmount(e.target.value)}
                 className="w-full rounded-md border border-border-default px-design-3 py-design-2 text-body"
               />
+              <p className="text-caption text-ink-secondary">{t("action.forwardNote")}</p>
             </div>
           )}
 
