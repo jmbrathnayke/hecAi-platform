@@ -82,6 +82,11 @@ export function DsFinalDecisionPanel({ dsCase, t, onDecided, onCancel }: Props) 
           <dt className="text-caption text-ink-secondary">{t("finalDecision.aiEstimate")}</dt>
           <dd className="text-headline text-ink-primary">{lkr(aiEstimate)}</dd>
           <dd className="text-caption font-semibold text-status-warning">{t("finalDecision.aiEstimateNote")}</dd>
+          {dsCase.ai_estimate?.synthetic_model && (
+            <dd className="text-caption font-semibold text-status-warning" data-testid="ds-estimate-synthetic">
+              {t("finalDecision.aiEstimateSynthetic")}
+            </dd>
+          )}
         </div>
         <div className="rounded-sm bg-surface-base px-design-3 py-design-2">
           <dt className="text-caption text-ink-secondary">{t("finalDecision.dwcAmount")}</dt>

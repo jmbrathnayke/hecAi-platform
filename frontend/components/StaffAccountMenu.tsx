@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { readStaffAccount, signOutStaff, type StaffAccount } from "@/lib/staffAccount";
-import { StaffPasswordForm } from "@/components/StaffPasswordForm";
+import { PasswordForm } from "@/components/PasswordForm";
 
 export function StaffAccountDetails({ account }: { account: StaffAccount | null }) {
   const t = useTranslations("staffAccount");
@@ -46,7 +46,7 @@ export function StaffPasswordToggle({ account }: { account: StaffAccount | null 
   const [open, setOpen] = useState(false);
   if (!account?.canChangePassword) return null;
   return open ? (
-    <StaffPasswordForm onDone={() => setOpen(false)} />
+    <PasswordForm onDone={() => setOpen(false)} />
   ) : (
     <button
       type="button"

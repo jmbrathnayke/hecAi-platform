@@ -25,17 +25,38 @@ logger = logging.getLogger(__name__)
 
 _MODELS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "..", "ml", "models")
 MODEL_PATH = os.path.join(_MODELS_DIR, "rf_compensation_v2.joblib")
+CROP_MODEL_PATH = os.path.join(_MODELS_DIR, "synthetic_crop_compensation_v1.joblib")
 LOOKUP_PATH = os.path.join(_MODELS_DIR, "compensation_prior_year_lookup.json")
 DISTRICT_REF_PATH = os.path.join(_MODELS_DIR, "district_reference.json")
 
 FEATURES = ["damage_type", "district", "ds_division", "year",
             "prior_year_amount", "prior_year_incident_count", "prior_year_had_payout"]
 
-# Story 5.2 Open Question 1 (PO recommendation, shipped): the incident form's damage
-# category vocabulary has no separate crop line item and no death/injury path at all --
-# every value maps onto the model's best-covered "property" category. "none" (no damage)
+CROP_FEATURES = ["crop_type", "severity", "district", "ds_division", "year",
+                 "affected_area_acres", "damage_extent_percent"]
+
+# The five crops the crop model was fit on. Whitelisted here rather than trusted from the request:
+# an unrecognised value must skip crop estimation, never reach predict() and be silently encoded as
+# an unknown category that still produces a confident number.
+CROP_TYPES = ("bada_irigu", "banana", "coconut", "paddy", "vegetable")
+
+# Story 5.2 Open Question 1 (PO recommendation, shipped): the historical DWC dataset behind
+# rf_compensation_v2 has damage_type in {death, injury, property} and no crop class at all, so
+# every incident-form category maps onto its best-covered "property" category. "none" (no damage)
 # intentionally has no entry -> estimation is skipped (a false report isn't a claim).
-_DAMAGE_TYPE_MAP = {"crop": "property", "property": "property", "combined": "property"}
+#
+# `crop_damage` is the classifier's own class id, which reaches this function from the officer
+# assessment path while the citizen form sends `crop`. Both vocabularies are already present in
+# cases.damage_category; before this entry existed the classifier spelling fell through to None and
+# 5 of the 8 such cases in the database carry no estimate at all -- a silent skip, not an error.
+_DAMAGE_TYPE_MAP = {"crop": "property", "crop_damage": "property",
+                    "property": "property", "property_damage": "property",
+                    "combined": "property"}
+
+# Which categories route to the crop model instead, when a crop type is supplied. Falls back to the
+# property model when it is not, so an officer who does not know the crop still gets the previous
+# behaviour rather than nothing.
+_CROP_CATEGORIES = frozenset({"crop", "crop_damage"})
 
 # Untrained, post-hoc adjustment (PO-ratified scope addition) -- the RF bundle was never
 # fit on severity (the historical DWC dataset has no severity column), so this multiplies
@@ -46,6 +67,7 @@ _DAMAGE_TYPE_MAP = {"crop": "property", "property": "property", "combined": "pro
 _SEVERITY_MULTIPLIER = {"Minor": 0.7, "Moderate": 1.0, "Severe": 1.3, "None": 1.0}
 
 _bundle: dict[str, Any] | str | None = None
+_crop_bundle: dict[str, Any] | str | None = None
 _prior_year_lookup: dict[str, Any] | None = None
 _district_reference: dict[str, Any] | None = None
 
@@ -65,8 +87,31 @@ def _load_model():
     return _bundle
 
 
+def _load_crop_model():
+    """Same contract as _load_model(): absent or broken means unavailable, never an exception.
+
+    A deployment without this artifact keeps working exactly as it did before the crop model
+    existed -- crop reports fall back to the property path. That fallback is what makes adding a
+    second model safe to deploy independently of the first.
+    """
+    global _crop_bundle
+    if _crop_bundle is None:
+        try:
+            _crop_bundle = joblib.load(CROP_MODEL_PATH)
+        except Exception:
+            logger.info("Crop compensation model not loaded from %s; crop reports will use the "
+                        "property model", CROP_MODEL_PATH)
+            _crop_bundle = "unavailable"
+    return _crop_bundle
+
+
 def is_model_available() -> bool:
     bundle = _load_model()
+    return bundle != "unavailable" and bundle is not None
+
+
+def is_crop_model_available() -> bool:
+    bundle = _load_crop_model()
     return bundle != "unavailable" and bundle is not None
 
 
@@ -152,8 +197,86 @@ def compute_estimate(bundle, damage_type, district, ds_division, year, ai_severi
     }
 
 
+def compute_crop_estimate(bundle, crop_type, district, ds_division, year, severity,
+                          affected_area_acres, damage_extent_percent, cap):
+    """The crop serving transform. Pure given `bundle` and `cap`, exactly like compute_estimate().
+
+    Kept pure for the same reason: backend/ml/evaluate.py must be able to score THIS code rather
+    than a re-implementation of it. Two models with one honest evaluation path, not two.
+
+    NO SEVERITY MULTIPLIER HERE, and that is the substantive difference from the property path.
+    rf_compensation_v2 was never fit on severity -- the historical dataset has no such column -- so
+    compute_estimate() multiplies the model's output afterwards by a hand-chosen 0.7/1.0/1.3. The
+    crop model WAS fit on severity as a one-hot feature, using the same Minor/Moderate/Severe
+    vocabulary resolveSeverity() emits, so the classifier's reading enters through predict() and
+    multiplying again would double-count it.
+
+    An unseen district or DS division is encoded as -1 by the OrdinalEncoder rather than raising:
+    the synthetic file's 48 Latin-script divisions only partly overlap the platform's Sinhala ones,
+    and geography carries ~2% of the model's importance against area's 81%, so a miss degrades the
+    estimate slightly instead of losing it.
+    """
+    row = {
+        "crop_type": crop_type,
+        "severity": severity if severity in ("Minor", "Moderate", "Severe") else "Moderate",
+        "district": district,
+        "ds_division": ds_division,
+        "year": year,
+        "affected_area_acres": float(affected_area_acres),
+        "damage_extent_percent": float(damage_extent_percent),
+    }
+    X = pd.DataFrame([row], columns=CROP_FEATURES)
+
+    gate = bool(bundle["clf"].predict(X)[0])
+    raw_estimate = float(np.clip(np.expm1(bundle["reg"].predict(X)[0]), 0, None)) if gate else 0.0
+
+    capped = cap is not None and raw_estimate > cap
+    return {
+        "amount": cap if capped else raw_estimate,
+        "raw_estimate": raw_estimate,
+        "model_raw": raw_estimate,
+        "multiplier": 1.0,
+        "capped": capped,
+        "row": row,
+    }
+
+
+# The area range the synthetic file actually covers (0.1 – 3.5 acres). A random forest cannot
+# extrapolate: beyond the largest leaf it has, it simply repeats that leaf's value, so a 40-acre
+# claim would return the 3.5-acre answer while looking like a prediction. Inputs past this are
+# accepted — refusing a real assessment because the training data was narrow would be worse — but
+# flagged, so the estimate is never read as if the model had seen anything like it.
+CROP_AREA_TRAINED_MAX = 3.5
+CROP_AREA_ABSOLUTE_MAX = 100.0
+
+
+def _crop_inputs(crop_type, affected_area_acres, damage_extent_percent):
+    """-> (crop_type, acres, percent) when all three are usable, else None.
+
+    Validated here, server-side, rather than trusted from the officer's request. `crop_type` is
+    whitelisted against the five values the model was fit on; a typo or an unseen crop must fall
+    back to the property path, not be one-hot encoded as "no known crop" and still priced.
+
+    The numeric bounds catch typing slips rather than enforce policy: `affected_area_acres` carries
+    81% of the model's importance, so a mistyped 250 for 2.5 would otherwise produce a confident
+    six-figure estimate. Anything inside the bounds but outside the TRAINED range is allowed through
+    and marked — see CROP_AREA_TRAINED_MAX.
+    """
+    if crop_type not in CROP_TYPES:
+        return None
+    try:
+        acres = float(affected_area_acres)
+        percent = float(damage_extent_percent)
+    except (TypeError, ValueError):
+        return None
+    if not (0 < acres <= CROP_AREA_ABSOLUTE_MAX) or not (0 < percent <= 100):
+        return None
+    return crop_type, acres, percent
+
+
 def estimate_and_store(cur, case_id, damage_category, ds_division_id, submitted_at,
-                        district=None, ai_severity=None, replace=False):
+                        district=None, ai_severity=None, replace=False,
+                        crop_type=None, affected_area_acres=None, damage_extent_percent=None):
     """Best-effort: returns the stored dict on success, None on any skip/failure.
     Never raises -- a bug here must not fail the case insert/sync it's
     piggybacking on. `district`/`ds_division_id`/`ai_severity` are string-or-None;
@@ -172,7 +295,15 @@ def estimate_and_store(cur, case_id, damage_category, ds_division_id, submitted_
     if damage_type is None:
         return None  # "none" (no damage) or an unrecognized category -> no claim to estimate
 
-    if not is_model_available():
+    # Route. A crop report priced by the crop model needs all three officer-supplied inputs and the
+    # artifact present; anything missing falls back to the property path, which is what every crop
+    # report used before this model existed. The fallback is deliberate -- a partially filled
+    # assessment should degrade to the previous behaviour, never to no estimate at all.
+    crop = _crop_inputs(crop_type, affected_area_acres, damage_extent_percent)
+    use_crop = (damage_category in _CROP_CATEGORIES and crop is not None
+                and is_crop_model_available())
+
+    if not use_crop and not is_model_available():
         logger.warning("Compensation model unavailable; skipping estimate for case %s", case_id)
         return None
 
@@ -192,7 +323,7 @@ def estimate_and_store(cur, case_id, damage_category, ds_division_id, submitted_
         return None
 
     try:
-        bundle = _load_model()
+        bundle = _load_crop_model() if use_crop else _load_model()
         if not isinstance(bundle, dict):
             return None
         resolved_district, ds_division = _resolve_district(district, ds_division_id)
@@ -201,25 +332,67 @@ def estimate_and_store(cur, case_id, damage_category, ds_division_id, submitted_
         # takes the cap as an argument -- it is the one step of the transform that needs a
         # database, so it stays here rather than inside the pure function. Both SELECTs still
         # precede the INSERT, so the statement order Postgres sees is unchanged.
+        # The crop branch prices against a "crop" ceiling rather than the property one. Both keys
+        # are absent from compensation_caps today (the table holds no rows at all), so cap is None
+        # either way and nothing is capped -- but the key must be the right one for the day the
+        # policy ceilings are loaded.
+        cap_damage_type = "crop" if use_crop else damage_type
         cur.execute(
             "SELECT cap_amount_lkr FROM compensation_caps WHERE district = %s AND damage_type = %s",
-            (resolved_district, damage_type),
+            (resolved_district, cap_damage_type),
         )
         cap_row = cur.fetchone()
         cap = float(cap_row[0]) if cap_row else None
 
-        est = compute_estimate(bundle, damage_type, resolved_district, ds_division,
-                               submitted_at.year, ai_severity, cap)
+        if use_crop:
+            crop_name, acres, percent = crop
+            est = compute_crop_estimate(bundle, crop_name, resolved_district, ds_division,
+                                        submitted_at.year, ai_severity, acres, percent, cap)
+        else:
+            est = compute_estimate(bundle, damage_type, resolved_district, ds_division,
+                                   submitted_at.year, ai_severity, cap)
 
         meta = bundle["meta"]
+        if use_crop:
+            model_version = meta.get("model_version", "synthetic_crop_compensation_v1")
+            dataset_version = meta.get("dataset_version")
+        else:
+            model_version = f"rf_compensation_{meta.get('version', 'v2')}"
+            dataset_version = meta.get("dataset")
+
+        # Provenance stored WITH every estimate, not only in the training artifact, so that anyone
+        # reading a row back -- the admin UI, the DS panel, the research export, an examiner
+        # querying the database directly -- can tell which model priced it and on what data,
+        # without having to know which model_version strings mean "synthetic".
+        #
+        # `decision_support_only` and `is_final_decision` are invariants of this system rather than
+        # per-row facts: no estimate this function produces is ever a final compensation decision,
+        # which the DS officer alone makes. They are written into every row anyway, because a
+        # constant that is only asserted in documentation stops being checkable the moment someone
+        # reads the table without the documentation.
+        provenance = {
+            "model_version": model_version,
+            "synthetic_model": bool(use_crop and meta.get("synthetic_data", True)),
+            "decision_support_only": True,
+            "is_final_decision": False,
+        }
+        if use_crop:
+            provenance["data_status"] = meta.get("data_status", "SYNTHETIC")
+            # Recorded rather than rejected: the estimate stands, but a reader can see that the
+            # model was asked about a field larger than anything in its training data.
+            provenance["area_outside_trained_range"] = crop[1] > CROP_AREA_TRAINED_MAX
+
         result = {
             "amount_lkr": round(est["amount"], 2),
             "raw_estimate_lkr": round(est["raw_estimate"], 2),
             "capped": est["capped"],
             "feature_values": {**est["row"], "ai_severity": ai_severity,
-                               "severity_multiplier": est["multiplier"]},
-            "model_version": f"rf_compensation_{meta.get('version', 'v2')}",
-            "dataset_version": meta.get("dataset"),
+                               "severity_multiplier": est["multiplier"], **provenance},
+            "model_version": model_version,
+            "dataset_version": dataset_version,
+            "synthetic_model": provenance["synthetic_model"],
+            "decision_support_only": True,
+            "is_final_decision": False,
         }
 
         params = (case_id, result["amount_lkr"], result["raw_estimate_lkr"], result["capped"],

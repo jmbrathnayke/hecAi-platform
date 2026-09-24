@@ -24,7 +24,15 @@ export interface DsCase {
   household_ref: string | null;
   // --- final governance workflow (optional: an older backend omits them) ----------------------
   /** Decision support from the Random Forest estimator. Never the final amount. */
-  ai_estimate?: { amount_lkr: number | null; model_version: string | null; is_final_decision: false };
+  ai_estimate?: {
+    amount_lkr: number | null;
+    model_version: string | null;
+    is_final_decision: false;
+    decision_support_only?: true;
+    /** True when the synthetic crop prototype produced the figure. This is the screen where a real
+     *  payment is decided, so its provenance is shown beside the amount, not inferred. */
+    synthetic_model?: boolean;
+  };
   district?: string | null;
   officer_assessed?: boolean;
   /** The Divisional Secretariat's recorded decision, or null before it is made. */

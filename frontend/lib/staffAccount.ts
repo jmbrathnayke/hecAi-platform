@@ -15,7 +15,6 @@ export interface StaffAccount {
   canChangePassword: boolean;
 }
 
-export const MIN_PASSWORD_LENGTH = 8;
 
 const ROLES: readonly StaffRole[] = ["officer", "admin", "ds_officer", "system_admin"];
 
@@ -33,18 +32,6 @@ export function accountFromMetadata(email: string | null, metadata: Record<strin
   return { email, role, scope, canChangePassword };
 }
 
-/**
- * Set a new password for the signed-in account. Role and area are deliberately not changeable here:
- * they live in app_metadata, which only the service-role key can write (see middleware/auth.py).
- */
-export async function changeStaffPassword(password: string): Promise<"ok" | "error"> {
-  try {
-    const { error } = await createClient().auth.updateUser({ password });
-    return error ? "error" : "ok";
-  } catch {
-    return "error";
-  }
-}
 
 export async function readStaffAccount(): Promise<StaffAccount | null> {
   try {

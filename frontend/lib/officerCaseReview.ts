@@ -53,6 +53,10 @@ export interface OfficerCaseDetail {
     model_version: string | null;
     created_at: string | null;
     is_final_decision: false;
+    decision_support_only: true;
+    /** True when synthetic_crop_compensation_v1 priced this case. The crop estimator is a
+     *  prototype trained on generated rows, and every screen that shows its figure has to say so. */
+    synthetic_model: boolean;
   } | null;
   history: { event: string; created_at: string | null }[];
   actions: { can_start_review: boolean; can_assess: boolean; already_assessed: boolean };
@@ -76,15 +80,59 @@ export interface OverrideChoice {
 }
 
 /**
+ * The five crops `synthetic_crop_compensation_v1` was trained on. The classifier cannot produce
+ * these — it answers "crop damage or property damage", never "paddy or banana" — so the crop is
+ * the officer's own identification and has to be collected separately.
+ *
+ * Kept in the same order as the model's `meta.crop_types`. The server re-validates against its own
+ * copy (compensation.CROP_TYPES); this list exists to build the control and to stop an obviously
+ * invalid submission before it costs a round trip, never as the authority.
+ */
+export const CROP_TYPES = ["paddy", "banana", "coconut", "bada_irigu", "vegetable"] as const;
+export type CropType = (typeof CROP_TYPES)[number];
+
+export type CropAssessment = {
+  cropType: CropType | "";
+  areaAcres: string;
+  extentPercent: string;
+};
+
+export const EMPTY_CROP_ASSESSMENT: CropAssessment = { cropType: "", areaAcres: "", extentPercent: "" };
+
+/** -> the parsed values when all three are usable, else null. Mirrors compensation._crop_inputs(). */
+export function parseCropAssessment(
+  crop: CropAssessment,
+): { crop_type: CropType; affected_area_acres: number; damage_extent_percent: number } | null {
+  if (!CROP_TYPES.includes(crop.cropType as CropType)) return null;
+  const acres = Number(crop.areaAcres);
+  const percent = Number(crop.extentPercent);
+  if (!Number.isFinite(acres) || acres <= 0 || acres > 100) return null;
+  if (!Number.isFinite(percent) || percent <= 0 || percent > 100) return null;
+  return { crop_type: crop.cropType as CropType, affected_area_acres: acres, damage_extent_percent: percent };
+}
+
+/** The area range the crop model was actually fit on. Past it a random forest repeats its largest
+ * leaf rather than extrapolating, so the officer is warned — but not blocked, because a real field
+ * can be bigger than the training data. */
+export const CROP_AREA_TRAINED_MAX = 3.5;
+
+/**
  * The request body for one assessment: the model's own prediction, and the officer's correction
  * beside it when they disagreed. Field names are the research log's (inference_log), so an
  * assessment is validated by exactly the rules every other classification is.
+ *
+ * The crop fields travel only when the SETTLED class is crop damage. Sending them with a property
+ * assessment would be harmless — the server drops them — but omitting them keeps the request an
+ * honest description of what the officer actually assessed.
  */
 export function buildAssessmentBody(
   result: Pick<ClassificationResult, "classId" | "confidence" | "severity" | "processingTimeMs" | "modelVersion">,
   override: OverrideChoice | null,
+  crop: CropAssessment | null = null,
 ): Record<string, unknown> {
   const overridden = override !== null && override.category !== result.classId;
+  const finalClass = overridden ? override!.category : result.classId;
+  const cropFields = finalClass === "crop_damage" && crop ? parseCropAssessment(crop) : null;
   return {
     model_type: "mobilenetv2",
     model_version: result.modelVersion,
@@ -95,6 +143,7 @@ export function buildAssessmentBody(
     was_overridden: overridden,
     override_category: overridden ? override!.category : null,
     override_reason: overridden ? override!.reason.trim() : null,
+    ...(cropFields ?? {}),
   };
 }
 

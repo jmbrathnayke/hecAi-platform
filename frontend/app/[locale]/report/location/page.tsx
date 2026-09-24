@@ -97,13 +97,29 @@ export default function LocationStep() {
       )}
 
       {status === "gps" && coords && (
-        <div className="flex flex-col gap-design-4">
+        <div className="flex flex-col gap-design-3">
           <div className="rounded-md border border-status-success bg-surface-tint p-design-4">
             <p className="text-label font-semibold text-status-success">{t("step2.gpsDetected")}</p>
             <p className="text-body text-ink-primary">
               {coords.lat.toFixed(5)}, {coords.lng.toFixed(5)}
             </p>
           </div>
+
+          {/* The map is shown on the SUCCESS path too, not only when GPS fails. A browser indoors,
+              or a phone that has only seen cell towers, returns a fix that can be a village out;
+              reading two decimal-degree numbers back to a farmer gives them no way to notice that,
+              whereas a pin on a map does. Moving it is optional — the Next button works untouched. */}
+          <MapPinPicker
+            initial={coords}
+            confirmLabel={t("step2.adjustPin")}
+            onConfirm={(c) => {
+              // Recorded as `manual`, because it no longer is a GPS reading. The source travels
+              // with the case and an officer verifying the location should know which it was.
+              setCoords(c);
+              void saveAndNext(c, "manual");
+            }}
+          />
+
           <button
             type="button"
             disabled={saving}

@@ -123,6 +123,12 @@ def list_division_cases():
                                 "amount_lkr": float(r[9]) if r[9] is not None else None,
                                 "model_version": r[10],
                                 "is_final_decision": False,
+                                "decision_support_only": True,
+                                # Derived from the version string rather than a second column: the
+                                # crop estimator is the only synthetic model, and its name says so.
+                                # The officer who is about to decide a real payment must be able to
+                                # see that the figure in front of them came from generated data.
+                                "synthetic_model": str(r[10] or "").startswith("synthetic_"),
                             },
                             "district": r[11],
                             "officer_assessed": bool(r[12]),

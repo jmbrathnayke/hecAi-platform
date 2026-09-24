@@ -9,6 +9,7 @@ import { createClient } from "@/lib/supabase";
 import { fetchMyHousehold, type MyHouseholdResult } from "@/lib/households";
 import { signOutCitizen } from "@/lib/citizenSession";
 import { HouseholdDetailsForm } from "@/components/HouseholdDetailsForm";
+import { PasswordForm } from "@/components/PasswordForm";
 
 type LoadState = { kind: "loading" } | MyHouseholdResult;
 
@@ -20,6 +21,7 @@ export default function ProfilePage() {
   const [signingOut, setSigningOut] = useState(false);
   const [editing, setEditing] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
 
   const load = useCallback(async (isActive: () => boolean = () => true) => {
     setState({ kind: "loading" });
@@ -199,6 +201,26 @@ export default function ProfilePage() {
             </ul>
           </section>
         )}
+
+        {/* The account is created by a one-time email link; a password is what makes the next
+            sign-in immediate, and is set here on an address the link already verified. */}
+        <section className="flex flex-col gap-design-3 rounded-md border border-border-subtle bg-surface-raised p-design-5 shadow-card">
+          <h2 className="text-headline text-ink-primary">{t("passwordTitle")}</h2>
+          {changingPassword ? (
+            <PasswordForm onDone={() => setChangingPassword(false)} />
+          ) : (
+            <>
+              <p className="text-caption text-ink-secondary">{t("passwordHint")}</p>
+              <button
+                type="button"
+                onClick={() => setChangingPassword(true)}
+                className="min-h-touch-target self-start rounded-md border border-forest px-design-4 text-label font-semibold text-forest"
+              >
+                {t("setPassword")}
+              </button>
+            </>
+          )}
+        </section>
 
         <button
           type="button"

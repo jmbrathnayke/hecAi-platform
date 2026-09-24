@@ -18,6 +18,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { StaffAccountMenu } from "@/components/StaffAccountMenu";
+import NotificationBell from "@/components/NotificationBell";
 
 interface NavLink {
   href: string;
@@ -56,6 +57,11 @@ export function AdminShell({ children }: { children: ReactNode }) {
           </span>
           <span className="text-label">{t("nav.brand")}</span>
         </Link>
+        {/* One fetch per layout mount, not per page — see the note at the top of this file about
+            why sidebar badge counts were rejected. This is that objection answered, not ignored. */}
+        <div className="ml-auto">
+          <NotificationBell home="/admin/cases" tone="dark" />
+        </div>
         <StaffAccountMenu loginPath="/admin/login" />
       </header>
 

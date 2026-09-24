@@ -7,6 +7,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { StaffAccountMenu } from "@/components/StaffAccountMenu";
+import NotificationBell from "@/components/NotificationBell";
 
 const TREES = {
   ds: { home: "/ds/dashboard", login: "/ds/login" },
@@ -28,6 +29,11 @@ export function StaffTopBar({ tree }: { tree: keyof typeof TREES }) {
         </span>
         <span className="truncate text-label">{t(`brand.${tree}`)}</span>
       </Link>
+      {/* `ml-auto` moves here so the bell and the account menu travel together on the right.
+          StaffAccountMenu keeps its own ml-auto, which becomes a no-op once the space is taken. */}
+      <div className="ml-auto">
+        <NotificationBell home={home} tone="dark" />
+      </div>
       <StaffAccountMenu loginPath={login} />
     </header>
   );

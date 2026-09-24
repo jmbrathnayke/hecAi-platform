@@ -27,6 +27,7 @@ import {
 } from "@/lib/citizenCases";
 import { StatusChip } from "@/components/StatusChip";
 import PushNotificationToggle from "@/components/PushNotificationToggle";
+import NotificationBell from "@/components/NotificationBell";
 
 type LoadState =
   | { kind: "loading" }
@@ -106,6 +107,10 @@ export default function MyCasesPage() {
             <h1 className="truncate text-headline text-ink-primary">{t("title")}</h1>
             <p className="truncate text-caption text-ink-secondary">{t("subtitle")}</p>
           </div>
+          {/* The bell sits beside Sign out, the only other account-level control on this screen.
+              Shown only to a signed-in visitor: a feed is per-account, and there is nothing to
+              show without one. */}
+          {signedIn && <NotificationBell home="/my-cases" tone="light" />}
           {/* Offered only when there is a session to end. Showing "Sign out" to a signed-out
               visitor was part of what made the old error screen so confusing. */}
           {signedIn && (

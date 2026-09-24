@@ -51,7 +51,8 @@
       "gpsFailed": "We couldn’t detect your location. Place a pin on the map instead.",
       "confirmPin": "Confirm location",
       "next": "Next",
-      "saveError": "Couldn’t save the location. Please try again."
+      "saveError": "Couldn’t save the location. Please try again.",
+      "adjustPin": "Use this pin instead"
     },
     "step3": {
       "title": "What type of damage occurred?",
@@ -251,7 +252,7 @@
   },
   "login": {
     "title": "Sign in",
-    "subtitle": "Sign in to see all your reports in one place. You can also report without an account.",
+    "subtitle": "Sign in to report an incident and follow your claims in one place.",
     "sendError": "Couldn’t send the sign-in link. Check the email address and try again.",
     "networkError": "Couldn’t reach the sign-in service. Please try again.",
     "email": "Email address",
@@ -259,7 +260,27 @@
     "sendLink": "Send sign-in link",
     "linkSent": "We sent a sign-in link to your email.",
     "linkHint": "Open your inbox and click the link. You can open it on your phone — it will sign you in here.",
-    "changeEmail": "Use a different email"
+    "changeEmail": "Use a different email",
+    "password": "Password",
+    "signIn": "Sign in",
+    "signingIn": "Signing in…",
+    "wrongCredentials": "That email and password do not match an account.",
+    "orDivider": "or",
+    "useLink": "Email me a sign-in link instead",
+    "newHere": "New here, or forgotten your password? Use the email link — it signs you in, and you can set a password afterwards in your profile.",
+    "backToPassword": "Sign in with a password",
+    "createAccount": "Create an account",
+    "createAccountHint": "Use your email and choose a password. After this you register your family once, and then you can report an incident.",
+    "choosePassword": "Choose a password",
+    "confirmPassword": "Repeat the password",
+    "signUp": "Create account",
+    "signingUp": "Creating…",
+    "passwordTooShort": "Use at least 8 characters.",
+    "passwordMismatch": "The two passwords do not match.",
+    "emailTaken": "That email already has an account. Sign in instead.",
+    "signUpError": "Couldn’t create the account. Please try again.",
+    "confirmSent": "Check your email to confirm your address, then sign in.",
+    "haveAccount": "I already have an account"
   },
   "myCases": {
     "title": "My Cases",
@@ -554,7 +575,8 @@
         "ds_final_decision": "Final compensation decided by the Divisional Secretariat",
         "ds_authorized_payment": "Payment authorised",
         "case_paid": "Payment processed"
-      }
+      },
+      "estimateSynthetic": "Prototype estimate — the crop model is trained on synthetic data, not official compensation records."
     },
     "navProfile": "Profile"
   },
@@ -639,7 +661,8 @@
         "notFound": "That case is not in your division.",
         "server": "The server could not record the decision.",
         "network": "Could not reach the server. Check your connection."
-      }
+      },
+      "aiEstimateSynthetic": "Prototype crop model, trained on synthetic data — not official compensation records."
     },
     "bankDetails": {
       "title": "Bank details",
@@ -791,7 +814,9 @@
       "capNo": "Cap applied: No",
       "colFeature": "Feature",
       "colValue": "Value",
-      "notFinal": "AI-assisted estimate — not the final compensation. The Divisional Secretariat decides the final amount."
+      "notFinal": "AI-assisted estimate — not the final compensation. The Divisional Secretariat decides the final amount.",
+      "syntheticModel": "Prototype estimate — this figure comes from a crop model trained on synthetic data, not official compensation records. Treat it as an indication only.",
+      "cropType": "Crop identified by the officer: {crop}"
     },
     "audit": {
       "heading": "Audit Trail",
@@ -881,7 +906,25 @@
     "working": "Please wait…",
     "blocked": "Notifications are blocked in your browser settings for this site. You can still check your claim status at any time using your reference number.",
     "staffHint": "Get a notification on this device when a case needs your attention.",
-    "staffBlocked": "Notifications are blocked in your browser settings for this site. Cases still appear on your dashboard."
+    "staffBlocked": "Notifications are blocked in your browser settings for this site. Cases still appear on your dashboard.",
+    "bell": "Notifications",
+    "bellWithCount": "Notifications, {count} unread",
+    "feedEmpty": "Nothing yet. You will be told here when a claim moves.",
+    "feedUnavailable": "Could not load notifications. They will reappear when the connection returns.",
+    "subjects": {
+      "case_submitted": "A new claim was submitted in your division",
+      "assessment_complete": "An officer completed a field assessment",
+      "payment_pending": "A claim is approved and waiting for payment",
+      "final_decision_recorded": "The Divisional Secretariat recorded a final decision",
+      "payment_processed": "A payment was processed",
+      "Submitted": "Your claim was submitted",
+      "Under Review": "An officer is reviewing your claim",
+      "Assessment Complete": "The field assessment is complete",
+      "Approved": "Your claim was approved",
+      "Rejected": "Your claim was rejected",
+      "Final Decision": "The final compensation decision was made",
+      "Payment Processed": "Your payment was processed"
+    }
   },
   "system": {
     "title": "System Administration",
@@ -1005,7 +1048,11 @@
     "accountHolder": "Account holder name",
     "bankInvalid": "Check the account number and try again.",
     "bankAlreadyOnFile": "Bank details are already on file. Visit your Divisional Secretariat office to change them.",
-    "saveError": "Couldn't save your changes. Please try again."
+    "saveError": "Couldn't save your changes. Please try again.",
+    "passwordTitle": "Password",
+    "setPassword": "Set a password",
+    "changePassword": "Change password",
+    "passwordHint": "With a password you can sign in without waiting for an email link."
   },
   "staffAccount": {
     "account": "Account",
@@ -1038,6 +1085,11 @@
     },
     "assignedByAdmin": "Your role and area are assigned by the system administrator.",
     "changePassword": "Change password",
+    "save": "Save",
+    "saving": "Saving…",
+    "close": "Close"
+  },
+  "password": {
     "newPassword": "New password",
     "confirmPassword": "Confirm new password",
     "passwordTooShort": "Use at least 8 characters.",
@@ -1046,6 +1098,23 @@
     "passwordError": "Couldn't change the password. Sign out, sign in again and retry.",
     "save": "Save",
     "saving": "Saving…",
+    "cancel": "Cancel",
     "close": "Close"
+  },
+  "cropAssessment": {
+    "heading": "Crop assessment",
+    "officerDeclared": "Recorded by you, not by the AI. The damage classifier identifies crop damage but cannot identify which crop.",
+    "cropType": "Crop",
+    "cropTypePlaceholder": "Select the crop",
+    "areaAcres": "Affected area (acres)",
+    "extentPercent": "Damage extent (%)",
+    "beyondTrainedArea": "Larger than any field in the model's training data (up to {max} acres). The estimate is still shown, but treat it with caution.",
+    "crops": {
+      "paddy": "Paddy",
+      "banana": "Banana",
+      "coconut": "Coconut",
+      "bada_irigu": "Maize (bada irigu)",
+      "vegetable": "Vegetable"
+    }
   }
 }

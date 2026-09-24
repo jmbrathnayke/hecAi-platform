@@ -182,14 +182,24 @@ def client(monkeypatch, store):
                                             "ref": ref}))
 
     def fake_estimate(cur, case_id, category, division, submitted_at, district=None,
-                      ai_severity=None, replace=False):
+                      ai_severity=None, replace=False, crop_type=None,
+                      affected_area_acres=None, damage_extent_percent=None):
         store["estimate_calls"].append({"case_id": case_id, "category": category,
                                         "ai_severity": ai_severity, "replace": replace,
-                                        "district": district, "division": division})
+                                        "district": district, "division": division,
+                                        "crop_type": crop_type,
+                                        "affected_area_acres": affected_area_acres,
+                                        "damage_extent_percent": damage_extent_percent})
         amount = 130000.0 if ai_severity == "Severe" else 100000.0
         store["estimates"][case_id] = amount
+        # Mirrors the real return shape: a crop type means the crop model priced it, and the
+        # caller picks its audit event from `synthetic_model`.
+        crop = crop_type is not None
         return {"amount_lkr": amount, "raw_estimate_lkr": amount, "capped": False,
-                "model_version": "rf_compensation_v2"}
+                "model_version": ("synthetic_crop_compensation_v1" if crop
+                                  else "rf_compensation_v2"),
+                "synthetic_model": crop, "decision_support_only": True,
+                "is_final_decision": False}
 
     monkeypatch.setattr("app.infrastructure.ml.compensation.estimate_and_store", fake_estimate)
     return app.test_client()
@@ -299,7 +309,11 @@ def test_the_estimate_is_regenerated_with_the_officer_severity_and_labelled_as_s
     body = _assess(client).get_json()
     assert store["estimate_calls"] == [{"case_id": 301, "category": "property",
                                         "ai_severity": "Severe", "replace": True,
-                                        "district": ANURADHAPURA, "division": GALNEWA}]
+                                        "district": ANURADHAPURA, "division": GALNEWA,
+                                        # A property assessment carries no crop fields, and any
+                                        # the client sent are dropped rather than stored.
+                                        "crop_type": None, "affected_area_acres": None,
+                                        "damage_extent_percent": None}]
     assert body["ai_assisted_estimate"]["amount_lkr"] == 130000.0
     assert body["ai_assisted_estimate"]["is_final_decision"] is False
     generated = next(a for a in store["audit"] if a["event"] == "compensation_estimate_generated")
@@ -308,10 +322,74 @@ def test_the_estimate_is_regenerated_with_the_officer_severity_and_labelled_as_s
 
 
 def test_an_override_prices_the_officer_class_not_the_model_class(client, store):
-    _assess(client, prediction="property_damage", was_overridden=True,
-            override_category="crop_damage", override_reason="Paddy field trampled, not a house.")
+    # An override to crop_damage is held to the crop contract exactly as a crop prediction is:
+    # the officer's judgement is what the estimate rests on, so it carries the same obligations.
+    res = _assess(client, prediction="property_damage", was_overridden=True,
+                  override_category="crop_damage",
+                  override_reason="Paddy field trampled, not a house.",
+                  crop_type="paddy", affected_area_acres=2.0, damage_extent_percent=75.0)
+    assert res.status_code == 200
     assert store["estimate_calls"][0]["category"] == "crop"
+    assert store["estimate_calls"][0]["crop_type"] == "paddy"
     assert store["inference"][0]["was_overridden"] is True
+
+
+def test_an_override_to_crop_damage_without_a_crop_type_is_refused(client, store):
+    """The whole point of the crop model is not being priced by the property one by accident.
+
+    Accepting this assessment and falling back would reinstate exactly the behaviour the crop
+    branch exists to remove, so it is a 400 and nothing is written."""
+    res = _assess(client, prediction="property_damage", was_overridden=True,
+                  override_category="crop_damage", override_reason="Paddy field, not a house.")
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "crop_type_required"
+    assert "paddy" in res.get_json()["allowed"]
+    assert store["estimate_calls"] == []
+    assert store["inference"] == []
+
+
+def test_a_crop_assessment_routes_to_the_synthetic_model_and_says_so(client, store):
+    res = _assess(client, prediction="crop_damage", crop_type="banana",
+                  affected_area_acres=1.25, damage_extent_percent=60.0)
+    assert res.status_code == 200
+    call = store["estimate_calls"][0]
+    assert (call["category"], call["crop_type"]) == ("crop", "banana")
+    assert (call["affected_area_acres"], call["damage_extent_percent"]) == (1.25, 60.0)
+
+    selected = next(a for a in store["audit"] if a["event"] == "crop_type_selected")
+    assert '"crop_type": "banana"' in selected["metadata"]
+    assert '"source": "officer_declared"' in selected["metadata"]
+
+    generated = next(a for a in store["audit"]
+                     if a["event"] == "crop_compensation_estimate_generated")
+    assert '"synthetic_model": true' in generated["metadata"]
+    assert '"is_final_decision": false' in generated["metadata"]
+    assert '"model_version": "synthetic_crop_compensation_v1"' in generated["metadata"]
+
+
+@pytest.mark.parametrize("bad", [
+    {"crop_type": "mango", "affected_area_acres": 2.0, "damage_extent_percent": 75.0},
+    {"crop_type": "paddy", "affected_area_acres": 0, "damage_extent_percent": 75.0},
+    {"crop_type": "paddy", "affected_area_acres": 2.0, "damage_extent_percent": 150.0},
+    {"crop_type": "paddy", "affected_area_acres": "two", "damage_extent_percent": 75.0},
+    {"crop_type": "paddy", "affected_area_acres": 2.0},
+])
+def test_an_invalid_crop_assessment_is_refused_before_anything_is_written(client, store, bad):
+    res = _assess(client, prediction="crop_damage", **bad)
+    assert res.status_code == 400
+    assert res.get_json()["error"] in ("crop_type_required", "invalid_crop_assessment")
+    assert store["estimate_calls"] == []
+    assert store["inference"] == []
+
+
+def test_a_property_assessment_discards_any_crop_fields_sent_with_it(client, store):
+    """A crop type on a property case would leave a crop recorded against a case the crop model
+    must never price. Dropped server-side rather than trusted from the client."""
+    res = _assess(client, prediction="property_damage", crop_type="paddy",
+                  affected_area_acres=2.0, damage_extent_percent=75.0)
+    assert res.status_code == 200
+    assert store["estimate_calls"][0]["crop_type"] is None
+    assert not [a for a in store["audit"] if a["event"] == "crop_type_selected"]
 
 
 def test_no_damage_does_not_regenerate_an_estimate_but_records_why(client, store):

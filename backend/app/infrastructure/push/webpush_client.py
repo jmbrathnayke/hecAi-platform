@@ -1,6 +1,6 @@
 """Outbound Web Push wrapper.
 
-The sibling of email/sendgrid_client.py, and the same shape: never raises, reads credentials from `current_app.config`, and is a thin enough seam that tests can
+The sibling of email/smtp_client.py, and the same shape: never raises, reads credentials from `current_app.config`, and is a thin enough seam that tests can
 monkeypatch `send_push` with no network and no keys.
 
 It differs from email in one way that matters: there is no vendor. Web Push is a W3C

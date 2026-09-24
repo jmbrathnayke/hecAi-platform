@@ -16,7 +16,7 @@ import pytest
 
 from app import create_app
 from app.infrastructure.email.email_service import notify_status_change_email
-from app.infrastructure.email.sendgrid_client import email_configured
+from app.infrastructure.email.smtp_client import email_configured
 from app.infrastructure.push.push_service import (
     notify_staff_push,
     notify_status_change_push,
@@ -104,7 +104,8 @@ def cur(store):
 def app():
     return create_app({
         "TESTING": True, "DATABASE_URL": "postgresql://fake",
-        "SENDGRID_API_KEY": "SG.test", "SENDGRID_FROM_EMAIL": "noreply@example.lk",
+        "SMTP_HOST": "smtp.example.lk", "SMTP_USERNAME": "user", "SMTP_PASSWORD": "pw",
+        "SMTP_FROM_EMAIL": "noreply@example.lk",
         "VAPID_PUBLIC_KEY": "pub", "VAPID_PRIVATE_KEY": "priv",
         "VAPID_SUBJECT": "mailto:admin@example.lk",
     })
@@ -163,7 +164,7 @@ def test_a_send_failure_is_recorded_as_failed(app, cur, store, monkeypatch):
 def test_a_send_that_raises_does_not_escape(app, cur, store, monkeypatch):
     """If this propagated it would roll back the case's own status transition.
 
-    sendgrid_client.send_email already swallows everything, so in production this cannot happen.
+    smtp_client.send_email already swallows everything, so in production this cannot happen.
     The service defends anyway: the "never raises" guarantee is stated in email_service's docstring,
     and a guarantee enforced only in a collaborator breaks silently the day the collaborator is
     swapped for another transport.
@@ -194,7 +195,7 @@ def test_a_non_approved_status_does_not_choke_on_the_amount_placeholder(app, cur
     assert "{amount}" in body["b"]
 
 
-def test_email_without_a_sendgrid_key_is_skipped_not_failed(cur, store, monkeypatch):
+def test_email_without_smtp_credentials_is_skipped_not_failed(cur, store, monkeypatch):
     """An unprovisioned deployment must not look like a broken one in the audit log.
 
     This is the state the platform is actually in (§7.3): email is implemented and configurable,
@@ -206,7 +207,7 @@ def test_email_without_a_sendgrid_key_is_skipped_not_failed(cur, store, monkeypa
     monkeypatch.setattr("app.infrastructure.email.email_service.send_email",
                         lambda *a: pytest.fail("must not attempt a send with no credentials"))
     unconfigured = create_app({"TESTING": True, "DATABASE_URL": "postgresql://fake",
-                               "SENDGRID_API_KEY": None, "SENDGRID_FROM_EMAIL": None})
+                               "SMTP_HOST": None, "SMTP_USERNAME": None, "SMTP_PASSWORD": None, "SMTP_FROM_EMAIL": None})
     with unconfigured.app_context():
         notify_status_change_email(cur, 1, REF, "Approved", "admin-1", amount_lkr=45000)
     assert events(store) == ["email_skipped_not_configured"]
@@ -222,7 +223,7 @@ def test_a_key_with_no_sender_address_is_still_unconfigured(cur, store, monkeypa
     monkeypatch.setattr("app.infrastructure.email.email_service.send_email",
                         lambda *a: pytest.fail("must not attempt a send without a sender address"))
     half = create_app({"TESTING": True, "DATABASE_URL": "postgresql://fake",
-                       "SENDGRID_API_KEY": "SG.test", "SENDGRID_FROM_EMAIL": None})
+                       "SMTP_HOST": "smtp.example.lk", "SMTP_USERNAME": "user", "SMTP_PASSWORD": "pw", "SMTP_FROM_EMAIL": None})
     with half.app_context():
         notify_status_change_email(cur, 1, REF, "Approved", "admin-1")
     assert events(store) == ["email_skipped_not_configured"]
@@ -238,7 +239,7 @@ def test_no_address_is_reported_even_when_email_is_unconfigured(cur, store):
     """
     store["case_email_row"] = (None, "si")
     unconfigured = create_app({"TESTING": True, "DATABASE_URL": "postgresql://fake",
-                               "SENDGRID_API_KEY": None, "SENDGRID_FROM_EMAIL": None})
+                               "SMTP_HOST": None, "SMTP_USERNAME": None, "SMTP_PASSWORD": None, "SMTP_FROM_EMAIL": None})
     with unconfigured.app_context():
         notify_status_change_email(cur, 1, REF, "Approved", "admin-1")
     assert events(store) == ["email_skipped_no_address"]
@@ -256,18 +257,23 @@ def test_a_configured_deployment_that_fails_still_reports_failed(app, cur, store
     assert events(store) == ["email_failed"]
 
 
-def test_email_configured_requires_both_halves():
+FULL_SMTP = {"SMTP_HOST": "smtp.example.lk", "SMTP_USERNAME": "user",
+             "SMTP_PASSWORD": "pw", "SMTP_FROM_EMAIL": "a@b.lk"}
+
+
+def test_email_configured_requires_every_credential():
     """The predicate itself, including the no-application-context case."""
-    both = create_app({"TESTING": True, "DATABASE_URL": "postgresql://fake",
-                       "SENDGRID_API_KEY": "SG.test", "SENDGRID_FROM_EMAIL": "a@b.lk"})
+    both = create_app({"TESTING": True, "DATABASE_URL": "postgresql://fake", **FULL_SMTP})
     with both.app_context():
         assert email_configured() is True
 
-    for key, sender in ((None, "a@b.lk"), ("SG.test", None), (None, None), ("", "a@b.lk")):
-        partial = create_app({"TESTING": True, "DATABASE_URL": "postgresql://fake",
-                              "SENDGRID_API_KEY": key, "SENDGRID_FROM_EMAIL": sender})
-        with partial.app_context():
-            assert email_configured() is False, f"{key!r}/{sender!r} must not count as configured"
+    # Any one of them missing or blank means mail cannot be sent, so it is not "configured".
+    for missing in FULL_SMTP:
+        for blank in (None, ""):
+            partial = create_app({"TESTING": True, "DATABASE_URL": "postgresql://fake",
+                                  **FULL_SMTP, missing: blank})
+            with partial.app_context():
+                assert email_configured() is False, f"{missing}={blank!r} must not count as configured"
 
     # Outside an application context current_app raises. The notification path must survive that.
     assert email_configured() is False

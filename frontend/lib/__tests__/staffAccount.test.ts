@@ -1,15 +1,13 @@
-import { accountFromMetadata, changeStaffPassword, readStaffAccount, signOutStaff } from "@/lib/staffAccount";
+import { accountFromMetadata, readStaffAccount, signOutStaff } from "@/lib/staffAccount";
 import { deleteSessionValue } from "@/lib/indexeddb";
 
 const mockSignOut = jest.fn();
 const mockGetSession = jest.fn();
-const mockUpdateUser = jest.fn();
 jest.mock("@/lib/supabase", () => ({
   createClient: () => ({
     auth: {
       signOut: (...a: unknown[]) => mockSignOut(...a),
       getSession: (...a: unknown[]) => mockGetSession(...a),
-      updateUser: (...a: unknown[]) => mockUpdateUser(...a),
     },
   }),
 }));
@@ -76,15 +74,4 @@ describe("password change", () => {
     expect(accountFromMetadata(null, { role: "admin", providers: ["google"] }).canChangePassword).toBe(false);
   });
 
-  it("sets only the password, and reports failure instead of throwing", async () => {
-    mockUpdateUser.mockResolvedValueOnce({ error: null });
-    await expect(changeStaffPassword("new-secret-1")).resolves.toBe("ok");
-    expect(mockUpdateUser).toHaveBeenCalledWith({ password: "new-secret-1" });
-
-    mockUpdateUser.mockResolvedValueOnce({ error: { message: "reauthentication_needed" } });
-    await expect(changeStaffPassword("new-secret-1")).resolves.toBe("error");
-
-    mockUpdateUser.mockRejectedValueOnce(new Error("offline"));
-    await expect(changeStaffPassword("new-secret-1")).resolves.toBe("error");
-  });
 });

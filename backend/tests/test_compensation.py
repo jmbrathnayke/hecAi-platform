@@ -98,10 +98,12 @@ def reset_module_caches():
     """These are lazily-loaded module globals -- reset between tests so one test's
     monkeypatched bundle/lookup never leaks into the next."""
     compensation._bundle = None
+    compensation._crop_bundle = None
     compensation._prior_year_lookup = None
     compensation._district_reference = None
     yield
     compensation._bundle = None
+    compensation._crop_bundle = None
     compensation._prior_year_lookup = None
     compensation._district_reference = None
 
@@ -337,9 +339,12 @@ def test_feature_values_contains_no_pii(store):
     assert result is not None
     keys = set(result["feature_values"].keys())
     assert keys == {
+        # the model's own inputs
         "damage_type", "district", "ds_division", "year", "prior_year_amount",
         "prior_year_incident_count", "prior_year_had_payout", "ai_severity",
         "severity_multiplier",
+        # provenance, stored with every estimate so a row can be read without the documentation
+        "model_version", "synthetic_model", "decision_support_only", "is_final_decision",
     }
     for pii_key in ("nic", "offline_id", "submitter_identity_hash", "officer_id"):
         assert pii_key not in keys
