@@ -159,6 +159,44 @@ describe("PoCPage", () => {
     expect(screen.queryByText("HEC-2026-9999")).not.toBeInTheDocument();
   });
 
+  // The defect behind "the reference on my downloaded receipt is wrong": the one-shot submit took
+  // ~10 s against a remote database, and a receipt downloaded in that window carried the 36-char
+  // offline UUID, which citizens then mistyped on the status page.
+  it("while the HEC number may still arrive, says so and holds Download instead of showing the UUID", async () => {
+    mockGetCase.mockResolvedValue({ offline_id: "draft-1" });
+    mockBuildPoC.mockResolvedValue(pocRecord());
+    mockGetAccessToken.mockResolvedValue("tok-1");
+    let finish!: (v: unknown) => void;
+    mockSubmit.mockReturnValue(new Promise((resolve) => (finish = resolve)));
+
+    render(<PoCPage />);
+
+    expect(await screen.findByText("assigningRef")).toBeInTheDocument();
+    expect(screen.queryByText("draft-1")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "download" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "print" })).toBeDisabled();
+
+    finish({ canonical_id: "HEC-2026-0007", offline_id: "draft-1" });
+
+    expect(await screen.findByText("HEC-2026-0007")).toBeInTheDocument();
+    expect(screen.queryByText("assigningRef")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "download" })).toBeEnabled();
+  });
+
+  it("when the submit fails, falls back to the offline id labelled as temporary, and allows saving it", async () => {
+    mockGetCase.mockResolvedValue({ offline_id: "draft-1" });
+    mockBuildPoC.mockResolvedValue(pocRecord());
+    mockGetAccessToken.mockResolvedValue("tok-1");
+    mockSubmit.mockResolvedValue(null);
+
+    render(<PoCPage />);
+
+    expect(await screen.findByText("draft-1")).toBeInTheDocument();
+    expect(screen.getByText("temporaryLabel")).toBeInTheDocument();
+    expect(screen.getByText("temporaryHint")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "download" })).toBeEnabled();
+  });
+
   it("does not miss a hec-case-synced event that fires before the async draft/poc load resolves (review patch)", async () => {
     mockGetCase.mockResolvedValue({ offline_id: "draft-1" });
     let resolveBuildPoC!: (value: ReturnType<typeof pocRecord>) => void;

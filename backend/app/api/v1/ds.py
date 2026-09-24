@@ -3,6 +3,7 @@
     GET  /api/v1/ds/cases                               cases in this officer's DS division
     POST /api/v1/ds/cases/<ref>/final-decision          the human final compensation decision
     POST /api/v1/ds/cases/<ref>/authorize-payment       release payment (after the decision)
+    PUT  /api/v1/households/<ref>/bank-details          record or correct a family's account
 
 THE FINAL GOVERNANCE STEP. The Random Forest produces an AI-assisted estimate; the DWC administrator
 reviews the officer's assessment and forwards an approved case with a recommended amount. Neither of
@@ -32,7 +33,12 @@ from flask import Blueprint, current_app, g, jsonify, request
 from app.api.v1.middleware.auth import require_ds_officer
 from app.infrastructure.audit import write_audit_log
 from app.domain.validation import MIN_REASON_LENGTH
-from app.infrastructure.security.bank_crypto import BankDecryptFailed, decrypt_bank_details
+from app.infrastructure.security.bank_crypto import (
+    BankDecryptFailed,
+    BankKeyMissing,
+    decrypt_bank_details,
+    encrypt_bank_details,
+)
 from app.infrastructure.notifications import notify_status_change_all
 from app.infrastructure.push.push_service import notify_staff_push
 from app.infrastructure.security.nic_identity import NicPepperMissing, nic_hmac
@@ -87,7 +93,7 @@ def list_division_cases():
                                   (c.officer_assessed_at IS NOT NULL
                                    OR COALESCE(c.submitted_by_officer, FALSE)),
                                   c.ds_final_amount, c.ds_final_reason, c.ds_final_at,
-                                  pa.ds_authorized_at
+                                  pa.ds_authorized_at, h.bank_account_last4
                              FROM cases c
                              LEFT JOIN households h ON h.id = c.household_id
                              LEFT JOIN compensation_estimates ce ON ce.case_id = c.id
@@ -117,6 +123,12 @@ def list_division_cases():
                                 "amount_lkr": float(r[9]) if r[9] is not None else None,
                                 "model_version": r[10],
                                 "is_final_decision": False,
+                                "decision_support_only": True,
+                                # Derived from the version string rather than a second column: the
+                                # crop estimator is the only synthetic model, and its name says so.
+                                # The officer who is about to decide a real payment must be able to
+                                # see that the figure in front of them came from generated data.
+                                "synthetic_model": str(r[10] or "").startswith("synthetic_"),
                             },
                             "district": r[11],
                             "officer_assessed": bool(r[12]),
@@ -126,6 +138,8 @@ def list_division_cases():
                                 "decided_at": r[15].isoformat() if r[15] else None,
                             } if r[15] is not None else None,
                             "payment_authorized": r[16] is not None,
+                            # The tail only; the full number is revealed by authorize-payment alone.
+                            "bank_account_last4": r[17],
                         }
                         for r in rows
                     ]
@@ -495,6 +509,92 @@ def authorize_payment(canonical_id):
         "authorized_at": auth_row[2].isoformat() if auth_row[2] else None,
         # The one response on the platform that carries a full account number.
         "bank_details": details,
+    }), 200
+
+
+@ds_bp.route("/households/<string:household_ref>/bank-details", methods=["PUT"])
+@require_ds_officer()
+def set_household_bank_details(household_ref):
+    """Record or correct a family's bank account, for the division's own households.
+
+    WHY THIS IS A DS ACTION. A citizen may ADD an account they skipped at registration, but may not
+    replace one already on file (households.py): whoever holds the family's session could otherwise
+    redirect the compensation to themselves. Correcting a mistyped or closed account is a real need,
+    so it happens here — at the office that pays, against a person presenting evidence — and it
+    needs a written reason, the same floor as a transfer or a final decision.
+
+    The account number never enters a log line or the audit metadata: the trail records that the
+    details changed and why, never what they changed to (NFR-3.4).
+    """
+    ds_division = g.ds_division
+    ds_officer_id = g.ds_officer_id
+
+    key = current_app.config.get("BANK_DETAILS_KEY")
+    if not key:
+        current_app.logger.error("bank detail change attempted with no BANK_DETAILS_KEY")
+        return jsonify({"error": "server_misconfigured"}), 500
+
+    body = request.get_json(silent=True) or {}
+
+    reason = body.get("reason")
+    if not isinstance(reason, str) or len(reason.strip()) < MIN_REASON_LENGTH:
+        return jsonify({"error": "reason_required", "min_length": MIN_REASON_LENGTH}), 400
+    reason = reason.strip()
+
+    try:
+        ciphertext, last4 = encrypt_bank_details(body.get("bank"), key)
+    except BankKeyMissing:
+        return jsonify({"error": "server_misconfigured"}), 500
+    except (ValueError, TypeError):
+        return jsonify({"error": "invalid_bank_details"}), 400
+
+    try:
+        conn = _get_connection()
+        try:
+            with conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """SELECT id, bank_details_ciphertext IS NOT NULL
+                             FROM households
+                            WHERE household_ref = %s AND ds_division = %s AND status = 'active'
+                              FOR UPDATE""",
+                        (household_ref.strip().upper(), ds_division),
+                    )
+                    row = cur.fetchone()
+                    # 404 for another division too -- see authorize_payment.
+                    if not row:
+                        return jsonify({"error": "not_found"}), 404
+                    household_id, had_details = row
+
+                    cur.execute(
+                        """UPDATE households
+                              SET bank_details_ciphertext = %s, bank_account_last4 = %s,
+                                  updated_at = now()
+                            WHERE id = %s""",
+                        (ciphertext, last4, household_id),
+                    )
+                    write_audit_log(
+                        cur, None, "ds_set_household_bank_details", ds_officer_id,
+                        {
+                            "ip_address": _client_ip(),
+                            "ds_division": ds_division,
+                            "household_ref": household_ref.strip().upper(),
+                            # Whether, not what: no account number, old or new.
+                            "replaced_existing": bool(had_details),
+                            "reason": reason,
+                        },
+                    )
+        finally:
+            conn.close()
+    except psycopg2.Error:
+        current_app.logger.exception("household bank detail change failed")
+        return jsonify({"error": "server_error"}), 500
+
+    return jsonify({
+        "household_ref": household_ref.strip().upper(),
+        # The tail only, so the officer can read back what they entered.
+        "bank_account_last4": last4,
+        "replaced_existing": bool(had_details),
     }), 200
 
 

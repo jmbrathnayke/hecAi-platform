@@ -15,6 +15,9 @@ jest.mock("@/lib/auth", () => ({
   getAccessToken: () => mockGetAccessToken(),
 }));
 
+// Chrome, not the page under test. The bell fetches its own feed on mount, which would otherwise
+// consume this file's `global.fetch` mock before the case list ever asked for anything.
+jest.mock("@/components/NotificationBell", () => ({ __esModule: true, default: () => null }));
 jest.mock("@/lib/supabase", () => ({
   createClient: () => ({ auth: { signOut: jest.fn().mockResolvedValue({}) } }),
 }));

@@ -142,6 +142,7 @@ export default function RegisterHouseholdForm({
   const [members, setMembers] = useState<MemberDraft[]>([]);
   const [area, setArea] = useState<DistrictSelection | null>(null);
   const [gnDivision, setGnDivision] = useState("");
+  const [address, setAddress] = useState("");
   // Step 4, optional (FR-10.4). Held in component state only, like the NICs — never written
   // to any browser storage. Sent over TLS and encrypted server-side.
   const [accountNumber, setAccountNumber] = useState("");
@@ -167,6 +168,10 @@ export default function RegisterHouseholdForm({
     }
     if (step === 2 && !area) {
       setFieldError(t("step3.areaError"));
+      return;
+    }
+    if (step === 2 && !address.trim()) {
+      setFieldError(t("step3.addressError"));
       return;
     }
     if (step === 1) {
@@ -195,6 +200,10 @@ export default function RegisterHouseholdForm({
       setFieldError(t("step3.areaError"));
       return;
     }
+    if (!address.trim()) {
+      setFieldError(t("step3.addressError"));
+      return;
+    }
 
     setSubmitting(true);
     const result = await registerHousehold({
@@ -203,6 +212,7 @@ export default function RegisterHouseholdForm({
       district: area.district,
       ds_division: area.dsDivision,
       gn_division: gnDivision.trim() || undefined,
+      address: address.trim(),
       contact_email: contactEmail.trim() || undefined,
       // Omitted entirely when the citizen skipped the step — an empty object would be a 400.
       bank: accountNumber.trim()
@@ -413,6 +423,21 @@ export default function RegisterHouseholdForm({
               value={gnDivision}
               onChange={(e) => setGnDivision(e.target.value)}
               className={FIELD}
+            />
+          </div>
+          <div className="flex flex-col gap-design-1">
+            <label htmlFor="home-address" className="text-label font-medium text-ink-primary">
+              {t("step3.addressLabel")}
+            </label>
+            <textarea
+              id="home-address"
+              rows={3}
+              maxLength={300}
+              autoComplete="street-address"
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              placeholder={t("step3.addressPlaceholder")}
+              className={`${FIELD} py-design-2`}
             />
           </div>
         </div>

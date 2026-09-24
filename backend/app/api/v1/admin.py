@@ -453,6 +453,7 @@ def _load_case_detail(cur, offline_id, district, known_row=None, known_comp_row=
 
     compensation = None
     if comp_row is not None:
+        features = comp_row[3] if isinstance(comp_row[3], dict) else {}
         compensation = {
             "amount_lkr": float(comp_row[0]),
             "raw_estimate_lkr": float(comp_row[1]),
@@ -461,6 +462,13 @@ def _load_case_detail(cur, offline_id, district, known_row=None, known_comp_row=
             "model_version": comp_row[4],
             "dataset_version": comp_row[5],
             "created_at": comp_row[6].isoformat() if comp_row[6] else None,
+            # Lifted out of feature_values so the administrator's screen can state the provenance
+            # without parsing a JSON blob, and so that "this figure came from a model trained on
+            # synthetic data" is as prominent as the figure itself.
+            "crop_type": features.get("crop_type"),
+            "synthetic_model": bool(features.get("synthetic_model", False)),
+            "decision_support_only": True,
+            "is_final_decision": False,
         }
 
     audit_trail = [

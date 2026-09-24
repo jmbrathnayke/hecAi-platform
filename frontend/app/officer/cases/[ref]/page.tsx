@@ -20,13 +20,17 @@ import { OverrideForm } from "@/components/OverrideForm";
 import { assessImageQuality } from "@/lib/imageQuality";
 import { classifyImage, type ClassId, type ClassificationResult } from "@/lib/mobilenet";
 import { isKnownStage, isTranslatedStatus, statusKey } from "@/lib/status";
+import CropAssessmentFields from "@/components/CropAssessmentFields";
 import {
   buildAssessmentBody,
+  EMPTY_CROP_ASSESSMENT,
   getOfficerCase,
   isDeliveryEvent,
   isWorkflowEvent,
+  parseCropAssessment,
   startOfficerReview,
   submitOfficerAssessment,
+  type CropAssessment,
   type OfficerCaseDetail,
   type OverrideChoice,
   type ReviewFailure,
@@ -77,6 +81,7 @@ export default function OfficerCaseReviewPage() {
   const [qualityWarning, setQualityWarning] = useState(false);
   const [result, setResult] = useState<ClassificationResult | null>(null);
   const [decision, setDecision] = useState<"accepted" | "override" | "overridden" | null>(null);
+  const [crop, setCrop] = useState<CropAssessment>(EMPTY_CROP_ASSESSMENT);
   const [override, setOverride] = useState<OverrideChoice | null>(null);
   const [thumbnails, setThumbnails] = useState<string[]>([]);
   const inFlightRef = useRef(false);
@@ -164,7 +169,7 @@ export default function OfficerCaseReviewPage() {
     if (!result || busy || decision === null || decision === "override") return;
     setBusy(true);
     setActionError(null);
-    const res = await submitOfficerAssessment(ref, buildAssessmentBody(result, override));
+    const res = await submitOfficerAssessment(ref, buildAssessmentBody(result, override, crop));
     if (!mountedRef.current) return;
     setBusy(false);
     if (res.ok) {
@@ -173,6 +178,7 @@ export default function OfficerCaseReviewPage() {
       setResult(null);
       setDecision(null);
       setOverride(null);
+      setCrop(EMPTY_CROP_ASSESSMENT);
       setCapture("idle");
     } else {
       // The classification stays on screen so the officer can retry without re-photographing.
@@ -221,7 +227,21 @@ export default function OfficerCaseReviewPage() {
   const stageLabel = isKnownStage(wf.stage) ? tStatus(`stageLabels.${wf.stage}`) : wf.stage;
   const statusLabel = isTranslatedStatus(c.status) ? tStatus(`statusLabels.${statusKey(c.status)}`) : c.status;
   const history = detail.history.filter((h) => !isDeliveryEvent(h.event));
-  const canSubmit = result !== null && (decision === "accepted" || decision === "overridden") && !busy;
+  // The class the estimate will actually be priced against: the officer's override when they
+  // corrected the model, otherwise the model's own prediction. Only settled once they have
+  // accepted or confirmed an override, so the crop question is never asked about a class still
+  // under consideration.
+  const settledClass: ClassId | null =
+    decision === "overridden" && override ? override.category
+    : decision === "accepted" && result ? result.classId
+    : null;
+
+  // A crop assessment cannot be submitted without the crop, the area and the extent. The server
+  // refuses it too (400 crop_type_required); blocking here is so the officer is told before losing
+  // a round trip, not instead of the server check.
+  const cropReady = settledClass !== "crop_damage" || parseCropAssessment(crop) !== null;
+  const canSubmit =
+    result !== null && (decision === "accepted" || decision === "overridden") && cropReady && !busy;
 
   return (
     <main className="flex-1 bg-surface-base">
@@ -330,6 +350,12 @@ export default function OfficerCaseReviewPage() {
                 )}
                 {decision === "accepted" && <p className="text-label text-status-success">{t("classify.accepted")}</p>}
                 {decision === "overridden" && <p className="text-label text-status-success">{t("classify.overridden")}</p>}
+                {/* Crop damage needs the crop, which no classifier can supply. Shown once the class
+                    is settled — accepted or overridden — so the question is only ever asked about a
+                    class the officer has actually committed to. */}
+                {settledClass === "crop_damage" && (
+                  <CropAssessmentFields value={crop} onChange={setCrop} disabled={busy} />
+                )}
                 <p className="text-caption text-ink-secondary">{t("caseReview.notFinalClassification")}</p>
                 <button
                   type="button"
@@ -370,9 +396,21 @@ export default function OfficerCaseReviewPage() {
         <section className="rounded-md border border-status-warning bg-surface-raised p-design-4" data-testid="ai-assisted-estimate">
           <h2 className="text-headline text-ink-primary">{t("caseReview.estimateTitle")}</h2>
           {detail.ai_assisted_estimate ? (
-            <p className="mt-design-2 text-title text-ink-primary">
-              LKR {detail.ai_assisted_estimate.amount_lkr.toLocaleString(locale)}
-            </p>
+            <>
+              <p className="mt-design-2 text-title text-ink-primary">
+                LKR {detail.ai_assisted_estimate.amount_lkr.toLocaleString(locale)}
+              </p>
+              <p className="mt-design-1 text-caption text-ink-secondary" data-testid="estimate-model">
+                {detail.ai_assisted_estimate.model_version}
+              </p>
+              {/* A prototype figure has to carry that label wherever it is shown, not only in the
+                  thesis. Nothing about the amount itself reveals what it was trained on. */}
+              {detail.ai_assisted_estimate.synthetic_model && (
+                <p className="mt-design-1 text-caption font-semibold text-status-warning" data-testid="estimate-synthetic">
+                  {t("caseReview.estimateSynthetic")}
+                </p>
+              )}
+            </>
           ) : (
             <p className="mt-design-2 text-body text-ink-secondary">{t("caseReview.noEstimate")}</p>
           )}

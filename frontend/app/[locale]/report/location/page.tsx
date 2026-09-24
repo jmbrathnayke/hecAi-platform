@@ -10,7 +10,6 @@ import { getCurrentPosition } from "@/lib/geolocation";
 import { getCase, putCase } from "@/lib/indexeddb";
 import { getDraftId } from "@/lib/draft";
 import type { LatLng } from "@/components/MapPinPicker";
-import { DistrictPicker, type DistrictSelection } from "@/components/DistrictPicker";
 
 // Leaflet touches `window`; load the picker client-side only.
 const MapPinPicker = dynamic(() => import("@/components/MapPinPicker"), { ssr: false });
@@ -28,11 +27,9 @@ export default function LocationStep() {
   const [coords, setCoords] = useState<LatLng | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  // District/DS-division (Story 5.2 Task 7) — optional, never blocks the GPS/manual flow below.
-  const [district, setDistrict] = useState<DistrictSelection | null>(null);
 
   useEffect(() => {
-    // Identity (Step 1) must come first; if there's no draft (deep link / lost
+    // Step 1 (the family) must come first; if there's no draft (deep link / lost
     // sessionStorage), send the user back rather than starting an orphan draft.
     if (!getDraftId()) {
       router.replace("/report");
@@ -71,8 +68,6 @@ export default function LocationStep() {
         location_lat: loc.lat,
         location_lng: loc.lng,
         location_source: source,
-        district: district?.district,
-        ds_division: district?.dsDivision,
         sync_status: "draft",
         updated_at: new Date().toISOString(),
       });
@@ -92,15 +87,8 @@ export default function LocationStep() {
         <h1 className="text-title font-bold text-ink-primary">{t("step2.title")}</h1>
       </header>
 
-      <DistrictPicker
-        value={district}
-        onChange={setDistrict}
-        districtLabel={t("step2.districtLabel")}
-        districtPlaceholder={t("step2.districtPlaceholder")}
-        dsDivisionLabel={t("step2.dsDivisionLabel")}
-        dsDivisionPlaceholder={t("step2.dsDivisionPlaceholder")}
-      />
-
+      {/* No district picker: the case's district and DS division come from the registered
+          household on the server (FR-10.6), which ignored a picked value anyway. */}
       {status === "detecting" && (
         <div className="flex flex-col items-center gap-design-3 py-design-7" role="status" aria-live="polite">
           <span className="h-8 w-8 animate-spin rounded-full border-2 border-border-default border-t-forest" aria-hidden="true" />
@@ -109,13 +97,29 @@ export default function LocationStep() {
       )}
 
       {status === "gps" && coords && (
-        <div className="flex flex-col gap-design-4">
+        <div className="flex flex-col gap-design-3">
           <div className="rounded-md border border-status-success bg-surface-tint p-design-4">
             <p className="text-label font-semibold text-status-success">{t("step2.gpsDetected")}</p>
             <p className="text-body text-ink-primary">
               {coords.lat.toFixed(5)}, {coords.lng.toFixed(5)}
             </p>
           </div>
+
+          {/* The map is shown on the SUCCESS path too, not only when GPS fails. A browser indoors,
+              or a phone that has only seen cell towers, returns a fix that can be a village out;
+              reading two decimal-degree numbers back to a farmer gives them no way to notice that,
+              whereas a pin on a map does. Moving it is optional — the Next button works untouched. */}
+          <MapPinPicker
+            initial={coords}
+            confirmLabel={t("step2.adjustPin")}
+            onConfirm={(c) => {
+              // Recorded as `manual`, because it no longer is a GPS reading. The source travels
+              // with the case and an officer verifying the location should know which it was.
+              setCoords(c);
+              void saveAndNext(c, "manual");
+            }}
+          />
+
           <button
             type="button"
             disabled={saving}

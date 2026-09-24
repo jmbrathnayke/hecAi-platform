@@ -168,6 +168,10 @@ def _detail_payload(cur, row):
             "model_version": est[3],
             "created_at": _iso(est[4]),
             "is_final_decision": False,
+            "decision_support_only": True,
+            # True when the crop model priced it. Surfaced beside the amount so the officer who
+            # produced the assessment sees the same provenance the administrator will.
+            "synthetic_model": str(est[3] or "").startswith("synthetic_"),
         },
         "history": history,
         "actions": {
@@ -289,6 +293,33 @@ def record_assessment(reference):
 
     final_class = fields["override_category"] if fields["was_overridden"] else fields["prediction"]
 
+    # Crop assessment (Story 5.2b). Validated against the SETTLED class, so an officer who overrides
+    # a property prediction to crop_damage is held to the same requirement as one the classifier
+    # agreed with -- the override is the officer's judgement and carries the same obligations.
+    #
+    # REFUSED, NOT SILENTLY DOWNGRADED. Before the crop model existed, a crop report with no crop
+    # type was priced by the property model; that is still the fallback for cases submitted earlier,
+    # but an officer filing a NEW crop assessment must name the crop. Accepting the assessment and
+    # quietly routing it to a model trained on death and property claims is exactly the failure this
+    # work exists to remove, so it is a 400 rather than a fallback.
+    crop_type = body.get("crop_type")
+    affected_area_acres = body.get("affected_area_acres")
+    damage_extent_percent = body.get("damage_extent_percent")
+
+    if final_class == "crop_damage":
+        if crop_type not in compensation.CROP_TYPES:
+            return jsonify({"error": "crop_type_required",
+                            "allowed": list(compensation.CROP_TYPES)}), 400
+        if compensation._crop_inputs(crop_type, affected_area_acres,
+                                     damage_extent_percent) is None:
+            return jsonify({"error": "invalid_crop_assessment",
+                            "detail": "affected_area_acres and damage_extent_percent must be "
+                                      "positive numbers within range"}), 400
+    else:
+        # A crop type sent with a property or no-damage assessment is discarded rather than stored.
+        # Keeping it would leave a crop recorded against a case the crop model must never price.
+        crop_type = affected_area_acres = damage_extent_percent = None
+
     try:
         conn = _get_connection()
         try:
@@ -325,10 +356,24 @@ def record_assessment(reference):
                                   officer_review_started_at = COALESCE(officer_review_started_at, now()),
                                   officer_assessed_at = now(),
                                   officer_assessed_by = %s,
+                                  crop_type = %s,
+                                  affected_area_acres = %s,
+                                  damage_extent_percent = %s,
                                   updated_at = now()
                             WHERE id = %s""",
-                        (g.officer_id, g.officer_id, case_id),
+                        (g.officer_id, g.officer_id, crop_type, affected_area_acres,
+                         damage_extent_percent, case_id),
                     )
+                    if crop_type is not None:
+                        # The crop is the officer's identification, not the AI's, and the audit
+                        # trail has to say so -- "whether, not what" still holds, but which of five
+                        # crops was chosen is an assessment decision, not citizen data.
+                        write_audit_log(cur, case_id, "crop_type_selected", g.officer_id, {
+                            "crop_type": crop_type,
+                            "affected_area_acres": affected_area_acres,
+                            "damage_extent_percent": damage_extent_percent,
+                            "source": "officer_declared",
+                        })
                     write_audit_log(cur, case_id, "officer_assessment_recorded", g.officer_id, {
                         "prediction": fields["prediction"],
                         "confidence": fields["confidence"],
@@ -357,22 +402,32 @@ def record_assessment(reference):
                         estimate = compensation.estimate_and_store(
                             cur, case_id, category, row[_DIVISION], row[_SUBMITTED],
                             district=row[_DISTRICT], ai_severity=ai_severity, replace=True,
+                            crop_type=crop_type, affected_area_acres=affected_area_acres,
+                            damage_extent_percent=damage_extent_percent,
                         )
                         if estimate is None:
                             write_audit_log(cur, case_id, "compensation_estimate_unavailable",
                                             g.officer_id, {"trigger": "officer_assessment"})
                         else:
-                            write_audit_log(cur, case_id, "compensation_estimate_generated",
-                                            g.officer_id, {
-                                                "trigger": "officer_assessment",
-                                                "amount_lkr": estimate["amount_lkr"],
-                                                "raw_estimate_lkr": estimate["raw_estimate_lkr"],
-                                                "capped": estimate["capped"],
-                                                "model_version": estimate["model_version"],
-                                                "ai_severity": ai_severity,
-                                                "previous_amount_lkr": previous_amount,
-                                                "decision_support_only": True,
-                                            })
+                            # Two event names, one for each model, so the audit trail can be read
+                            # for "which cases were priced by the synthetic prototype" without
+                            # parsing model_version strings. The payload is identical.
+                            event = ("crop_compensation_estimate_generated"
+                                     if estimate["synthetic_model"]
+                                     else "compensation_estimate_generated")
+                            write_audit_log(cur, case_id, event, g.officer_id, {
+                                "trigger": "officer_assessment",
+                                "amount_lkr": estimate["amount_lkr"],
+                                "raw_estimate_lkr": estimate["raw_estimate_lkr"],
+                                "capped": estimate["capped"],
+                                "model_version": estimate["model_version"],
+                                "synthetic_model": estimate["synthetic_model"],
+                                "crop_type": crop_type,
+                                "ai_severity": ai_severity,
+                                "previous_amount_lkr": previous_amount,
+                                "decision_support_only": True,
+                                "is_final_decision": False,
+                            })
 
                     # The administrator is told on every assessment (a reassessment can change the
                     # estimate they are about to review); the citizen only on the first.

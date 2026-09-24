@@ -97,6 +97,9 @@ it("remembers the household the server confirms at registration", async () => {
   fireEvent.click(screen.getByText("next")); // -> family
   fireEvent.click(screen.getByText("next")); // -> area
   fireEvent.click(screen.getByText("pick-area"));
+  fireEvent.change(screen.getByLabelText("step3.addressLabel"), {
+    target: { value: "No. 12, Tank Road, Thalawa" },
+  });
   fireEvent.click(screen.getByText("next")); // -> bank (optional)
   fireEvent.click(screen.getByText("submit"));
   expect(await screen.findByTestId("registration-receipt")).toBeInTheDocument();

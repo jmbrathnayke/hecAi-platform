@@ -81,23 +81,22 @@ describe("LocationStep", () => {
     expect(replace).toHaveBeenCalledWith("/report");
   });
 
-  it("persists a picked district/DS-division alongside the GPS coordinates (Story 5.2 Task 7)", async () => {
+  it("offers no district picker: the area comes from the registered household", async () => {
     render(<LocationStep />);
     await screen.findByText("step2.gpsDetected");
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+  });
 
-    const districtSelect = screen.getByLabelText("step2.districtLabel") as HTMLSelectElement;
-    const district = districtSelect.options[1].value;
-    fireEvent.change(districtSelect, { target: { value: district } });
-    const divisionSelect = screen.getByLabelText("step2.dsDivisionLabel") as HTMLSelectElement;
-    const division = divisionSelect.options[1].value;
-    fireEvent.change(divisionSelect, { target: { value: division } });
-
+  it("keeps the household area saved in step 1 when it saves the location", async () => {
+    mockGetCase.mockResolvedValue({ offline_id: "draft-1", district: "අනුරාධපුරය", ds_division: "ගල්නැව" });
+    render(<LocationStep />);
+    await screen.findByText("step2.gpsDetected");
     fireEvent.click(screen.getByRole("button", { name: "step2.next" }));
     await act(async () => {});
 
-    expect(mockPutCase).toHaveBeenCalled();
     const [record] = mockPutCase.mock.calls[0];
-    expect(record.district).toBe(district);
-    expect(record.ds_division).toBe(division);
+    expect(record.district).toBe("අනුරාධපුරය");
+    expect(record.ds_division).toBe("ගල්නැව");
+    expect(record.location_lat).toBe(7.29);
   });
 });

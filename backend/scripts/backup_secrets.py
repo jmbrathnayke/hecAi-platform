@@ -13,7 +13,7 @@ data that already exists:
     VAPID_PRIVATE_KEY   signs push messages. Lose or rotate it and every push_subscriptions row is
                         dead: every citizen must re-grant notification permission.
 
-SENDGRID_API_KEY is included for convenience but is NOT in this class -- it can be reissued from
+SMTP_PASSWORD is included for convenience but is NOT in this class -- it can be reissued from
 the SendGrid dashboard at any time.
 
 The output file contains live secrets in plaintext. It is written outside the repository on
@@ -37,8 +37,9 @@ KEYS = [
     ("VAPID_PRIVATE_KEY", True),
     ("VAPID_PUBLIC_KEY", False),
     ("VAPID_SUBJECT", False),
-    ("SENDGRID_API_KEY", False),
-    ("SENDGRID_FROM_EMAIL", False),
+    ("SMTP_PASSWORD", False),
+    ("SMTP_USERNAME", False),
+    ("SMTP_FROM_EMAIL", False),
 ]
 
 stamp = datetime.now().strftime("%Y-%m-%d")

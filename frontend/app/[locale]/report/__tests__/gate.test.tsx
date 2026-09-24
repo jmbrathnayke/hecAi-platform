@@ -16,23 +16,27 @@ jest.mock("@/navigation", () => ({ useRouter: () => mockRouter }));
 jest.mock("next-intl", () => ({ useTranslations: () => (k: string) => k }));
 
 jest.mock("@/lib/registrationState", () => ({ checkRegistration: jest.fn() }));
-jest.mock("@/lib/crypto", () => ({
-  getOrCreateSessionKey: jest.fn().mockResolvedValue({}),
-  encryptField: jest.fn().mockResolvedValue({ ciphertext: "c", iv: "i" }),
-}));
+const mockPutCase = jest.fn().mockResolvedValue(undefined);
 jest.mock("@/lib/indexeddb", () => ({
   getCase: jest.fn().mockResolvedValue({}),
-  putCase: jest.fn().mockResolvedValue(undefined),
+  putCase: (...a: unknown[]) => mockPutCase(...a),
 }));
 jest.mock("@/lib/draft", () => ({ getOrCreateDraftId: jest.fn(() => "draft-1") }));
 
 const mockCheck = checkRegistration as jest.Mock;
 
-const REGISTERED = { kind: "registered", householdRef: "HH-2026-0001", source: "server" };
+const REGISTERED = {
+  kind: "registered",
+  householdRef: "HH-2026-0001",
+  source: "server",
+  district: "අනුරාධපුරය",
+  dsDivision: "ගල්නැව",
+};
 
 beforeEach(() => {
   push.mockReset();
   mockCheck.mockReset();
+  mockPutCase.mockClear();
 });
 
 it("shows a checking state while the registration lookup is in flight", () => {
@@ -40,13 +44,13 @@ it("shows a checking state while the registration lookup is in flight", () => {
   render(<IdentityStep />);
   expect(screen.getByText("checking")).toBeInTheDocument();
   // The form must not flash into view before we know whether it can be submitted.
-  expect(screen.queryByLabelText("step1.nic")).not.toBeInTheDocument();
+  expect(screen.queryByTestId("reporting-household")).not.toBeInTheDocument();
 });
 
-it("B: renders the form for a registered household", async () => {
+it("B: opens the report for a registered household", async () => {
   mockCheck.mockResolvedValue(REGISTERED);
   render(<IdentityStep />);
-  expect(await screen.findByLabelText("step1.nic")).toBeInTheDocument();
+  expect(await screen.findByTestId("reporting-household")).toBeInTheDocument();
   expect(screen.queryByTestId("registration-required")).not.toBeInTheDocument();
 });
 
@@ -55,7 +59,7 @@ it("A: blocks the form and offers registration when the citizen has no household
   render(<IdentityStep />);
   expect(await screen.findByTestId("registration-required")).toBeInTheDocument();
   expect(screen.getByText("gate.title")).toBeInTheDocument();
-  expect(screen.queryByLabelText("step1.nic")).not.toBeInTheDocument();
+  expect(screen.queryByTestId("reporting-household")).not.toBeInTheDocument();
 });
 
 it("A: sends the citizen to the registration flow", async () => {
@@ -80,16 +84,48 @@ it("D: an unverifiable registration is NOT reported as unregistered, and can be 
   expect(await screen.findByTestId("registration-unavailable")).toBeInTheDocument();
   expect(screen.getByText("unavailableBody")).toBeInTheDocument();
   expect(screen.queryByTestId("registration-required")).not.toBeInTheDocument();
-  expect(screen.queryByLabelText("step1.nic")).not.toBeInTheDocument();
+  expect(screen.queryByTestId("reporting-household")).not.toBeInTheDocument();
 
   fireEvent.click(screen.getByText("retry"));
-  expect(await screen.findByLabelText("step1.nic")).toBeInTheDocument();
+  expect(await screen.findByTestId("reporting-household")).toBeInTheDocument();
   expect(mockCheck).toHaveBeenCalledTimes(2);
 });
 
 it("E: offline with a confirmed registration, the form opens and says why", async () => {
   mockCheck.mockResolvedValue({ ...REGISTERED, source: "cached" });
   render(<IdentityStep />);
-  expect(await screen.findByLabelText("step1.nic")).toBeInTheDocument();
+  expect(await screen.findByTestId("reporting-household")).toBeInTheDocument();
   expect(screen.getByText("offlineConfirmed")).toBeInTheDocument();
+});
+
+it("asks a registered family for no NIC or phone number again", async () => {
+  mockCheck.mockResolvedValue(REGISTERED);
+  render(<IdentityStep />);
+  const card = await screen.findByTestId("reporting-household");
+  expect(card).toHaveTextContent("HH-2026-0001");
+  expect(card).toHaveTextContent("අනුරාධපුරය / ගල්නැව");
+  expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+});
+
+it("starts the draft with the household's area and moves on to the location step", async () => {
+  mockCheck.mockResolvedValue(REGISTERED);
+  render(<IdentityStep />);
+  await screen.findByTestId("reporting-household");
+  fireEvent.click(screen.getByText("step1.next"));
+  await waitFor(() => expect(push).toHaveBeenCalledWith("/report/location"));
+  const [record] = mockPutCase.mock.calls[0];
+  expect(record).toEqual(
+    expect.objectContaining({ offline_id: "draft-1", district: "අනුරාධපුරය", ds_division: "ගල්නැව" }),
+  );
+  expect(record).not.toHaveProperty("reporter_nic_ciphertext");
+  expect(record).not.toHaveProperty("reporter_mobile_ciphertext");
+});
+
+it("offline, from the confirmed cache, still opens without an area and does not invent one", async () => {
+  mockCheck.mockResolvedValue({ kind: "registered", householdRef: "HH-2026-0001", source: "cached" });
+  render(<IdentityStep />);
+  await screen.findByTestId("reporting-household");
+  fireEvent.click(screen.getByText("step1.next"));
+  await waitFor(() => expect(push).toHaveBeenCalledWith("/report/location"));
+  expect(mockPutCase.mock.calls[0][0]).not.toHaveProperty("district");
 });

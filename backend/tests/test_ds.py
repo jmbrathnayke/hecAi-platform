@@ -52,6 +52,7 @@ def _case(canonical, division, status="Submitted", household_ref="HH-2026-0001")
         "ds_final_reason": None,
         "ds_final_at": None,
         "ds_authorized_at": None,
+        "bank_account_last4": "5678",
         # PII that must never appear in a response:
         "citizen_nic_plain": "200012345678",
         "submitter_identity_hash": "deadbeef",
@@ -63,6 +64,7 @@ _PROJECTION = (
     "submitted_at", "updated_at", "approved_amount", "household_ref",
     "ai_estimate", "ai_model_version", "district", "officer_assessed",
     "ds_final_amount", "ds_final_reason", "ds_final_at", "ds_authorized_at",
+    "bank_account_last4",
 )
 
 
@@ -249,7 +251,10 @@ def test_a_read_is_audit_logged(client, store):
 def test_each_case_carries_the_ai_estimate_labelled_as_not_final(client):
     case = client.get("/api/v1/ds/cases", headers=_auth()).get_json()["cases"][0]
     assert case["ai_estimate"] == {"amount_lkr": 45000.0, "model_version": "rf_compensation_v2",
-                                   "is_final_decision": False}
+                                   "is_final_decision": False, "decision_support_only": True,
+                                   # A property case, priced by the historical model rather than
+                                   # the synthetic crop prototype.
+                                   "synthetic_model": False}
     assert case["officer_assessed"] is True
     assert case["final_decision"] is None
     assert case["payment_authorized"] is False

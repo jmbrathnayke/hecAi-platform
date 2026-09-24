@@ -17,7 +17,7 @@ resolves to one:
     cases.household_id -> households.contact_email
 """
 from app.infrastructure.audit import write_audit_log
-from app.infrastructure.email.sendgrid_client import email_configured, send_email
+from app.infrastructure.email.smtp_client import email_configured, send_email
 
 DEFAULT_LOCALE = "si"
 
@@ -81,9 +81,9 @@ def notify_status_change_email(cur, case_id, canonical_id, new_status, admin_id,
 
     # Not provisioned is a DEPLOYMENT state, not a delivery failure, and the audit log is the only
     # place that difference is visible to anyone reading the case afterwards. Recording both as
-    # "email_failed" made a deployment that had simply never been given a SendGrid key look exactly
-    # like one whose mail was being rejected by the provider -- two problems with different owners
-    # and different fixes.
+    # "email_failed" made a deployment that had simply never been given mail credentials look exactly
+    # like one that had simply never been given mail credentials -- two problems with different
+    # owners and different fixes.
     #
     # CHECKED HERE, after the address and the template have resolved, rather than at the top of the
     # function. The earlier skips are more specific and more actionable, so they must keep winning:
@@ -97,7 +97,7 @@ def notify_status_change_email(cur, case_id, canonical_id, new_status, admin_id,
     # The address never enters audit metadata. It is already stored once on `households`;
     # duplicating it into an append-only, widely-read log enlarges the exposure surface for no
     # operational benefit.
-    # sendgrid_client.send_email already swallows everything it can raise. The guard is here as
+    # smtp_client.send_email already swallows everything it can raise. The guard is here as
     # well because this module's docstring is where the "never raises" promise is made, and a
     # promise enforced only inside a collaborator breaks silently the day the transport changes.
     try:

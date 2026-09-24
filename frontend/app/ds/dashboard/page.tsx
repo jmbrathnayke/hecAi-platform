@@ -14,6 +14,7 @@ import Link from "next/link";
 import { fetchDsCases, type DsCase, type DsFailure } from "@/lib/dsCases";
 import { PaymentAuthorizationPanel } from "@/components/PaymentAuthorizationPanel";
 import { DsFinalDecisionPanel } from "@/components/DsFinalDecisionPanel";
+import { DsBankDetailsPanel } from "@/components/DsBankDetailsPanel";
 import PushNotificationToggle from "@/components/PushNotificationToggle";
 
 type LoadState =
@@ -56,6 +57,8 @@ export default function DsDashboardPage() {
   // Only one case's payment panel is open at a time — a full account number on screen is not
   // something to leave scattered across a list.
   const [payingFor, setPayingFor] = useState<string | null>(null);
+  // The family's bank account, recorded or corrected at this office. One case at a time again.
+  const [bankFor, setBankFor] = useState<string | null>(null);
   // The final compensation review panel, also one case at a time.
   const [decidingFor, setDecidingFor] = useState<string | null>(null);
   const [decidedNotice, setDecidedNotice] = useState<string | null>(null);
@@ -198,7 +201,49 @@ export default function DsDashboardPage() {
                 {/* A case with no household predates Epic 8 or is seeded research data
                     (migration 025). Saying so beats rendering an empty field. */}
                 {t("household")}: {c.household_ref ?? t("noHousehold")}
+                {c.household_ref && (
+                  <>
+                    {" · "}
+                    {c.bank_account_last4
+                      ? t("bankDetails.current", { last4: c.bank_account_last4 })
+                      : t("bankDetails.none")}
+                  </>
+                )}
               </p>
+
+              {c.household_ref && bankFor !== c.canonical_id && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPayingFor(null);
+                    setDecidingFor(null);
+                    setBankFor(c.canonical_id);
+                  }}
+                  className="mt-design-2 min-h-touch-target self-start rounded-md border border-border-default px-design-3 text-label font-medium text-ink-secondary"
+                >
+                  {c.bank_account_last4 ? t("bankDetails.change") : t("bankDetails.record")}
+                </button>
+              )}
+
+              {bankFor === c.canonical_id && c.household_ref && (
+                <div className="mt-design-3">
+                  <DsBankDetailsPanel
+                    householdRef={c.household_ref}
+                    currentLast4={c.bank_account_last4 ?? null}
+                    t={t}
+                    onSaved={(last4) =>
+                      setCases((prev) =>
+                        prev.map((x) =>
+                          x.household_ref === c.household_ref
+                            ? { ...x, bank_account_last4: last4 }
+                            : x,
+                        ),
+                      )
+                    }
+                    onClose={() => setBankFor(null)}
+                  />
+                </div>
+              )}
 
               {(c.status === "Approved" || c.status === "Payment Processed") && (
                 // What the DS officer decides from: the AI-assisted estimate (decision support), the
@@ -300,6 +345,14 @@ export default function DsDashboardPage() {
                     canonicalId={c.canonical_id}
                     t={t}
                     onClose={() => setPayingFor(null)}
+                    onRecordBankDetails={
+                      c.household_ref
+                        ? () => {
+                            setPayingFor(null);
+                            setBankFor(c.canonical_id);
+                          }
+                        : undefined
+                    }
                   />
                 </div>
               )}

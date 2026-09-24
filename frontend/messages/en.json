@@ -15,7 +15,9 @@
     "navHome": "Home",
     "navMyClaims": "My Claims",
     "navStatus": "Status",
-    "languageShort": "Language"
+    "languageShort": "Language",
+    "navProfile": "Profile",
+    "navSignIn": "Sign in"
   },
   "offline": {
     "banner": "You are offline. Reports will be saved and sent when you reconnect.",
@@ -29,19 +31,18 @@
       "register": "Register my family"
     },
     "steps": {
-      "identity": "Identity",
+      "identity": "Family",
       "location": "Location",
       "damage": "Damage",
       "photos": "Photos"
     },
     "step1": {
-      "title": "Your details",
-      "nic": "National Identity Card (NIC) number",
-      "mobile": "Mobile number",
+      "title": "Reporting for your family",
       "next": "Next",
-      "nicError": "Enter a valid NIC (e.g. 000000000V or 200012345678)",
-      "mobileError": "Enter a valid mobile number (07XXXXXXXX)",
-      "saveError": "Couldn’t save your details. Please try again."
+      "saveError": "Couldn’t save your details. Please try again.",
+      "intro": "This report is filed for your registered family, so you don't need to enter your NIC or phone number again.",
+      "householdRef": "Household number",
+      "area": "Registered area"
     },
     "step2": {
       "title": "Incident location",
@@ -51,10 +52,7 @@
       "confirmPin": "Confirm location",
       "next": "Next",
       "saveError": "Couldn’t save the location. Please try again.",
-      "districtLabel": "District (optional)",
-      "districtPlaceholder": "Select district",
-      "dsDivisionLabel": "DS Division (optional)",
-      "dsDivisionPlaceholder": "Select division"
+      "adjustPin": "Use this pin instead"
     },
     "step3": {
       "title": "What type of damage occurred?",
@@ -119,7 +117,10 @@
       "dsDivisionLabel": "Divisional Secretariat division",
       "dsDivisionPlaceholder": "Select your division",
       "gnLabel": "Grama Niladhari division (optional)",
-      "areaError": "Please select your district and division."
+      "areaError": "Please select your district and division.",
+      "addressLabel": "Home address",
+      "addressPlaceholder": "House number, road, village",
+      "addressError": "Please enter your home address."
     },
     "step4": {
       "title": "Bank account (optional)",
@@ -189,7 +190,10 @@
     "screenshotHint": "Tap Share or take a screenshot to save this receipt.",
     "reminder": "A DWC officer will contact you. You can check your claim's progress using {ref}.",
     "done": "Done — Return Home",
-    "notRecorded": "Not recorded"
+    "notRecorded": "Not recorded",
+    "assigningRef": "Getting your reference number…",
+    "temporaryLabel": "Temporary reference",
+    "temporaryHint": "Your HEC reference number appears in My Claims once this report reaches the server."
   },
   "status": {
     "title": "Check Claim Status",
@@ -248,7 +252,7 @@
   },
   "login": {
     "title": "Sign in",
-    "subtitle": "Sign in to see all your reports in one place. You can also report without an account.",
+    "subtitle": "Sign in to report an incident and follow your claims in one place.",
     "sendError": "Couldn’t send the sign-in link. Check the email address and try again.",
     "networkError": "Couldn’t reach the sign-in service. Please try again.",
     "email": "Email address",
@@ -256,7 +260,27 @@
     "sendLink": "Send sign-in link",
     "linkSent": "We sent a sign-in link to your email.",
     "linkHint": "Open your inbox and click the link. You can open it on your phone — it will sign you in here.",
-    "changeEmail": "Use a different email"
+    "changeEmail": "Use a different email",
+    "password": "Password",
+    "signIn": "Sign in",
+    "signingIn": "Signing in…",
+    "wrongCredentials": "That email and password do not match an account.",
+    "orDivider": "or",
+    "useLink": "Email me a sign-in link instead",
+    "newHere": "New here, or forgotten your password? Use the email link — it signs you in, and you can set a password afterwards in your profile.",
+    "backToPassword": "Sign in with a password",
+    "createAccount": "Create an account",
+    "createAccountHint": "Use your email and choose a password. After this you register your family once, and then you can report an incident.",
+    "choosePassword": "Choose a password",
+    "confirmPassword": "Repeat the password",
+    "signUp": "Create account",
+    "signingUp": "Creating…",
+    "passwordTooShort": "Use at least 8 characters.",
+    "passwordMismatch": "The two passwords do not match.",
+    "emailTaken": "That email already has an account. Sign in instead.",
+    "signUpError": "Couldn’t create the account. Please try again.",
+    "confirmSent": "Check your email to confirm your address, then sign in.",
+    "haveAccount": "I already have an account"
   },
   "myCases": {
     "title": "My Cases",
@@ -551,8 +575,10 @@
         "ds_final_decision": "Final compensation decided by the Divisional Secretariat",
         "ds_authorized_payment": "Payment authorised",
         "case_paid": "Payment processed"
-      }
-    }
+      },
+      "estimateSynthetic": "Prototype estimate — the crop model is trained on synthetic data, not official compensation records."
+    },
+    "navProfile": "Profile"
   },
   "ds": {
     "login": {
@@ -634,6 +660,33 @@
         "noPaymentRecord": "This case has no payment record. Ask the DWC administrator to re-approve it.",
         "notFound": "That case is not in your division.",
         "server": "The server could not record the decision.",
+        "network": "Could not reach the server. Check your connection."
+      },
+      "aiEstimateSynthetic": "Prototype crop model, trained on synthetic data — not official compensation records."
+    },
+    "bankDetails": {
+      "title": "Bank details",
+      "record": "Record bank details",
+      "change": "Change bank details",
+      "current": "Account ending {last4}",
+      "none": "No bank account on file",
+      "hint": "Record this only against evidence the family presents at the office. The family cannot change an account already on file.",
+      "accountNumber": "Account number",
+      "bankName": "Bank",
+      "branch": "Branch",
+      "accountHolder": "Account holder name",
+      "reasonLabel": "Reason for this change",
+      "reasonHint": "At least 10 characters. Recorded in the audit trail.",
+      "save": "Save account",
+      "saving": "Saving…",
+      "cancel": "Cancel",
+      "close": "Close",
+      "saved": "Saved. The account now ends {last4}.",
+      "error": {
+        "notFound": "That household is not in your division.",
+        "reasonRequired": "Give a reason of at least 10 characters.",
+        "invalidBank": "Enter a valid account number.",
+        "server": "The server could not save these details.",
         "network": "Could not reach the server. Check your connection."
       }
     }
@@ -761,7 +814,9 @@
       "capNo": "Cap applied: No",
       "colFeature": "Feature",
       "colValue": "Value",
-      "notFinal": "AI-assisted estimate — not the final compensation. The Divisional Secretariat decides the final amount."
+      "notFinal": "AI-assisted estimate — not the final compensation. The Divisional Secretariat decides the final amount.",
+      "syntheticModel": "Prototype estimate — this figure comes from a crop model trained on synthetic data, not official compensation records. Treat it as an indication only.",
+      "cropType": "Crop identified by the officer: {crop}"
     },
     "audit": {
       "heading": "Audit Trail",
@@ -851,7 +906,25 @@
     "working": "Please wait…",
     "blocked": "Notifications are blocked in your browser settings for this site. You can still check your claim status at any time using your reference number.",
     "staffHint": "Get a notification on this device when a case needs your attention.",
-    "staffBlocked": "Notifications are blocked in your browser settings for this site. Cases still appear on your dashboard."
+    "staffBlocked": "Notifications are blocked in your browser settings for this site. Cases still appear on your dashboard.",
+    "bell": "Notifications",
+    "bellWithCount": "Notifications, {count} unread",
+    "feedEmpty": "Nothing yet. You will be told here when a claim moves.",
+    "feedUnavailable": "Could not load notifications. They will reappear when the connection returns.",
+    "subjects": {
+      "case_submitted": "A new claim was submitted in your division",
+      "assessment_complete": "An officer completed a field assessment",
+      "payment_pending": "A claim is approved and waiting for payment",
+      "final_decision_recorded": "The Divisional Secretariat recorded a final decision",
+      "payment_processed": "A payment was processed",
+      "Submitted": "Your claim was submitted",
+      "Under Review": "An officer is reviewing your claim",
+      "Assessment Complete": "The field assessment is complete",
+      "Approved": "Your claim was approved",
+      "Rejected": "Your claim was rejected",
+      "Final Decision": "The final compensation decision was made",
+      "Payment Processed": "Your payment was processed"
+    }
   },
   "system": {
     "title": "System Administration",
@@ -936,5 +1009,112 @@
     "unavailableBody": "Unable to verify registration right now. Please retry.",
     "retry": "Retry",
     "offlineConfirmed": "You are offline. Using your confirmed household registration {ref}."
+  },
+  "profile": {
+    "title": "My profile",
+    "signedInAs": "Signed in as",
+    "householdTitle": "Your registered family",
+    "householdRef": "Household number",
+    "area": "Registered area",
+    "gnDivision": "Grama Niladhari division",
+    "address": "Home address",
+    "contactEmail": "Notification email",
+    "bankAccount": "Bank account",
+    "bankAccountValue": "ending {last4}",
+    "notRecorded": "Not recorded",
+    "members": "Family members",
+    "memberRegistrant": "Registrant",
+    "notRegisteredTitle": "Your family is not registered yet",
+    "notRegisteredBody": "Register once to report incidents and receive compensation.",
+    "register": "Register my family",
+    "signOut": "Sign out",
+    "signingOut": "Signing out…",
+    "loadError": "Couldn't load your profile. Please try again.",
+    "retry": "Retry",
+    "edit": "Edit",
+    "save": "Save changes",
+    "saving": "Saving…",
+    "cancel": "Cancel",
+    "saved": "Your details were updated.",
+    "addressRequired": "Your home address can be corrected, but not left empty.",
+    "emailInvalid": "Enter a valid email address, or leave it empty.",
+    "lockedNote": "Your district, division and family members can only be changed by your Divisional Secretariat office.",
+    "bankLocked": "To change the bank account, visit your Divisional Secretariat office.",
+    "addBankTitle": "Add bank details (optional)",
+    "addBankHint": "Compensation is paid into this account. Once saved, only your Divisional Secretariat office can change it.",
+    "accountNumber": "Account number",
+    "bankName": "Bank",
+    "branch": "Branch",
+    "accountHolder": "Account holder name",
+    "bankInvalid": "Check the account number and try again.",
+    "bankAlreadyOnFile": "Bank details are already on file. Visit your Divisional Secretariat office to change them.",
+    "saveError": "Couldn't save your changes. Please try again.",
+    "passwordTitle": "Password",
+    "setPassword": "Set a password",
+    "changePassword": "Change password",
+    "passwordHint": "With a password you can sign in without waiting for an email link."
+  },
+  "staffAccount": {
+    "account": "Account",
+    "signedInAs": "Signed in as",
+    "role": "Role",
+    "roles": {
+      "officer": "Field officer",
+      "admin": "DWC administrator",
+      "ds_officer": "Divisional Secretariat officer",
+      "system_admin": "System administrator"
+    },
+    "scope": {
+      "officer": "Assigned divisions",
+      "admin": "District",
+      "ds_officer": "Divisional Secretariat division",
+      "system_admin": "Access"
+    },
+    "allAreas": "All districts",
+    "notAssigned": "Not assigned yet",
+    "signOut": "Sign out",
+    "signingOut": "Signing out…",
+    "signOutAnyway": "Sign out anyway",
+    "cancel": "Cancel",
+    "profileTitle": "My profile",
+    "pendingSync": "{count} report(s) on this device have not synced yet. Sync them before signing out — otherwise they are sent under the next officer who signs in here.",
+    "goToSync": "Open sync queue",
+    "brand": {
+      "ds": "Divisional Secretariat",
+      "system": "System administration"
+    },
+    "assignedByAdmin": "Your role and area are assigned by the system administrator.",
+    "changePassword": "Change password",
+    "save": "Save",
+    "saving": "Saving…",
+    "close": "Close"
+  },
+  "password": {
+    "newPassword": "New password",
+    "confirmPassword": "Confirm new password",
+    "passwordTooShort": "Use at least 8 characters.",
+    "passwordMismatch": "The two passwords do not match.",
+    "passwordChanged": "Password changed.",
+    "passwordError": "Couldn't change the password. Sign out, sign in again and retry.",
+    "save": "Save",
+    "saving": "Saving…",
+    "cancel": "Cancel",
+    "close": "Close"
+  },
+  "cropAssessment": {
+    "heading": "Crop assessment",
+    "officerDeclared": "Recorded by you, not by the AI. The damage classifier identifies crop damage but cannot identify which crop.",
+    "cropType": "Crop",
+    "cropTypePlaceholder": "Select the crop",
+    "areaAcres": "Affected area (acres)",
+    "extentPercent": "Damage extent (%)",
+    "beyondTrainedArea": "Larger than any field in the model's training data (up to {max} acres). The estimate is still shown, but treat it with caution.",
+    "crops": {
+      "paddy": "Paddy",
+      "banana": "Banana",
+      "coconut": "Coconut",
+      "bada_irigu": "Maize (bada irigu)",
+      "vegetable": "Vegetable"
+    }
   }
 }

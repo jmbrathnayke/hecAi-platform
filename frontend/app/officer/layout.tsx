@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { NextIntlClientProvider } from "next-intl";
 import "../globals.css";
 import { SyncStatusBar } from "@/components/SyncStatusBar";
+import NotificationBell from "@/components/NotificationBell";
 import { OfficerBottomNav } from "@/components/OfficerBottomNav";
 import { SWRegistrar } from "@/components/SWRegistrar";
 import { fontVariables } from "@/lib/fonts";
@@ -39,6 +40,12 @@ export default async function OfficerLayout({ children }: { children: React.Reac
               fired on the pages where the stale model was actually being served. */}
           <SWRegistrar />
           <SyncStatusBar />
+          {/* The officer tree has no persistent top bar — SyncStatusBar appears only while syncing
+              or on error — so the bell gets a thin strip of its own rather than being bolted onto a
+              bar that is usually absent. */}
+          <div className="flex shrink-0 justify-end border-b border-border-subtle bg-surface-raised px-design-3 py-design-1">
+            <NotificationBell home="/officer/dashboard" tone="light" />
+          </div>
           <div className="flex flex-1 flex-col">{children}</div>
           <OfficerBottomNav />
         </NextIntlClientProvider>

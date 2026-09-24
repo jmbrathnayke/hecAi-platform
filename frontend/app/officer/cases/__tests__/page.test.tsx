@@ -147,6 +147,15 @@ it("starts the review", async () => {
   expect(screen.queryByText("caseReview.startReview")).not.toBeInTheDocument();
 });
 
+/** Fill the crop assessment. The mocked classifier returns `crop_damage`, and the crop, the
+ *  affected area and the damage extent are what synthetic_crop_compensation_v1 needs — no
+ *  classifier can supply them, so a crop assessment cannot be submitted without them. */
+function fillCropAssessment(acres = "2", percent = "75") {
+  fireEvent.change(screen.getByLabelText("cropType"), { target: { value: "paddy" } });
+  fireEvent.change(screen.getByLabelText("areaAcres"), { target: { value: acres } });
+  fireEvent.change(screen.getByLabelText("extentPercent"), { target: { value: percent } });
+}
+
 it("classifies the officer's photo on-device and submits only the accepted result", async () => {
   mockAssess.mockResolvedValue({ ok: true, detail: detail() });
   render(<OfficerCaseReviewPage />);
@@ -156,6 +165,9 @@ it("classifies the officer's photo on-device and submits only the accepted resul
   expect(submit.closest("button")).toBeDisabled();
 
   fireEvent.click(screen.getByText("accept-ai"));
+  // Still blocked: crop_damage needs the crop, which the classifier cannot identify.
+  expect(submit.closest("button")).toBeDisabled();
+  fillCropAssessment();
   expect(submit.closest("button")).not.toBeDisabled();
   await act(async () => {
     fireEvent.click(submit);
@@ -164,7 +176,10 @@ it("classifies the officer's photo on-device and submits only the accepted resul
   expect(mockClassify).toHaveBeenCalledTimes(1);
   const [ref, body] = mockAssess.mock.calls[0];
   expect(ref).toBe("HEC-2026-0001");
-  expect(body).toMatchObject({ prediction: "crop_damage", ai_severity: "Severe", was_overridden: false });
+  expect(body).toMatchObject({
+    prediction: "crop_damage", ai_severity: "Severe", was_overridden: false,
+    crop_type: "paddy", affected_area_acres: 2, damage_extent_percent: 75,
+  });
   expect(JSON.stringify(body)).not.toMatch(/blob|image|photo/i);
   expect(await screen.findByText("caseReview.assessmentRecorded")).toBeInTheDocument();
 });
@@ -178,11 +193,15 @@ it("submits the officer's override alongside the model's prediction", async () =
   await act(async () => {
     fireEvent.click(screen.getByText("caseReview.submitAssessment"));
   });
-  expect(mockAssess.mock.calls[0][1]).toMatchObject({
+  const overrideBody = mockAssess.mock.calls[0][1];
+  expect(overrideBody).toMatchObject({
     prediction: "crop_damage",
     was_overridden: true,
     override_category: "property_damage",
   });
+  // Overridden to property: the crop control is never shown and no crop field is sent.
+  expect(screen.queryByTestId("crop-assessment")).not.toBeInTheDocument();
+  expect(overrideBody).not.toHaveProperty("crop_type");
 });
 
 it("keeps the classification on screen when submission fails, so it can be retried", async () => {
@@ -190,6 +209,7 @@ it("keeps the classification on screen when submission fails, so it can be retri
   render(<OfficerCaseReviewPage />);
   fireEvent.click(await screen.findByText("capture-photo"));
   fireEvent.click(await screen.findByText("accept-ai"));
+  fillCropAssessment();
   await act(async () => {
     fireEvent.click(screen.getByText("caseReview.submitAssessment"));
   });

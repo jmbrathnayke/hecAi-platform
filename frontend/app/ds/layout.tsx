@@ -3,6 +3,7 @@ import { NextIntlClientProvider } from "next-intl";
 import "../globals.css";
 import { fontVariables } from "@/lib/fonts";
 import { resolveStaffLocale, loadMessages } from "@/lib/serverLocale";
+import { StaffTopBar } from "@/components/StaffTopBar";
 
 // Divisional Secretariat routes are a separate top-level tree from app/[locale] (no locale route
 // prefix), so — like app/officer and app/admin — this is an independent root layout reaching its
@@ -30,6 +31,7 @@ export default async function DsLayout({ children }: { children: React.ReactNode
           hydration. Scoped to this element only — same as the other root layouts. */}
       <body className="flex min-h-dvh flex-col font-sans" suppressHydrationWarning>
         <NextIntlClientProvider locale={locale} messages={messages}>
+          <StaffTopBar tree="ds" />
           <div className="flex-1">{children}</div>
         </NextIntlClientProvider>
       </body>

@@ -50,6 +50,8 @@ describe("checkRegistration", () => {
       kind: "registered",
       householdRef: "HH-2026-0001",
       source: "server",
+      district: "x",
+      dsDivision: "y",
     });
     expect(readConfirmedRegistration("account-1")).toBe("HH-2026-0001");
   });

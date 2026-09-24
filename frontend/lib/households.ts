@@ -33,6 +33,8 @@ export interface RegisterHouseholdInput {
   district: string;
   ds_division: string;
   gn_division?: string;
+  /** Required from migration 035. Stored in the clear like contact_email; returned only to the family. */
+  address: string;
   members: HouseholdMemberInput[];
   /**
    * Optional (FR-10.4). Sent in the clear over TLS and encrypted SERVER-side with a key the
@@ -62,6 +64,10 @@ export interface Household {
   gn_division: string | null;
   status: string;
   registered_at: string | null;
+  /** NULL for households registered before migration 035. */
+  address: string | null;
+  contact_email: string | null;
+  bank_account_last4: string | null;
   members: { full_name: string | null; relationship: string | null; is_registrant: boolean }[];
 }
 
@@ -234,20 +240,89 @@ export async function lookupHousehold(nic: string): Promise<LookupResult> {
   }
 }
 
-/** The signed-in citizen's household, or null when they have none (or we cannot ask). */
-export async function getMyHousehold(): Promise<Household | null> {
+/** What a family may change for itself (PATCH /households/me). Area and members are not here. */
+export interface HouseholdChanges {
+  address?: string;
+  /** An empty string clears it. */
+  contact_email?: string;
+  gn_division?: string;
+  /** Accepted only while no bank details are on file; the server refuses a replacement (409). */
+  bank?: BankDetailsInput;
+}
+
+export type UpdateFailure =
+  | { reason: "invalid-address" }
+  | { reason: "invalid-email" }
+  | { reason: "invalid-bank" }
+  | { reason: "bank-locked" }
+  | { reason: "not-registered" }
+  | { reason: "no-session" }
+  | { reason: "network" }
+  | { reason: "server"; status: number };
+
+export type UpdateResult = { ok: true; household: Household } | { ok: false; failure: UpdateFailure };
+
+export async function updateMyHousehold(changes: HouseholdChanges): Promise<UpdateResult> {
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-    return null;
+    return { ok: false, failure: { reason: "server", status: 0 } };
   }
   const token = await getAccessToken();
-  if (!token) return null;
+  if (!token) return { ok: false, failure: { reason: "no-session" } };
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/api/v1/households/me`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify(changes),
+    });
+  } catch {
+    return { ok: false, failure: { reason: "network" } };
+  }
+
+  if (res.ok) {
+    try {
+      const household = (await res.json()) as Household;
+      if (household?.household_ref) return { ok: true, household };
+    } catch {
+      /* fall through to a server failure */
+    }
+    return { ok: false, failure: { reason: "server", status: res.status } };
+  }
+
+  const code = (await errorBody(res)).error ?? "";
+  if (res.status === 400 && code === "missing_fields") return { ok: false, failure: { reason: "invalid-address" } };
+  if (res.status === 400 && code === "invalid_email") return { ok: false, failure: { reason: "invalid-email" } };
+  if (res.status === 400 && code === "invalid_bank_details") return { ok: false, failure: { reason: "invalid-bank" } };
+  if (res.status === 409 && code === "bank_details_locked") return { ok: false, failure: { reason: "bank-locked" } };
+  if (res.status === 404) return { ok: false, failure: { reason: "not-registered" } };
+  if (res.status === 401) return { ok: false, failure: { reason: "no-session" } };
+  return { ok: false, failure: { reason: "server", status: res.status } };
+}
+
+export type MyHouseholdResult =
+  | { kind: "ok"; household: Household }
+  | { kind: "not-registered" }
+  | { kind: "unauthenticated" }
+  | { kind: "error" };
+
+/** The signed-in citizen's own household. "Not registered" and "could not ask" stay distinct. */
+export async function fetchMyHousehold(): Promise<MyHouseholdResult> {
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+    return { kind: "error" };
+  }
+  const token = await getAccessToken();
+  if (!token) return { kind: "unauthenticated" };
   try {
     const res = await fetch(`${API_BASE}/api/v1/households/me`, {
       headers: { Authorization: `Bearer ${token}` },
     });
-    if (!res.ok) return null;
-    return (await res.json()) as Household;
+    if (res.status === 404) return { kind: "not-registered" };
+    if (res.status === 401) return { kind: "unauthenticated" };
+    if (!res.ok) return { kind: "error" };
+    const household = (await res.json()) as Household;
+    return household?.household_ref ? { kind: "ok", household } : { kind: "error" };
   } catch {
-    return null;
+    return { kind: "error" };
   }
 }

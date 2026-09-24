@@ -24,12 +24,22 @@ export interface DsCase {
   household_ref: string | null;
   // --- final governance workflow (optional: an older backend omits them) ----------------------
   /** Decision support from the Random Forest estimator. Never the final amount. */
-  ai_estimate?: { amount_lkr: number | null; model_version: string | null; is_final_decision: false };
+  ai_estimate?: {
+    amount_lkr: number | null;
+    model_version: string | null;
+    is_final_decision: false;
+    decision_support_only?: true;
+    /** True when the synthetic crop prototype produced the figure. This is the screen where a real
+     *  payment is decided, so its provenance is shown beside the amount, not inferred. */
+    synthetic_model?: boolean;
+  };
   district?: string | null;
   officer_assessed?: boolean;
   /** The Divisional Secretariat's recorded decision, or null before it is made. */
   final_decision?: { amount_lkr: number | null; reason: string | null; decided_at: string | null } | null;
   payment_authorized?: boolean;
+  /** The account tail on the family's registration, or null when they have given none. */
+  bank_account_last4?: string | null;
 }
 
 export type DsFailure =
@@ -267,5 +277,79 @@ export async function recordFinalDecision(
   }
   if (code === "payment_already_authorized") return { ok: false, failure: { reason: "payment-authorized" } };
   if (code === "no_payment_authorization") return { ok: false, failure: { reason: "no-payment-record" } };
+  return { ok: false, failure: { reason: "server", status: res.status, code } };
+}
+
+// --- Bank details, recorded by the office that pays -------------------------------------------
+//
+// A citizen may add an account they skipped at registration, but never replace one already on file
+// (households.py): whoever held their session could otherwise redirect the compensation. Correcting
+// a mistyped or closed account therefore happens here, with a written reason.
+
+export interface BankDetailsInput {
+  account_number: string;
+  bank_name?: string;
+  branch?: string;
+  account_holder?: string;
+}
+
+export type BankDetailsFailure =
+  | { reason: "not-found" }
+  | { reason: "reason-required" }
+  | { reason: "invalid-bank" }
+  | { reason: "forbidden" }
+  | { reason: "server"; status: number; code: string }
+  | { reason: "network" };
+
+export type BankDetailsResult =
+  | { ok: true; householdRef: string; last4: string | null; replacedExisting: boolean }
+  | { ok: false; failure: BankDetailsFailure };
+
+export async function setHouseholdBankDetails(
+  householdRef: string,
+  bank: BankDetailsInput,
+  reason: string,
+): Promise<BankDetailsResult> {
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+    return { ok: false, failure: { reason: "server", status: 0, code: "config" } };
+  }
+  const token = await getAccessToken();
+  if (!token) return { ok: false, failure: { reason: "forbidden" } };
+
+  let res: Response;
+  try {
+    res = await fetch(
+      `${API_BASE}/api/v1/households/${encodeURIComponent(householdRef)}/bank-details`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ bank, reason }),
+      },
+    );
+  } catch {
+    return { ok: false, failure: { reason: "network" } };
+  }
+
+  let body: Record<string, unknown> = {};
+  try {
+    body = (await res.json()) as Record<string, unknown>;
+  } catch {
+    body = {};
+  }
+
+  if (res.ok) {
+    return {
+      ok: true,
+      householdRef: typeof body.household_ref === "string" ? body.household_ref : householdRef,
+      last4: typeof body.bank_account_last4 === "string" ? body.bank_account_last4 : null,
+      replacedExisting: body.replaced_existing === true,
+    };
+  }
+
+  const code = typeof body.error === "string" ? body.error : "";
+  if (res.status === 404) return { ok: false, failure: { reason: "not-found" } };
+  if (res.status === 401 || res.status === 403) return { ok: false, failure: { reason: "forbidden" } };
+  if (code === "reason_required") return { ok: false, failure: { reason: "reason-required" } };
+  if (code === "invalid_bank_details") return { ok: false, failure: { reason: "invalid-bank" } };
   return { ok: false, failure: { reason: "server", status: res.status, code } };
 }

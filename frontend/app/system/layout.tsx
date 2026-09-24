@@ -3,6 +3,7 @@ import { NextIntlClientProvider } from "next-intl";
 import "../globals.css";
 import { fontVariables } from "@/lib/fonts";
 import { resolveStaffLocale, loadMessages } from "@/lib/serverLocale";
+import { StaffTopBar } from "@/components/StaffTopBar";
 
 // System Administrator routes (FR-11) — a separate top-level tree from app/[locale], like
 // app/officer, app/admin and app/ds, so the URL carries no locale prefix. Locale comes from the
@@ -24,6 +25,7 @@ export default async function SystemLayout({ children }: { children: React.React
           Scoped to this element only — same as the other root layouts. */}
       <body className="flex min-h-dvh flex-col font-sans" suppressHydrationWarning>
         <NextIntlClientProvider locale={locale} messages={messages}>
+          <StaffTopBar tree="system" />
           <div className="flex-1">{children}</div>
         </NextIntlClientProvider>
       </body>

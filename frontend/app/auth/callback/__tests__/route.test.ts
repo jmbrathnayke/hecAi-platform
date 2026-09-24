@@ -7,6 +7,7 @@
 import { NextRequest } from "next/server";
 
 const mockExchange = jest.fn();
+const mockVerifyOtp = jest.fn();
 jest.mock("@/lib/supabase", () => ({
   createServerSupabaseClient: (cookies: {
     setAll?: (c: { name: string; value: string; options?: unknown }[]) => void;
@@ -14,7 +15,12 @@ jest.mock("@/lib/supabase", () => ({
     // Stash the cookie adapter so a test can simulate the SDK writing session cookies during the
     // exchange, and assert they survive onto the redirect response.
     (globalThis as unknown as { __capturedCookies: typeof cookies }).__capturedCookies = cookies;
-    return { auth: { exchangeCodeForSession: (...a: unknown[]) => mockExchange(...a) } };
+    return {
+      auth: {
+        exchangeCodeForSession: (...a: unknown[]) => mockExchange(...a),
+        verifyOtp: (...a: unknown[]) => mockVerifyOtp(...a),
+      },
+    };
   },
 }));
 
@@ -36,6 +42,7 @@ const A_SESSION = { access_token: "at", refresh_token: "rt", user: { id: "u-1" }
 
 beforeEach(() => {
   mockExchange.mockReset().mockResolvedValue({ data: { session: A_SESSION }, error: null });
+  mockVerifyOtp.mockReset().mockResolvedValue({ data: { session: A_SESSION }, error: null });
 });
 
 test("exchanges the code and redirects to the requested destination", async () => {
@@ -234,6 +241,55 @@ test.each([
   );
   const res = await GET(req);
   expect(res.headers.get("location")).toBe(expected);
+});
+
+// ============================================================ email links verified by token_hash
+
+test("a magic-link token_hash is verified server-side and redirects to the requested destination", async () => {
+  mockVerifyOtp.mockImplementation(async () => {
+    capturedCookies().setAll([
+      { name: "sb-test-auth-token", value: "session-value", options: { path: "/" } },
+    ]);
+    return { data: { session: A_SESSION }, error: null };
+  });
+  const req = new NextRequest(
+    new URL("http://localhost/auth/callback?token_hash=h-1&type=magiclink&next=%2Fen%2Fmy-cases"),
+  );
+  const res = await GET(req);
+
+  expect(mockVerifyOtp).toHaveBeenCalledWith({ token_hash: "h-1", type: "magiclink" });
+  expect(mockExchange).not.toHaveBeenCalled();
+  expect(res.headers.get("location")).toBe("http://localhost/en/my-cases");
+  expect(res.cookies.get("sb-test-auth-token")?.value).toBe("session-value");
+});
+
+test.each(["recovery", "invite", "signup", ""])(
+  "a token_hash with type %p is not an email sign-in and is refused",
+  async (type) => {
+    const req = new NextRequest(
+      new URL(`http://localhost/auth/callback?token_hash=h-1&type=${type}&next=%2Fen%2Fmy-cases`),
+    );
+    const res = await GET(req);
+    expect(mockVerifyOtp).not.toHaveBeenCalled();
+    expect(res.headers.get("location")).toBe("http://localhost/login?error=missing_code");
+  },
+);
+
+test("a rejected token_hash (expired or already used) bounces to login", async () => {
+  mockVerifyOtp.mockResolvedValue({ data: { session: null }, error: { message: "otp_expired" } });
+  const req = new NextRequest(
+    new URL("http://localhost/auth/callback?token_hash=h-1&type=magiclink&next=%2Fen%2Fmy-cases"),
+  );
+  const res = await GET(req);
+  expect(res.headers.get("location")).toBe("http://localhost/login?error=exchange_failed");
+});
+
+test("a token_hash link still refuses an off-origin `next`", async () => {
+  const req = new NextRequest(
+    new URL("http://localhost/auth/callback?token_hash=h-1&type=magiclink&next=https%3A%2F%2Fevil.example"),
+  );
+  const res = await GET(req);
+  expect(res.headers.get("location")).toBe("http://localhost/");
 });
 
 test("a provider error for a system destination returns to /system/login", async () => {
