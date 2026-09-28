@@ -49,6 +49,28 @@ const CLASS_COUNT = JSON.parse(
   await readFile(join(FRONTEND, "public", "models", "mobilenetv2", "class_names.json"), "utf-8"),
 ).length;
 
+// The open-set gate (lib/oodGate.ts) reads two graph nodes BY NAME at runtime. A re-export that
+// renames either one does not break loading or change a single probability -- the model would
+// pass every other check here -- but classifyImage would fall back to an ungated prediction, and
+// photographs of things the model has no concept for would go back to being assigned a class
+// confidently. That regression is invisible unless something asserts the names, so this does.
+const GATE = await readFile(
+  join(FRONTEND, "public", "models", "mobilenetv2", "ood_gate.json"), "utf-8",
+).then(JSON.parse).catch(() => null);
+if (GATE) {
+  const graph = JSON.parse(await readFile(join(MODEL, "model.json"), "utf-8"));
+  const names = new Set((graph.modelTopology?.node ?? []).map((n) => n.name));
+  const missing = [GATE.feature_node, GATE.output_node].filter((n) => !names.has(n));
+  if (missing.length) {
+    console.error("FAIL: ood_gate.json names nodes this model does not have:");
+    for (const name of missing) console.error(`  ${name}`);
+    console.error("The open-set gate would silently stop running. Recalibrate with scripts/ood/.");
+    process.exit(1);
+  }
+  console.log(`gate nodes present: ${GATE.feature_node.split("/").pop()}, ` +
+    `${GATE.output_node.split("/").pop()} (threshold ${GATE.threshold})`);
+}
+
 const MIME = { ".json": "application/json", ".bin": "application/octet-stream", ".js": "text/javascript", ".html": "text/html" };
 const MOUNTS = [
   ["/vendor/tf.min.js", join(FRONTEND, "node_modules", "@tensorflow", "tfjs", "dist", "tf.min.js")],

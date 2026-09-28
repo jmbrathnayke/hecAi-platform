@@ -48,7 +48,19 @@ export function AIResultPanel({ aiResult }: AIResultPanelProps) {
         )}
       </div>
 
-      {confidencePct != null && (
+      {/* A gated row reads "no_damage" like any other, and the administrator decides against it.
+          Without this line the only difference between "the officer photographed undamaged land"
+          and "the model could not recognise the photo at all" is invisible on this screen. */}
+      {aiResult.out_of_domain && (
+        <p
+          data-testid="ood-notice"
+          className="rounded-md border border-amber bg-amber-pale p-design-3 text-body text-ink-primary"
+        >
+          {t("ai.outOfDomain")}
+        </p>
+      )}
+
+      {confidencePct != null && !aiResult.out_of_domain && (
         <div>
           <div className="h-2 w-full overflow-hidden rounded-full bg-surface-tint">
             <div
@@ -62,6 +74,13 @@ export function AIResultPanel({ aiResult }: AIResultPanelProps) {
           </div>
           <p className="mt-design-1 text-caption text-ink-secondary">
             {t("ai.confidence", { pct: confidencePct })}
+          </p>
+          {/* The administrator decides whether to approve against this number, so it matters more
+              here than anywhere that it is not read as a probability of correctness. Closed-set
+              softmax over three classes: see AIResultCard for the full reasoning and the two
+              recorded cases (a face at 94% property damage; a no-damage photo at 88.3% crop). */}
+          <p className="mt-design-1 text-caption text-ink-disabled" data-testid="confidence-caveat">
+            {t("ai.confidenceCaveat")}
           </p>
         </div>
       )}

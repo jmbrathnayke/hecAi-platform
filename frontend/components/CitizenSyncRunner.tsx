@@ -7,15 +7,20 @@
 // cheap IndexedDB read when there is nothing due, and the outbox itself guards against overlap.
 import { useEffect } from "react";
 import { flushCitizenOutbox } from "@/lib/citizenOutbox";
+import { flushCitizenPhotos } from "@/lib/citizenPhotoOutbox";
 
 export function CitizenSyncRunner({ intervalMs = 60_000 }: { intervalMs?: number }) {
   useEffect(() => {
     let cancelled = false;
     const run = () => {
       if (cancelled) return;
-      void flushCitizenOutbox().catch(() => {
-        /* IndexedDB unavailable (private mode, SSR preview): nothing to deliver from here */
-      });
+      void flushCitizenOutbox()
+        // Photographs attach to a case that already exists, so this runs after the report has
+        // been delivered -- including the one that was just delivered by the call above.
+        .then(() => flushCitizenPhotos())
+        .catch(() => {
+          /* IndexedDB unavailable (private mode, SSR preview): nothing to deliver from here */
+        });
     };
     const onVisible = () => {
       if (document.visibilityState === "visible") run();

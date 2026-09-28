@@ -15,6 +15,15 @@ import type { GraphModel, Tensor } from "@tensorflow/tfjs";
 // because a static import already carries them.
 import classNames from "@/public/models/mobilenetv2/class_names.json";
 import severityMapping from "@/public/models/mobilenetv2/severity_mapping.json";
+// The open-set gate. See lib/oodGate.ts for why a three-class softmax needs one at all, and why
+// `no_damage` could not absorb the problem by itself.
+import {
+  FEATURE_NODE,
+  OUTPUT_NODE,
+  OOD_GATE_VERSION,
+  isOutOfDomain,
+  nearestPrototypeDistance,
+} from "@/lib/oodGate";
 
 export const MODEL_URL = "/models/mobilenetv2/model.json";
 
@@ -34,6 +43,24 @@ export interface ClassificationResult {
   confidence: number; // 0..1
   processingTimeMs: number; // end-to-end: decode + resize + inference (AC4 capture→result), not pure forward-pass
   modelVersion: string;
+
+  // --- open-set gate (lib/oodGate.ts) -------------------------------------------------------
+  /** The photo resembles none of the three trained classes. `classId` is then `no_damage` and
+   *  `severity` is "None" — the correct compensation outcome (no estimate is generated for a
+   *  no-damage case) — but the reason is NOT that an intact field was recognised, which is why
+   *  this flag travels with the result instead of being collapsed into the class. */
+  outOfDomain: boolean;
+  /** Cosine distance to the nearest class prototype; null when the gate could not run. */
+  domainDistance: number | null;
+  /** False when the feature read failed and the class was accepted ungated — never treat this
+   *  as evidence the photo was in domain. */
+  gateApplied: boolean;
+  /** What the softmax said before the gate overruled it. Null when it did not. Kept so the
+   *  research log can still answer "what would the closed-set model have done?". */
+  rawClassId: ClassId | null;
+  rawConfidence: number | null;
+  /** Identifies the gate in the research record (the classifier's own modelVersion is unchanged). */
+  gateVersion: string;
 }
 
 export class ModelNotAvailableError extends Error {
@@ -147,6 +174,11 @@ export function topClass(probs: ArrayLike<number>): { classId: ClassId; confiden
   return { classId: classNames[bestIndex] as ClassId, confidence: probs[bestIndex] ?? 0 };
 }
 
+/** The class the open-set gate falls back to. Read from severity_mapping.json rather than written
+ *  out here, so the gate and the severity rule can never disagree about which class means
+ *  "nothing to pay" — resolveSeverity() keys off the same field to return "None". */
+const NO_DAMAGE_CLASS = severityMapping.no_damage_class as ClassId;
+
 /**
  * Map a class + confidence to a severity via severity_mapping.json's confidence-band rule:
  * the no-damage class is always "None"; otherwise the first band whose `min_confidence` the
@@ -198,6 +230,11 @@ async function blobToImageData(blob: Blob, size: number): Promise<ImageData> {
  * and returns the top class + severity + confidence + end-to-end processing time (decode +
  * resize + inference; matches AC4's capture→result budget, NOT pure forward-pass time).
  * Reuses the `loadModel()` singleton — no second model-loading path.
+ *
+ * The returned class is the SERVED class, not necessarily the softmax's. A photo that resembles
+ * none of the three trained classes is returned as `no_damage` with `outOfDomain: true`, because
+ * a three-class softmax cannot answer "none of these" and will otherwise assign one confidently
+ * (a face was returned as property damage at 94%). See lib/oodGate.ts.
  */
 export async function classifyImage(blob: Blob): Promise<ClassificationResult> {
   const model = await loadModel();
@@ -206,21 +243,35 @@ export async function classifyImage(blob: Blob): Promise<ClassificationResult> {
 
   const imageData = await blobToImageData(blob, INPUT_SIZE);
   // tidy() disposes the intermediate tensors (fromPixels → float → /255 → batch dim) but
-  // keeps the returned prediction tensor, which we read then dispose ourselves.
-  const output = tf.tidy(() => {
+  // keeps the returned tensors, which we read then dispose ourselves.
+  //
+  // execute(), not predict(): one graph run yields BOTH the softmax and the 1280-d penultimate
+  // features the open-set gate needs. A second predict() would run the whole network twice and
+  // double the officer's capture→result wait (AC4).
+  const { outputs, gated } = tf.tidy(() => {
     const input = tf.browser.fromPixels(imageData).toFloat().div(255).expandDims(0);
-    // GraphModel.predict is typed Tensor | Tensor[] | NamedTensorMap — this model has a single
-    // output, but the old `as Tensor` cast would have turned a multi-output export into an
-    // `output.data is not a function` crash rather than a clear message.
+    try {
+      const both = model.execute(input, [OUTPUT_NODE, FEATURE_NODE]) as Tensor[];
+      if (Array.isArray(both) && both.length === 2) return { outputs: both, gated: true };
+    } catch (err) {
+      // A re-exported model that renamed the nodes must still classify. The gate is then
+      // reported as not applied rather than as a pass — see gateApplied. The export scripts
+      // (scripts/ood/extract-embeddings.mjs, scripts/tfjs-bench/verify-model.mjs --smoke) assert
+      // both node names, so this path means the artifact and the code have drifted.
+      console.warn("[mobilenet] feature node unavailable; classifying without the open-set gate", err);
+    }
     const result = model.predict(input);
-    return (Array.isArray(result) ? result[0] : result) as Tensor;
+    return { outputs: [(Array.isArray(result) ? result[0] : result) as Tensor], gated: false };
   });
+
   let probs: ArrayLike<number>;
+  let features: ArrayLike<number> | null = null;
   try {
-    probs = await output.data();
+    probs = await outputs[0].data();
+    if (gated) features = await outputs[1].data();
   } finally {
-    // Dispose even if the read rejects (e.g. lost WebGL context) so the tensor never leaks.
-    output.dispose();
+    // Dispose even if a read rejects (e.g. lost WebGL context) so no tensor leaks.
+    outputs.forEach((t) => t.dispose());
   }
 
   // Guard a malformed output vector: it must carry exactly one finite probability per class.
@@ -238,12 +289,29 @@ export async function classifyImage(blob: Blob): Promise<ClassificationResult> {
   }
 
   const processingTimeMs = performance.now() - start;
-  const { classId, confidence } = topClass(probs);
+  const raw = topClass(probs);
+
+  // The gate. A photo that resembles none of the three trained classes is recorded as no_damage
+  // — the outcome the compensation path already gives that class (no estimate is generated) —
+  // instead of being forced into the nearest of three classes it does not belong to.
+  const domainDistance = features ? nearestPrototypeDistance(features) : null;
+  const outOfDomain = isOutOfDomain(domainDistance);
+  const classId: ClassId = outOfDomain ? NO_DAMAGE_CLASS : raw.classId;
+  // The softmax number describes a choice among three classes that has just been discarded, so
+  // it is not carried over as this result's confidence; it survives on rawConfidence.
+  const confidence = outOfDomain ? 0 : raw.confidence;
+
   return {
     classId,
     severity: resolveSeverity(classId, confidence),
     confidence,
     processingTimeMs,
     modelVersion: MODEL_VERSION,
+    outOfDomain,
+    domainDistance,
+    gateApplied: domainDistance !== null,
+    rawClassId: outOfDomain ? raw.classId : null,
+    rawConfidence: outOfDomain ? raw.confidence : null,
+    gateVersion: OOD_GATE_VERSION,
   };
 }

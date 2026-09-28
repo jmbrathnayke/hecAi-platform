@@ -11,10 +11,15 @@ case. The AI assessment therefore could never be attached to the citizen's claim
 administrator approved citizen cases nobody had verified.
 
 WHAT THE OFFICER CLASSIFIES. The officer's OWN verification image, captured in the field and
-classified by MobileNetV2 in the officer's browser. The citizen's photo is not uploaded and is not
-the input here: no image reaches this server at all. Only the classification result does, and it is
-recorded through the same research log as every other classification (inference_log, migration 006,
-validated by inference.parse_classification).
+classified by MobileNetV2 in the officer's browser. The citizen's photo is not the input here, and
+no image is ever sent anywhere TO BE CLASSIFIED -- the model runs on the device (FR-2.1/2.2). What
+this endpoint records is the classification result, through the same research log as every other
+classification (inference_log, migration 006, validated by inference.parse_classification).
+
+The image itself now travels separately, as case EVIDENCE, through case_photos.py (migration 038) --
+a different endpoint, a different table, and no part of the model path. Until that existed nothing
+downstream of the officer could see what had been photographed, so an approval rested on a class
+label and a percentage alone.
 
 THE ESTIMATE IS DECISION SUPPORT. The officer's assessment regenerates the Random Forest estimate
 with the on-device severity the citizen submission could not supply. It is labelled and audited as an
@@ -35,7 +40,11 @@ from flask import Blueprint, current_app, g, jsonify, request
 from app.api.v1.middleware.auth import require_officer
 from app.domain.workflow import workflow_stage
 from app.infrastructure.audit import write_audit_log
-from app.infrastructure.inference_log import insert_inference_log, parse_classification
+from app.infrastructure.inference_log import (
+    insert_inference_log,
+    parse_classification,
+    parse_gate_fields,
+)
 from app.infrastructure.ml import compensation
 from app.infrastructure.notifications import notify_status_change_all
 from app.infrastructure.push.push_service import notify_staff_push
@@ -157,6 +166,9 @@ def _detail_payload(cur, row):
             "override_category": ai[3],
             "model_version": ai[4],
             "ai_severity": (ai[5] or {}).get("ai_severity") if isinstance(ai[5], dict) else None,
+            # The open-set gate's decision, so a no_damage row can be read correctly: the photo
+            # matched no trained class, rather than being recognised as intact land.
+            "out_of_domain": bool((ai[5] or {}).get("ai_out_of_domain")) if isinstance(ai[5], dict) else False,
             "created_at": _iso(ai[6]),
         },
         # Named for what it is. The UI labels it "AI-Assisted Compensation Estimate"; the final
@@ -276,6 +288,9 @@ def record_assessment(reference):
     fields, error = parse_classification(body)
     if error:
         return jsonify({"error": error}), 400
+    gate, error = parse_gate_fields(body, fields["prediction"])
+    if error:
+        return jsonify({"error": error}), 400
     if fields["prediction"] not in _CLASS_TO_CATEGORY:
         # inference_log accepts any short label for research; a CASE assessment must be one of the
         # model's three classes, because the class decides which estimate is regenerated.
@@ -343,6 +358,7 @@ def record_assessment(reference):
                         "ai_severity": ai_severity,
                         "ai_processing_time_ms": processing_ms,
                         "source": "officer_case_assessment",
+                        **gate,
                     })
 
                     if row[_REVIEW_AT] is None:

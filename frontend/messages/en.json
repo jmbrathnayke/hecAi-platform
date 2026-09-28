@@ -456,7 +456,11 @@
       "sectionLabel": "AI Classification",
       "autoChip": "Auto",
       "modelFooter": "Classified using {model} · on-device · {ms} ms",
-      "overrideHint": "If this classification is incorrect, tap Override to select the correct category."
+      "overrideHint": "If this classification is incorrect, tap Override to select the correct category.",
+      "confidenceCaveat": "This is how strongly the model prefers this class over its other two — not the chance it is right. It only knows crop damage, property damage and no damage; a photo of something else is caught by a separate check and recorded as No Damage instead of being guessed at. Check the result against what you see.",
+      "outOfDomainBadge": "Outside the model's scope",
+      "outOfDomainNotice": "The model does not recognise this photo as a crop, a field or a building — the three things it was trained on. It has therefore been recorded as No Damage, and no compensation will be estimated from it. If the photo really does show damage, tap Override and choose the category yourself; otherwise take the photo again.",
+      "outOfDomainNoConfidence": "No confidence figure is shown. That number only compares the three trained classes against each other, and this photo is outside all three, so it would mean nothing here."
     },
     "severity": {
       "None": "None",
@@ -535,7 +539,7 @@
       "reviewStarted": "Review started. The citizen has been told their report is under review.",
       "assessTitle": "Officer assessment",
       "reassessTitle": "Update assessment",
-      "assessHint": "Inspect the site and photograph the damage yourself. The photo is classified on this device and is not uploaded; only the result is recorded.",
+      "assessHint": "Inspect the site and photograph the damage yourself. The photo is classified on this device — the model never sends it anywhere — and it is then attached to the case as evidence for the reviewers.",
       "notFinalClassification": "AI classification assists the officer. It is not a final decision.",
       "submitAssessment": "Submit assessment",
       "submitting": "Submitting…",
@@ -578,7 +582,12 @@
       },
       "estimateSynthetic": "Prototype estimate — the crop model is trained on synthetic data, not official compensation records."
     },
-    "navProfile": "Profile"
+    "navProfile": "Profile",
+    "photo": {
+      "uploading": "Attaching your photograph to the case…",
+      "uploaded": "Your photograph is attached to the case.",
+      "uploadFailed": "The classification was recorded, but your photograph could not be attached. It will be retried."
+    }
   },
   "ds": {
     "login": {
@@ -689,6 +698,10 @@
         "server": "The server could not save these details.",
         "network": "Could not reach the server. Check your connection."
       }
+    },
+    "evidence": {
+      "show": "View evidence photographs",
+      "hide": "Hide evidence photographs"
     }
   },
   "admin": {
@@ -833,10 +846,33 @@
       "confidence": "{pct}% confidence",
       "originalClass": "Original AI class:",
       "officerOverride": "Officer override:",
-      "reasonLabel": "Reason:"
+      "reasonLabel": "Reason:",
+      "confidenceCaveat": "This is how strongly the model prefers this class over its other two — not the chance it is right. It only knows crop damage, property damage and no damage; a photo of something else is caught by a separate check and recorded as No Damage instead of being guessed at. Check the result against what you see.",
+      "outOfDomain": "Flagged by the out-of-domain check: the photo did not resemble any of the three trained classes, so it was recorded as No Damage rather than assigned a class. No compensation is estimated for such a case."
     },
     "photo": {
-      "unavailable": "Photo viewing isn't available yet."
+      "unavailable": "This photograph could not be loaded.",
+      "adminNotice": "No case reference is available, so no photographs can be shown here.",
+      "officerNotice": "Open a case to see the photographs the family submitted with it.",
+      "loading": "Loading photographs…",
+      "none": "No photographs have been attached to this case.",
+      "loadFailed": "The photographs could not be loaded.",
+      "storageUnavailable": "Photograph storage is not configured for this deployment.",
+      "retry": "Try again",
+      "close": "Close",
+      "sourceNote": "The officer's photograph is the one the AI classified. The family's photographs are their own account of the damage and were not classified.",
+      "source": {
+        "citizen": "Reported by the family",
+        "officer": "Taken by the field officer"
+      },
+      "alt": {
+        "citizen": "Damage photograph submitted by the family",
+        "officer": "Damage photograph taken by the field officer"
+      },
+      "expand": {
+        "citizen": "Open the family's photograph full size",
+        "officer": "Open the officer's photograph full size"
+      }
     },
     "analytics": {
       "title": "Analytics Dashboard",

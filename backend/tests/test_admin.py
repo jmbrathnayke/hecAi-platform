@@ -95,7 +95,7 @@ def _case(
 def _inference_row(
     case_id, model_type="mobilenetv2", model_version="v1", prediction="crop_damage",
     confidence=0.9, was_overridden=False, override_reason=None, override_category=None,
-    ai_severity=None, created_at=None,
+    ai_severity=None, created_at=None, gate=None,
 ):
     return {
         "case_id": case_id,
@@ -106,7 +106,7 @@ def _inference_row(
         "was_overridden": was_overridden,
         "override_reason": override_reason,
         "override_category": override_category,
-        "input_features": {"ai_severity": ai_severity},
+        "input_features": {"ai_severity": ai_severity, **(gate or {})},
         "created_at": created_at or datetime(2026, 7, 8, 10, 5, 0),
     }
 
@@ -825,6 +825,32 @@ def test_case_detail_ai_result_populated_with_override(client, store):
     assert ai["override_category"] == "property_damage"
     assert ai["override_reason"] == "Clearly property damage, not crop"
     assert ai["ai_severity"] == "Moderate"
+
+
+def test_case_detail_ai_result_reports_an_open_set_gate_rejection(client, store):
+    # The administrator approves against this payload. A gated row arrives as no_damage like any
+    # other, so the payload has to distinguish "the officer photographed undamaged land" from
+    # "the model could not recognise the photograph at all".
+    store["inference_log"].append(
+        _inference_row(
+            _CASE_1_ID, prediction="no_damage", confidence=0, ai_severity="None",
+            gate={"ai_out_of_domain": True, "ai_domain_distance": 0.664,
+                  "ai_raw_prediction": "property_damage", "ai_raw_confidence": 0.94},
+        )
+    )
+    ai = client.get(f"/api/v1/admin/cases/{_CASE_1_OFFLINE_ID}", headers=_auth()).get_json()["ai_result"]
+    assert ai["prediction"] == "no_damage"  # the SERVED class, which is what was acted on
+    assert ai["out_of_domain"] is True
+    assert ai["domain_distance"] == 0.664
+    assert ai["raw_prediction"] == "property_damage"
+
+
+def test_case_detail_ai_result_of_an_ungated_row_is_not_reported_as_rejected(client, store):
+    # Absent must read as False, not as None: every row written before the gate existed lands here.
+    store["inference_log"].append(_inference_row(_CASE_1_ID, prediction="no_damage"))
+    ai = client.get(f"/api/v1/admin/cases/{_CASE_1_OFFLINE_ID}", headers=_auth()).get_json()["ai_result"]
+    assert ai["out_of_domain"] is False
+    assert ai["domain_distance"] is None
 
 
 def test_case_detail_ai_result_uses_latest_row_only(client, store):
