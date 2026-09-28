@@ -21,6 +21,7 @@ import { assessImageQuality } from "@/lib/imageQuality";
 import { classifyImage, type ClassId, type ClassificationResult } from "@/lib/mobilenet";
 import { isKnownStage, isTranslatedStatus, statusKey } from "@/lib/status";
 import CropAssessmentFields from "@/components/CropAssessmentFields";
+import { PhotoGallery } from "@/components/admin/PhotoGallery";
 import {
   buildAssessmentBody,
   EMPTY_CROP_ASSESSMENT,
@@ -312,6 +313,13 @@ export default function OfficerCaseReviewPage() {
             </h2>
             <p className="text-caption text-ink-secondary">{t("caseReview.assessHint")}</p>
 
+            {/* Placed before the camera, and only inside the assessable section, because what it
+                says is an instruction for this moment: the family's photographs never reached the
+                server, so the officer is not missing anything by not seeing them — they are about
+                to take the photograph the assessment rests on. Without it the screen showed no
+                photos at all and read as though the citizen's evidence had been lost. */}
+            <PhotoGallery variant="officer" />
+
             <CameraCapture
               onCapture={(file) => void handleCapture(file)}
               disabled={capture === "classifying" || busy}
@@ -332,6 +340,7 @@ export default function OfficerCaseReviewPage() {
                   confidence={result.confidence}
                   processingTimeMs={result.processingTimeMs}
                   modelVersion={result.modelVersion}
+                  outOfDomain={result.outOfDomain}
                   onAccept={() => {
                     setOverride(null);
                     setDecision("accepted");
@@ -388,6 +397,17 @@ export default function OfficerCaseReviewPage() {
             </dl>
           ) : (
             <p className="mt-design-2 text-body text-ink-secondary">{t("caseReview.noAiResult")}</p>
+          )}
+          {/* A gated row reads "No Damage" like any other. Left unexplained, the officer takes it
+              as a finding about the land instead of what it is: the model recognised nothing in
+              the photograph at all. */}
+          {detail.ai_result?.out_of_domain && (
+            <p
+              data-testid="recorded-ood-notice"
+              className="mt-design-2 rounded-md border border-amber bg-amber-pale p-design-3 text-caption leading-relaxed text-ink-primary"
+            >
+              {t("aiResult.outOfDomainNotice")}
+            </p>
           )}
           <p className="mt-design-2 text-caption text-ink-secondary">{t("caseReview.notFinalClassification")}</p>
         </section>

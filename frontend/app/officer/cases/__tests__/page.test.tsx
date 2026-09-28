@@ -217,6 +217,15 @@ it("keeps the classification on screen when submission fails, so it can be retri
   expect(screen.getByText("caseReview.submitAssessment")).toBeInTheDocument();
 });
 
+it("explains, before the camera, that the family's photos were never transmitted", async () => {
+  // Without this the assessment screen showed no photos at all, and an assessor reasonably
+  // concluded the citizen's evidence had been lost. It was never sent: it stays on the family's
+  // phone, and the officer's own photograph is what the assessment rests on.
+  render(<OfficerCaseReviewPage />);
+  expect(await screen.findByTestId("photo-notice-officer")).toBeInTheDocument();
+  expect(screen.getByText("photo.officerNotice")).toBeInTheDocument();
+});
+
 it("shows no assessment controls on a case that is no longer open", async () => {
   mockGet.mockResolvedValue({
     ok: true,
@@ -237,4 +246,38 @@ it("sends an expired session to the officer login", async () => {
   mockGet.mockResolvedValue({ ok: false, failure: { reason: "signed-out" } });
   render(<OfficerCaseReviewPage />);
   expect((await screen.findByText("dashboard.error.signIn")).closest("a")).toHaveAttribute("href", "/officer/login");
+});
+
+
+it("explains a recorded no_damage row that came from the open-set gate", async () => {
+  // Without this the officer reads "No Damage" as a finding about the land. It is not: the model
+  // recognised nothing in the photograph, which is why no compensation is estimated.
+  mockGet.mockResolvedValue({
+    ok: true,
+    detail: detail({
+      ai_result: {
+        prediction: "no_damage", confidence: 0, was_overridden: false, override_category: null,
+        model_version: "mobilenetv2-v1", ai_severity: "None", out_of_domain: true,
+        created_at: "2026-09-28T08:00:00",
+      },
+    }),
+  });
+  render(<OfficerCaseReviewPage />);
+  expect(await screen.findByTestId("recorded-ood-notice")).toBeInTheDocument();
+});
+
+it("leaves an ordinary recorded result without a gate notice", async () => {
+  mockGet.mockResolvedValue({
+    ok: true,
+    detail: detail({
+      ai_result: {
+        prediction: "crop_damage", confidence: 0.9, was_overridden: false, override_category: null,
+        model_version: "mobilenetv2-v1", ai_severity: "Severe", out_of_domain: false,
+        created_at: "2026-09-28T08:00:00",
+      },
+    }),
+  });
+  render(<OfficerCaseReviewPage />);
+  await screen.findByTestId("recorded-ai-result");
+  expect(screen.queryByTestId("recorded-ood-notice")).not.toBeInTheDocument();
 });

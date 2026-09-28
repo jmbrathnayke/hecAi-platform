@@ -24,6 +24,7 @@ from app.infrastructure.inference_log import (  # noqa: F401 - re-exported
     VALID_MODEL_TYPES,
     insert_inference_log,
     parse_classification,
+    parse_gate_fields,
 )
 
 inference_bp = Blueprint("inference", __name__)
@@ -58,6 +59,9 @@ def log_inference():
     fields, error = parse_classification(body)
     if error:
         return jsonify({"error": error}), 400
+    gate, error = parse_gate_fields(body, fields["prediction"])
+    if error:
+        return jsonify({"error": error}), 400
 
     # input_features is the research feature snapshot; officer_id lives here for accountability
     # (NFR-3.4) and the override-rate metric — it is never a queryable identity column.
@@ -66,6 +70,7 @@ def log_inference():
         "officer_id": officer_id,
         "ai_severity": body.get("ai_severity"),
         "ai_processing_time_ms": body.get("ai_processing_time_ms"),
+        **gate,
     }
 
     try:

@@ -456,7 +456,11 @@
       "sectionLabel": "AI Classification",
       "autoChip": "Auto",
       "modelFooter": "Classified using {model} · on-device · {ms} ms",
-      "overrideHint": "If this classification is incorrect, tap Override to select the correct category."
+      "overrideHint": "If this classification is incorrect, tap Override to select the correct category.",
+      "confidenceCaveat": "This is how strongly the model prefers this class over its other two — not the chance it is right. It only knows crop damage, property damage and no damage; a photo of something else is caught by a separate check and recorded as No Damage instead of being guessed at. Check the result against what you see.",
+      "outOfDomainBadge": "Outside the model's scope",
+      "outOfDomainNotice": "The model does not recognise this photo as a crop, a field or a building — the three things it was trained on. It has therefore been recorded as No Damage, and no compensation will be estimated from it. If the photo really does show damage, tap Override and choose the category yourself; otherwise take the photo again.",
+      "outOfDomainNoConfidence": "No confidence figure is shown. That number only compares the three trained classes against each other, and this photo is outside all three, so it would mean nothing here."
     },
     "severity": {
       "None": "None",
@@ -833,10 +837,14 @@
       "confidence": "{pct}% confidence",
       "originalClass": "Original AI class:",
       "officerOverride": "Officer override:",
-      "reasonLabel": "Reason:"
+      "reasonLabel": "Reason:",
+      "confidenceCaveat": "This is how strongly the model prefers this class over its other two — not the chance it is right. It only knows crop damage, property damage and no damage; a photo of something else is caught by a separate check and recorded as No Damage instead of being guessed at. Check the result against what you see.",
+      "outOfDomain": "Flagged by the out-of-domain check: the photo did not resemble any of the three trained classes, so it was recorded as No Damage rather than assigned a class. No compensation is estimated for such a case."
     },
     "photo": {
-      "unavailable": "Photo viewing isn't available yet."
+      "unavailable": "Photo viewing isn't available yet.",
+      "adminNotice": "The family's own photographs stay on the phone that submitted them and are not transmitted — they back the family's Proof of Claim. What this assessment rests on is the photograph the field officer took at the site, and the AI classification of it recorded below.",
+      "officerNotice": "The family's photographs are not transmitted — they stay on the phone that submitted them, backing their Proof of Claim. Photograph the damage in front of you: your photograph is what the AI classifies and what this assessment rests on."
     },
     "analytics": {
       "title": "Analytics Dashboard",

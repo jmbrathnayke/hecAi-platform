@@ -612,6 +612,40 @@ def test_an_officer_assisted_report_arrives_assessed_and_goes_to_the_administrat
     assert announced["citizen"] == ["Submitted"]
 
 
+def test_an_offline_submission_carries_the_open_set_gate_record(client, store, announced):
+    # The gate runs on the officer's device. A case submitted from the field must arrive with the
+    # same evidence an online assessment posts, or the research log cannot explain why a photo
+    # was recorded as no_damage.
+    body = _body(submitted_by_officer=True, officer_id="officer-1", ai_severity="None",
+                 ai_classification={"model_version": "mobilenetv2-1", "prediction": "no_damage",
+                                    "confidence": 0, "ai_gate_version": "ncm-cosine-v1",
+                                    "ai_gate_applied": True, "ai_out_of_domain": True,
+                                    "ai_domain_distance": 0.664,
+                                    "ai_raw_prediction": "property_damage",
+                                    "ai_raw_confidence": 0.94})
+    res = client.post("/api/v1/cases/submit", json=body,
+                      headers={"Authorization": f"Bearer {_officer_token()}"})
+    assert res.status_code == 201
+    features = store["inference"][0][3]
+    assert '"ai_out_of_domain": true' in features
+    assert '"ai_raw_prediction": "property_damage"' in features
+
+
+def test_a_malformed_gate_field_loses_the_gate_record_but_not_the_classification(
+        client, store, announced):
+    # This path is a sync of work already done in the field. The classification itself is valid,
+    # so it is kept; only the unusable gate fields are dropped, and the drop is audited.
+    body = _body(submitted_by_officer=True, officer_id="officer-1",
+                 ai_classification={"model_version": "mobilenetv2-1", "prediction": "crop_damage",
+                                    "confidence": 0.88, "ai_out_of_domain": "yes"})
+    res = client.post("/api/v1/cases/submit", json=body,
+                      headers={"Authorization": f"Bearer {_officer_token()}"})
+    assert res.status_code == 201
+    assert store["inference"][0][4] == "crop_damage"
+    assert '"ai_out_of_domain"' not in store["inference"][0][3]
+    assert "officer_gate_fields_not_recorded" in _events(store)
+
+
 def test_a_malformed_officer_classification_never_blocks_the_submission(client, store, announced):
     body = _body(submitted_by_officer=True, officer_id="officer-1",
                  ai_classification={"model_version": "mobilenetv2-1", "prediction": "x",

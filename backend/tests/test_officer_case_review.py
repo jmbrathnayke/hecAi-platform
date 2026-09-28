@@ -9,6 +9,7 @@ What these tests pin down, in the order a real claim experiences it:
   * the district administrator is alerted, and the citizen is told the verification is complete;
   * a case the administrator has already decided cannot be re-assessed beneath that decision.
 """
+import json
 from datetime import datetime, timezone
 
 import jwt
@@ -103,7 +104,11 @@ class FakeCursor:
             rows = [r for r in self.store["inference"] if r["case_id"] == params[0]]
             self._one = None if not rows else (
                 rows[-1]["prediction"], rows[-1]["confidence"], rows[-1]["was_overridden"],
-                rows[-1]["override_category"], "mobilenetv2-1", {"ai_severity": "Severe"},
+                rows[-1]["override_category"], "mobilenetv2-1",
+                # psycopg2 hands back a JSONB column as a dict. This used to return a fixed
+                # {"ai_severity": "Severe"} regardless of what was written, which meant the detail
+                # payload could not be tested against the row the endpoint actually stored.
+                json.loads(rows[-1]["input_features"]),
                 datetime(2026, 9, 2, tzinfo=timezone.utc))
         elif s.startswith("SELECT amount_lkr, raw_estimate_lkr, capped, model_version, created_at"):
             est = self.store["estimates"].get(params[0])
@@ -302,6 +307,45 @@ def test_the_assessment_is_recorded_through_inference_log_for_that_case(client, 
     assert body["ai_result"]["prediction"] == "property_damage"
     assert body["workflow"]["stage"] == "officer_assessed"
     assert store["cases"][REF]["officer_assessed_by"] == "officer-1"
+
+
+def test_a_gated_assessment_is_recorded_as_no_damage_with_the_reason_beside_it(client, store):
+    # The photo matched none of the three trained classes. The SERVED class is no_damage -- which
+    # is what stops any estimate being generated -- but the row has to say the model recognised
+    # nothing, rather than that it recognised undamaged land.
+    res = _assess(
+        client,
+        prediction="no_damage",
+        confidence=0,
+        ai_severity="None",
+        ai_gate_version="ncm-cosine-v1",
+        ai_gate_applied=True,
+        ai_out_of_domain=True,
+        ai_domain_distance=0.664,
+        ai_raw_prediction="property_damage",
+        ai_raw_confidence=0.94,
+    )
+    assert res.status_code == 200
+    features = store["inference"][0]["input_features"]
+    assert '"ai_out_of_domain": true' in features
+    assert '"ai_raw_prediction": "property_damage"' in features
+    assert res.get_json()["ai_result"]["out_of_domain"] is True
+    # A no_damage case has no damage_type to price, so no estimate is regenerated for it.
+    assert store["estimate_calls"] == []
+
+
+def test_a_malformed_gate_field_is_a_400_and_records_nothing(client, store):
+    res = _assess(client, ai_out_of_domain="yes")
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "invalid_gate_flag"
+    assert store["inference"] == []
+
+
+def test_an_assessment_without_gate_fields_is_still_accepted(client, store):
+    # A draft classified before the gate existed must still submit.
+    assert _assess(client).status_code == 200
+    assert store["inference"][0]["prediction"] == "property_damage"
+    assert '"ai_out_of_domain"' not in store["inference"][0]["input_features"]
 
 
 def test_the_estimate_is_regenerated_with_the_officer_severity_and_labelled_as_support(client,

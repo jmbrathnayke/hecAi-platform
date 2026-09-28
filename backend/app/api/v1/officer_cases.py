@@ -35,7 +35,11 @@ from flask import Blueprint, current_app, g, jsonify, request
 from app.api.v1.middleware.auth import require_officer
 from app.domain.workflow import workflow_stage
 from app.infrastructure.audit import write_audit_log
-from app.infrastructure.inference_log import insert_inference_log, parse_classification
+from app.infrastructure.inference_log import (
+    insert_inference_log,
+    parse_classification,
+    parse_gate_fields,
+)
 from app.infrastructure.ml import compensation
 from app.infrastructure.notifications import notify_status_change_all
 from app.infrastructure.push.push_service import notify_staff_push
@@ -157,6 +161,9 @@ def _detail_payload(cur, row):
             "override_category": ai[3],
             "model_version": ai[4],
             "ai_severity": (ai[5] or {}).get("ai_severity") if isinstance(ai[5], dict) else None,
+            # The open-set gate's decision, so a no_damage row can be read correctly: the photo
+            # matched no trained class, rather than being recognised as intact land.
+            "out_of_domain": bool((ai[5] or {}).get("ai_out_of_domain")) if isinstance(ai[5], dict) else False,
             "created_at": _iso(ai[6]),
         },
         # Named for what it is. The UI labels it "AI-Assisted Compensation Estimate"; the final
@@ -276,6 +283,9 @@ def record_assessment(reference):
     fields, error = parse_classification(body)
     if error:
         return jsonify({"error": error}), 400
+    gate, error = parse_gate_fields(body, fields["prediction"])
+    if error:
+        return jsonify({"error": error}), 400
     if fields["prediction"] not in _CLASS_TO_CATEGORY:
         # inference_log accepts any short label for research; a CASE assessment must be one of the
         # model's three classes, because the class decides which estimate is regenerated.
@@ -343,6 +353,7 @@ def record_assessment(reference):
                         "ai_severity": ai_severity,
                         "ai_processing_time_ms": processing_ms,
                         "source": "officer_case_assessment",
+                        **gate,
                     })
 
                     if row[_REVIEW_AT] is None:

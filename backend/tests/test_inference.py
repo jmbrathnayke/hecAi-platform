@@ -317,3 +317,115 @@ def test_override_rate_is_computable_from_inference_log_alone(client, store):
     rows = [r for r in store["inference"] if r["model_type"] == "mobilenetv2"]
     override_rate = sum(1 for r in rows if r["was_overridden"]) / len(rows)
     assert override_rate == 0.5
+
+
+# --- open-set gate fields (frontend lib/oodGate.ts) ------------------------
+
+# The gate can change `prediction` to no_damage for a photo that matches none of the three trained
+# classes. That is the right outcome — a no_damage case is never priced — but the row must say it
+# happened, or a reader of inference_log cannot tell "the model saw undamaged land" from "the model
+# recognised nothing at all", and the NFR-6.3 override rate is computed over a mix of the two.
+
+def _gated(**overrides):
+    body = _body(
+        prediction="no_damage",
+        confidence=0,
+        ai_severity="None",
+        was_overridden=False,
+        override_reason=None,
+        override_category=None,
+        ai_gate_version="ncm-cosine-v1",
+        ai_gate_applied=True,
+        ai_out_of_domain=True,
+        ai_domain_distance=0.664,
+        ai_raw_prediction="property_damage",
+        ai_raw_confidence=0.94,
+    )
+    body.update(overrides)
+    return body
+
+
+def test_gate_fields_are_recorded_in_input_features(client, store):
+    res = client.post("/api/v1/inference/log", json=_gated(), headers=_auth())
+    assert res.status_code == 201
+    features = store["inference"][0]["input_features"]
+    assert features["ai_out_of_domain"] is True
+    assert features["ai_domain_distance"] == 0.664
+    assert features["ai_gate_version"] == "ncm-cosine-v1"
+    # What the closed-set model would have said, kept so the discarded answer stays auditable.
+    assert features["ai_raw_prediction"] == "property_damage"
+    assert features["ai_raw_confidence"] == 0.94
+    # The SERVED class is what the workflow acted on, and it is no_damage.
+    assert store["inference"][0]["prediction"] == "no_damage"
+
+
+def test_gate_fields_are_optional(client, store):
+    # Every row written before the gate existed, and any client that predates it, is still a
+    # complete classification record.
+    res = client.post("/api/v1/inference/log", json=_body(), headers=_auth())
+    assert res.status_code == 201
+    features = store["inference"][0]["input_features"]
+    assert "ai_out_of_domain" not in features
+    assert "ai_domain_distance" not in features
+
+
+def test_rejection_without_a_distance_is_refused(client, store):
+    # A rejected photo that does not say what it was rejected against cannot be audited later.
+    res = client.post(
+        "/api/v1/inference/log",
+        json=_gated(ai_domain_distance=None),
+        headers=_auth(),
+    )
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "domain_distance_required"
+    assert store["inference"] == []
+
+
+@pytest.mark.parametrize(
+    "field,value,error",
+    [
+        ("ai_out_of_domain", "true", "invalid_gate_flag"),    # bool("false") is True
+        ("ai_gate_applied", 1, "invalid_gate_flag"),
+        ("ai_domain_distance", -0.1, "invalid_domain_distance"),
+        ("ai_domain_distance", 2.5, "invalid_domain_distance"),  # cosine distance is [0, 2]
+        ("ai_domain_distance", "0.5", "invalid_domain_distance"),
+        ("ai_raw_prediction", "elephant", "invalid_raw_prediction"),
+        ("ai_raw_confidence", 1.5, "invalid_raw_confidence"),
+        ("ai_gate_version", "x" * 41, "invalid_gate_version"),
+    ],
+)
+def test_malformed_gate_field_returns_400(client, store, field, value, error):
+    res = client.post("/api/v1/inference/log", json=_gated(**{field: value}), headers=_auth())
+    assert res.status_code == 400
+    assert res.get_json()["error"] == error
+    assert store["inference"] == []
+
+
+def test_a_rejected_photo_cannot_be_recorded_as_a_damage_class(client, store):
+    # The gate rejecting a photo and the record calling it property damage are contradictory. The
+    # server does not accept both halves on the client's word: allowing it would let a photo the
+    # model could not recognise flow into the compensation estimator as a damage claim.
+    res = client.post(
+        "/api/v1/inference/log",
+        json=_gated(prediction="property_damage", confidence=0.94),
+        headers=_auth(),
+    )
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "out_of_domain_prediction_mismatch"
+    assert store["inference"] == []
+
+
+def test_an_officer_override_of_a_rejected_photo_is_still_accepted(client, store):
+    # The officer, not the gate, has the last word. Their correction travels in override_category
+    # and leaves `prediction` as the model's own answer, so the invariant still holds.
+    res = client.post(
+        "/api/v1/inference/log",
+        json=_gated(was_overridden=True, override_category="property_damage",
+                    override_reason="Wall collapsed; the photo is of the damaged wall."),
+        headers=_auth(),
+    )
+    assert res.status_code == 201
+    row = store["inference"][0]
+    assert row["prediction"] == "no_damage"
+    assert row["override_category"] == "property_damage"
+    assert row["was_overridden"] is True

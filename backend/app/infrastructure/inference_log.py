@@ -97,6 +97,84 @@ def parse_classification(body):
     }, None
 
 
+# Open-set gate fields (frontend lib/oodGate.ts). They ride in input_features (JSONB) rather than
+# in new columns, which is what that column is for -- the research feature snapshot -- and means no
+# migration is needed to start recording them.
+#
+# WHY THEY MATTER TO THE RECORD. The gate can change `prediction` to no_damage for a photo that
+# resembles none of the three trained classes. That is the right workflow outcome (a no_damage case
+# is never priced), but without these fields a reader of inference_log could not tell a photo the
+# model recognised as an intact field from a photo it recognised as nothing at all -- the
+# no_damage rate would rise with no way to explain it, and the override-rate metric (NFR-6.3) would
+# be computed over a mix of the two.
+_GATE_MAX_DISTANCE = 2.0  # cosine distance lies in [0, 2]
+
+
+def parse_gate_fields(body, prediction=None):
+    """Validate the optional open-set gate fields -> (dict, None) or (None, error_code).
+
+    Absent entirely (an older client, or the officer-assisted paths that predate the gate) is
+    valid and yields an empty dict: the rest of the classification is still a complete record.
+
+    `prediction` is the classification's own served class. When given, the invariant below is
+    enforced; the caller passes it so the two halves of one record cannot contradict each other.
+    """
+    out = {}
+
+    version = body.get("ai_gate_version")
+    if version is not None:
+        if not isinstance(version, str) or not version or len(version) > 40:
+            return None, "invalid_gate_version"
+        out["ai_gate_version"] = version
+
+    for key in ("ai_gate_applied", "ai_out_of_domain"):
+        value = body.get(key)
+        if value is not None:
+            # A real JSON boolean only -- bool("false") is True, so coercion would silently flip
+            # a rejected photo into an accepted one.
+            if not isinstance(value, bool):
+                return None, "invalid_gate_flag"
+            out[key] = value
+
+    distance = body.get("ai_domain_distance")
+    if distance is not None:
+        if isinstance(distance, bool) or not isinstance(distance, (int, float)):
+            return None, "invalid_domain_distance"
+        if not 0 <= distance <= _GATE_MAX_DISTANCE:
+            return None, "invalid_domain_distance"
+        out["ai_domain_distance"] = float(distance)
+
+    raw_prediction = body.get("ai_raw_prediction")
+    if raw_prediction is not None:
+        if raw_prediction not in VALID_CATEGORIES:
+            return None, "invalid_raw_prediction"
+        out["ai_raw_prediction"] = raw_prediction
+
+    raw_confidence = body.get("ai_raw_confidence")
+    if raw_confidence is not None:
+        if isinstance(raw_confidence, bool) or not isinstance(raw_confidence, (int, float)):
+            return None, "invalid_raw_confidence"
+        if not 0 <= raw_confidence <= 1:
+            return None, "invalid_raw_confidence"
+        out["ai_raw_confidence"] = float(raw_confidence)
+
+    # A rejected photo must say what it was rejected against, or the row cannot be audited later.
+    if out.get("ai_out_of_domain") and "ai_domain_distance" not in out:
+        return None, "domain_distance_required"
+
+    # THE INVARIANT. If the gate rejected the photo, the served class is no_damage -- that is what
+    # the gate does, and it is what keeps compensation.py from pricing a photo the model could not
+    # recognise (_map_damage_category returns None only for no_damage). The server does not take
+    # the client's word for both halves independently: a body claiming "out of domain" alongside
+    # "property_damage" is a contradiction, and accepting it would let a rejected photo generate
+    # an estimate. An officer override still works -- it travels in override_category, and leaves
+    # `prediction` as the model's own answer.
+    if out.get("ai_out_of_domain") and prediction is not None and prediction != "no_damage":
+        return None, "out_of_domain_prediction_mismatch"
+
+    return out, None
+
+
 def insert_inference_log(cur, case_id, fields, input_features):
     """Append one inference_log row (never an update -- the log is append-only)."""
     cur.execute(

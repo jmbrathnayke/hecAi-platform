@@ -15,6 +15,7 @@
  */
 import { useCallback, useRef, useState } from "react";
 import { classifyImage, MODEL_VERSION, type ClassificationResult } from "@/lib/mobilenet";
+import { OOD_CALIBRATION, OOD_GATE_VERSION, OOD_THRESHOLD } from "@/lib/oodGate";
 
 type State = "idle" | "running" | "done" | "failed";
 
@@ -105,8 +106,43 @@ export default function ModelDemo() {
                   <td><code>{result.classId}</code></td></tr>
               <tr><td style={{ paddingRight: 18, color: "#555" }}>Processing time</td>
                   <td>{result.processingTimeMs.toFixed(0)} ms <span style={{ color: "#777" }}>(decode + resize + inference)</span></td></tr>
+              {/* The gate's own numbers. This page exists so the model can be INSPECTED, so it
+                  shows the distance and the threshold rather than only the verdict — that is what
+                  makes "why was this rejected?" answerable in a viva. */}
+              <tr><td style={{ paddingRight: 18, color: "#555" }}>Domain distance</td>
+                  <td data-testid="demo-distance">
+                    {result.domainDistance == null
+                      ? <span style={{ color: "#a00" }}>gate did not run</span>
+                      : <><b>{result.domainDistance.toFixed(3)}</b>{" "}
+                          <span style={{ color: "#777" }}>
+                            / threshold {OOD_THRESHOLD.toFixed(3)} ({OOD_GATE_VERSION})
+                          </span></>}
+                  </td></tr>
+              {result.outOfDomain && (
+                <tr><td style={{ paddingRight: 18, color: "#555" }}>Closed-set answer</td>
+                    <td data-testid="demo-raw">
+                      <code>{result.rawClassId}</code>{" "}
+                      <span style={{ color: "#777" }}>
+                        at {((result.rawConfidence ?? 0) * 100).toFixed(1)}% — discarded by the gate
+                      </span>
+                    </td></tr>
+              )}
             </tbody>
           </table>
+
+          {result.outOfDomain && (
+            <p
+              data-testid="demo-ood"
+              style={{ marginTop: 12, padding: 12, background: "#fff7e6", border: "1px solid #e8c97a", borderRadius: 6, fontSize: 14 }}
+            >
+              <b>Out of domain.</b> This photo resembles none of the three classes the model was
+              trained on, so the class it would otherwise have returned was discarded and the
+              result recorded as <code>no_damage</code> — no compensation is estimated from it.
+              The threshold is the {OOD_CALIBRATION.percentile}th percentile of the in-domain
+              distance distribution, measured leave-one-out over{" "}
+              {OOD_CALIBRATION.in_domain_n} training photographs.
+            </p>
+          )}
         </div>
       )}
 

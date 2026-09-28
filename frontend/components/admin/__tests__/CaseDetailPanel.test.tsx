@@ -143,9 +143,12 @@ test("no GPS map link when coordinates are null", async () => {
   expect(screen.queryByRole("link")).not.toBeInTheDocument();
 });
 
-test("photo placeholder is shown, not a real gallery, with no internal doc reference (code review fix)", async () => {
+test("photo section explains why there is no gallery, with no internal doc reference (code review fix)", async () => {
   render(<CaseDetailPanel offlineId="off-1" />);
-  expect(await screen.findByText(/photo\.unavailable/i)).toBeInTheDocument();
+  // The notice states the design — the family's photos stay on their phone, the assessment rests on
+  // the field officer's own photograph — rather than "not available yet", which read as broken.
+  expect(await screen.findByText(/photo\.adminNotice/i)).toBeInTheDocument();
+  expect(screen.getByTestId("photo-notice-admin")).toBeInTheDocument();
   expect(screen.queryByText(/deferred-work\.md/i)).not.toBeInTheDocument();
 });
 
@@ -171,6 +174,44 @@ test("AI result panel shows override info when was_overridden is true", async ()
   expect(screen.getByText("property_damage")).toBeInTheDocument();
   expect(screen.getByText(/actually property damage/i)).toBeInTheDocument();
   expect(screen.getByText(/ai\.confidence 82/i)).toBeInTheDocument();
+  // The administrator approves against this number; it must not be read as the chance it is right.
+  expect(screen.getByTestId("confidence-caveat")).toHaveTextContent(/ai\.confidenceCaveat/);
+});
+
+test("AI result panel marks a row the open-set gate rejected, and hides the percentage", async () => {
+  // A gated row arrives as no_damage like any other. The administrator approves against this
+  // screen, so it has to distinguish "the officer photographed undamaged land" from "the model
+  // could not recognise the photo at all" -- the second is not a finding about the land, and the
+  // softmax percentage describes a choice that was discarded.
+  mockFetchAdminCaseDetail.mockResolvedValue(
+    makeResponse({
+      ai_result: {
+        model_type: "mobilenetv2", model_version: "mobilenetv2-v1", prediction: "no_damage",
+        confidence: 0, was_overridden: false, override_reason: null, override_category: null,
+        ai_severity: "None", out_of_domain: true, domain_distance: 0.664,
+        raw_prediction: "property_damage", created_at: "2026-09-28T10:05:00.000Z",
+      },
+    }),
+  );
+  render(<CaseDetailPanel offlineId="off-1" />);
+  expect(await screen.findByTestId("ood-notice")).toHaveTextContent(/ai\.outOfDomain/);
+  expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+  expect(screen.queryByTestId("confidence-caveat")).not.toBeInTheDocument();
+});
+
+test("AI result panel leaves an ordinary row untouched (no gate notice)", async () => {
+  mockFetchAdminCaseDetail.mockResolvedValue(
+    makeResponse({
+      ai_result: {
+        model_type: "mobilenetv2", model_version: "mobilenetv2-v1", prediction: "crop_damage",
+        confidence: 0.82, was_overridden: false, override_reason: null, override_category: null,
+        ai_severity: "Moderate", out_of_domain: false, created_at: "2026-09-28T10:05:00.000Z",
+      },
+    }),
+  );
+  render(<CaseDetailPanel offlineId="off-1" />);
+  expect(await screen.findByTestId("confidence-caveat")).toBeInTheDocument();
+  expect(screen.queryByTestId("ood-notice")).not.toBeInTheDocument();
 });
 
 test("compensation panel shows the empty state when compensation is null", async () => {

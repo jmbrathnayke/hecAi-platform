@@ -62,6 +62,44 @@ describe("buildAssessmentBody", () => {
     });
   });
 
+  it("sends the open-set gate's record beside the served class", () => {
+    // `prediction` is what the workflow acted on. The gate fields say how it was reached, so
+    // inference_log can still separate "the model saw undamaged land" from "the model recognised
+    // nothing at all" — both of which are stored as no_damage.
+    const body = buildAssessmentBody(
+      {
+        classId: "no_damage",
+        confidence: 0,
+        severity: "None",
+        processingTimeMs: 210,
+        modelVersion: "mobilenetv2-v1",
+        outOfDomain: true,
+        domainDistance: 0.664,
+        gateApplied: true,
+        rawClassId: "property_damage",
+        rawConfidence: 0.94,
+        gateVersion: "ncm-cosine-v1",
+      },
+      null,
+    );
+    expect(body).toMatchObject({
+      prediction: "no_damage",
+      ai_severity: "None",
+      ai_out_of_domain: true,
+      ai_domain_distance: 0.664,
+      ai_raw_prediction: "property_damage",
+      ai_raw_confidence: 0.94,
+      ai_gate_version: "ncm-cosine-v1",
+      ai_gate_applied: true,
+    });
+  });
+
+  it("omits the gate fields for a result that has none, rather than sending nulls", () => {
+    const body = buildAssessmentBody(RESULT, null);
+    expect(body).not.toHaveProperty("ai_gate_version");
+    expect(body).not.toHaveProperty("ai_out_of_domain");
+  });
+
   it("does not count a 'correction' to the predicted class as an override", () => {
     const body = buildAssessmentBody(RESULT, { category: "crop_damage", reason: "confirmed on site" });
     expect(body.was_overridden).toBe(false);
@@ -146,6 +184,39 @@ describe("officer-assisted submission carries the on-device classification", () 
       override_category: "property_damage",
       override_reason: "Roof collapsed; no crops on this plot.",
     });
+  });
+
+  it("carries the open-set gate's record through the offline path", () => {
+    // An offline submission must arrive with the same evidence an online assessment posts, or a
+    // case synced from the field loses the distinction between "undamaged land" and "the model
+    // recognised nothing" — which is the only thing that explains a no_damage result.
+    const gated = {
+      ...officerDraft,
+      ai_category: "no_damage",
+      ai_confidence: 0,
+      override_applied: false,
+      ai_gate_version: "ncm-cosine-v1",
+      ai_gate_applied: true,
+      ai_out_of_domain: true,
+      ai_domain_distance: 0.664,
+      ai_raw_prediction: "property_damage",
+      ai_raw_confidence: 0.94,
+    };
+    expect(classificationFromDraft(gated)).toMatchObject({
+      prediction: "no_damage",
+      ai_out_of_domain: true,
+      ai_domain_distance: 0.664,
+      ai_raw_prediction: "property_damage",
+      ai_raw_confidence: 0.94,
+    });
+  });
+
+  it("omits the gate fields entirely for a draft classified before the gate existed", () => {
+    // Absent must not become false: the server distinguishes "this predates the gate" from
+    // "the gate ran and the photo passed", and only the omission can say the first.
+    const body = classificationFromDraft(officerDraft) as Record<string, unknown>;
+    expect(body).not.toHaveProperty("ai_gate_version");
+    expect(body).not.toHaveProperty("ai_out_of_domain");
   });
 
   it("is sent on the officer path", () => {

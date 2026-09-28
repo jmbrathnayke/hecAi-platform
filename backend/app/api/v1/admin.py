@@ -448,6 +448,12 @@ def _load_case_detail(cur, offline_id, district, known_row=None, known_comp_row=
             "override_reason": ai_row[5],
             "override_category": ai_row[6],
             "ai_severity": input_features.get("ai_severity"),
+            # Open-set gate (frontend lib/oodGate.ts). The administrator approves against this
+            # row, so it must distinguish "the model saw undamaged land" from "the model
+            # recognised nothing in the photo" -- both of which arrive here as no_damage.
+            "out_of_domain": bool(input_features.get("ai_out_of_domain")),
+            "domain_distance": input_features.get("ai_domain_distance"),
+            "raw_prediction": input_features.get("ai_raw_prediction"),
             "created_at": ai_row[8].isoformat() if ai_row[8] else None,
         }
 
