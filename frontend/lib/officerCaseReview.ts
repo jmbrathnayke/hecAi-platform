@@ -3,8 +3,9 @@
 // A citizen's report reaches the field officers of its DS division as a push notification; a tap
 // opens /officer/cases/<ref>, which uses these calls. The officer takes responsibility for the case,
 // captures THEIR OWN verification photo at the site, classifies it with MobileNetV2 on this device,
-// and submits only the classification result. No image is uploaded: the citizen's photo is not the
-// model input, and the officer's photo never leaves the phone.
+// and submits the classification result. The model input never leaves the device -- no image is sent
+// anywhere to be classified (FR-2.1/2.2). The photograph itself is attached separately, as case
+// evidence, through lib/casePhotos.ts; none of it is part of this module's request.
 //
 // Backend: app/api/v1/officer_cases.py. Scope (own case or assigned division), the audit trail and
 // the AI-assisted estimate are all server-side; nothing here is a security boundary.

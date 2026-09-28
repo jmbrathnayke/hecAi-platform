@@ -11,6 +11,7 @@ import {
   submitOfficerAssessment,
 } from "@/lib/officerCaseReview";
 import { classifyImage } from "@/lib/mobilenet";
+import { listCasePhotos, uploadCasePhoto } from "@/lib/casePhotos";
 
 jest.mock("next/navigation", () => ({ useParams: () => ({ ref: "hec-2026-0001" }) }));
 jest.mock("next/link", () => ({
@@ -59,6 +60,7 @@ jest.mock("@/lib/imageQuality", () => ({
   assessImageQuality: jest.fn().mockResolvedValue({ blurry: false, poorExposure: false }),
 }));
 jest.mock("@/lib/mobilenet", () => ({ classifyImage: jest.fn() }));
+jest.mock("@/lib/casePhotos", () => ({ listCasePhotos: jest.fn(), uploadCasePhoto: jest.fn() }));
 jest.mock("@/lib/officerCaseReview", () => {
   const actual = jest.requireActual("@/lib/officerCaseReview");
   return {
@@ -73,6 +75,8 @@ const mockGet = getOfficerCase as jest.Mock;
 const mockStart = startOfficerReview as jest.Mock;
 const mockAssess = submitOfficerAssessment as jest.Mock;
 const mockClassify = classifyImage as jest.Mock;
+const mockListCasePhotos = listCasePhotos as jest.Mock;
+const mockUploadCasePhoto = uploadCasePhoto as jest.Mock;
 
 function detail(overrides: Record<string, unknown> = {}) {
   return {
@@ -104,6 +108,8 @@ beforeEach(() => {
   mockGet.mockReset().mockResolvedValue({ ok: true, detail: detail() });
   mockStart.mockReset();
   mockAssess.mockReset();
+  mockListCasePhotos.mockReset().mockResolvedValue({ ok: true, photos: [] });
+  mockUploadCasePhoto.mockReset().mockResolvedValue({ ok: true, photoId: 1, duplicate: false });
   mockClassify.mockReset().mockResolvedValue({
     classId: "crop_damage", confidence: 0.9, severity: "Severe", processingTimeMs: 120,
     modelVersion: "mobilenetv2-v1", probabilities: {},
@@ -184,6 +190,56 @@ it("classifies the officer's photo on-device and submits only the accepted resul
   expect(await screen.findByText("caseReview.assessmentRecorded")).toBeInTheDocument();
 });
 
+it("attaches the photograph it classified to the case, after the assessment is recorded", async () => {
+  // The image the model actually saw is the evidence the approval rests on. It used to be used
+  // for a thumbnail and then dropped, which is why the administrator could never see it.
+  mockAssess.mockResolvedValue({ ok: true, detail: detail() });
+  render(<OfficerCaseReviewPage />);
+  fireEvent.click(await screen.findByText("capture-photo"));
+  fireEvent.click(await screen.findByText("accept-ai"));
+  fillCropAssessment();
+  await act(async () => {
+    fireEvent.click(screen.getByText("caseReview.submitAssessment"));
+  });
+
+  expect(mockUploadCasePhoto).toHaveBeenCalledTimes(1);
+  const [ref, blob] = mockUploadCasePhoto.mock.calls[0];
+  expect(ref).toBe("HEC-2026-0001");
+  expect(blob).toBeInstanceOf(Blob);
+  // The assessment is recorded first; the upload rides after it, never instead of it.
+  expect(mockAssess).toHaveBeenCalledTimes(1);
+  expect(await screen.findByTestId("photo-upload-notice")).toHaveTextContent("photo.uploaded");
+});
+
+it("says so when the photograph could not be attached, keeping the assessment", async () => {
+  // Silently losing the evidence is the failure this whole change exists to stop, so a failed
+  // upload is reported -- and the classification the officer just made still counts.
+  mockAssess.mockResolvedValue({ ok: true, detail: detail() });
+  mockUploadCasePhoto.mockResolvedValue({ ok: false, failure: { reason: "network" } });
+  render(<OfficerCaseReviewPage />);
+  fireEvent.click(await screen.findByText("capture-photo"));
+  fireEvent.click(await screen.findByText("accept-ai"));
+  fillCropAssessment();
+  await act(async () => {
+    fireEvent.click(screen.getByText("caseReview.submitAssessment"));
+  });
+
+  expect(await screen.findByTestId("photo-upload-notice")).toHaveTextContent("photo.uploadFailed");
+  expect(screen.getByText("caseReview.assessmentRecorded")).toBeInTheDocument();
+});
+
+it("uploads nothing when the assessment itself failed", async () => {
+  mockAssess.mockResolvedValue({ ok: false, failure: { reason: "network" } });
+  render(<OfficerCaseReviewPage />);
+  fireEvent.click(await screen.findByText("capture-photo"));
+  fireEvent.click(await screen.findByText("accept-ai"));
+  fillCropAssessment();
+  await act(async () => {
+    fireEvent.click(screen.getByText("caseReview.submitAssessment"));
+  });
+  expect(mockUploadCasePhoto).not.toHaveBeenCalled();
+});
+
 it("submits the officer's override alongside the model's prediction", async () => {
   mockAssess.mockResolvedValue({ ok: true, detail: detail() });
   render(<OfficerCaseReviewPage />);
@@ -217,13 +273,14 @@ it("keeps the classification on screen when submission fails, so it can be retri
   expect(screen.getByText("caseReview.submitAssessment")).toBeInTheDocument();
 });
 
-it("explains, before the camera, that the family's photos were never transmitted", async () => {
-  // Without this the assessment screen showed no photos at all, and an assessor reasonably
-  // concluded the citizen's evidence had been lost. It was never sent: it stays on the family's
-  // phone, and the officer's own photograph is what the assessment rests on.
+it("shows the family's own photographs before the officer reaches for the camera", async () => {
+  // They are what the household reported, taken before the officer arrived. The officer then
+  // photographs the same damage themselves — that photograph is the model input. Until migration
+  // 038 neither reached this screen, and an assessor reasonably concluded the citizen's evidence
+  // had been lost.
   render(<OfficerCaseReviewPage />);
-  expect(await screen.findByTestId("photo-notice-officer")).toBeInTheDocument();
-  expect(screen.getByText("photo.officerNotice")).toBeInTheDocument();
+  await screen.findByText("HEC-2026-0001");
+  await waitFor(() => expect(mockListCasePhotos).toHaveBeenCalledWith("HEC-2026-0001"));
 });
 
 it("shows no assessment controls on a case that is no longer open", async () => {

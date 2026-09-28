@@ -539,7 +539,7 @@
       "reviewStarted": "Review started. The citizen has been told their report is under review.",
       "assessTitle": "Officer assessment",
       "reassessTitle": "Update assessment",
-      "assessHint": "Inspect the site and photograph the damage yourself. The photo is classified on this device and is not uploaded; only the result is recorded.",
+      "assessHint": "Inspect the site and photograph the damage yourself. The photo is classified on this device — the model never sends it anywhere — and it is then attached to the case as evidence for the reviewers.",
       "notFinalClassification": "AI classification assists the officer. It is not a final decision.",
       "submitAssessment": "Submit assessment",
       "submitting": "Submitting…",
@@ -582,7 +582,12 @@
       },
       "estimateSynthetic": "Prototype estimate — the crop model is trained on synthetic data, not official compensation records."
     },
-    "navProfile": "Profile"
+    "navProfile": "Profile",
+    "photo": {
+      "uploading": "Attaching your photograph to the case…",
+      "uploaded": "Your photograph is attached to the case.",
+      "uploadFailed": "The classification was recorded, but your photograph could not be attached. It will be retried."
+    }
   },
   "ds": {
     "login": {
@@ -693,6 +698,10 @@
         "server": "The server could not save these details.",
         "network": "Could not reach the server. Check your connection."
       }
+    },
+    "evidence": {
+      "show": "View evidence photographs",
+      "hide": "Hide evidence photographs"
     }
   },
   "admin": {
@@ -842,9 +851,28 @@
       "outOfDomain": "Flagged by the out-of-domain check: the photo did not resemble any of the three trained classes, so it was recorded as No Damage rather than assigned a class. No compensation is estimated for such a case."
     },
     "photo": {
-      "unavailable": "Photo viewing isn't available yet.",
-      "adminNotice": "The family's own photographs stay on the phone that submitted them and are not transmitted — they back the family's Proof of Claim. What this assessment rests on is the photograph the field officer took at the site, and the AI classification of it recorded below.",
-      "officerNotice": "The family's photographs are not transmitted — they stay on the phone that submitted them, backing their Proof of Claim. Photograph the damage in front of you: your photograph is what the AI classifies and what this assessment rests on."
+      "unavailable": "This photograph could not be loaded.",
+      "adminNotice": "No case reference is available, so no photographs can be shown here.",
+      "officerNotice": "Open a case to see the photographs the family submitted with it.",
+      "loading": "Loading photographs…",
+      "none": "No photographs have been attached to this case.",
+      "loadFailed": "The photographs could not be loaded.",
+      "storageUnavailable": "Photograph storage is not configured for this deployment.",
+      "retry": "Try again",
+      "close": "Close",
+      "sourceNote": "The officer's photograph is the one the AI classified. The family's photographs are their own account of the damage and were not classified.",
+      "source": {
+        "citizen": "Reported by the family",
+        "officer": "Taken by the field officer"
+      },
+      "alt": {
+        "citizen": "Damage photograph submitted by the family",
+        "officer": "Damage photograph taken by the field officer"
+      },
+      "expand": {
+        "citizen": "Open the family's photograph full size",
+        "officer": "Open the officer's photograph full size"
+      }
     },
     "analytics": {
       "title": "Analytics Dashboard",
