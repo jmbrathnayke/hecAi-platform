@@ -1,0 +1,113 @@
+name: Frontend CD
+
+# Deploys the Next.js tier to Azure App Service.
+#   development -> testing     (hecai-frontend-dev)
+#   main        -> Production  (hecai-frontend)
+#
+# THE BUILD RUNS HERE, NOT ON AZURE, AND THAT IS THE WHOLE POINT OF THIS FILE.
+# `next build` is OOM-killed on a B1 App Service plan (1.75 GB): the Oryx log stops mid-line at
+# "Collecting build traces" with no error and reports `Errors (0)`, because the kernel kills the
+# process rather than letting it report. Next.js's trace collector walks the whole dependency graph
+# and this project installs 838 packages including @tensorflow/tfjs. A GitHub runner has 16 GB, so
+# building here removes the failure instead of working around it -- the alternative was scaling the
+# plan to B3 for every deploy and back to B1 afterwards.
+#
+# Consequently the apps must have SCM_DO_BUILD_DURING_DEPLOYMENT=false: the artifact uploaded below
+# is already built, and letting Oryx rebuild it on arrival would reintroduce exactly the OOM this
+# workflow exists to avoid.
+
+on:
+  push:
+    branches: [development, main]
+    paths:
+      - "frontend/**"
+      - ".github/workflows/cd-frontend.yml"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment to deploy to"
+        required: true
+        type: choice
+        options: [testing, Production]
+
+permissions:
+  id-token: write # required for OIDC federated credentials
+  contents: read
+
+# One deploy per environment at a time. Two overlapping runs would race on the same App Service and
+# the later-finishing upload -- not the later commit -- would win.
+concurrency:
+  group: cd-frontend-${{ github.event.inputs.environment || (github.ref_name == 'main' && 'Production' || 'testing') }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || (github.ref_name == 'main' && 'Production' || 'testing') }}
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # 22, matching the App Service runtime. App Service retired Node 20, so this deliberately
+      # differs from frontend-ci.yml until that workflow is bumped too -- CI proving a build on a
+      # version production does not run is the drift render.yaml warns about for Python.
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Unit tests
+        run: npm test
+
+      # NEXT_PUBLIC_* are INLINED INTO THE BUNDLE HERE and cannot be changed afterwards by an App
+      # Service setting -- a value change needs a new run of this workflow, not a restart.
+      - name: Build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          NEXT_PUBLIC_API_URL: ${{ vars.NEXT_PUBLIC_API_URL }}
+        run: npm run build
+
+      # Drop devDependencies AFTER building. `next start` needs only the runtime deps, and this is
+      # what keeps the uploaded artifact to a sane size.
+      - name: Prune dev dependencies
+        run: npm prune --omit=dev
+
+      - name: Package
+        run: zip -qry ../frontend-build.zip . -x ".git/*" "e2e/*" "__tests__/*" "*.test.*"
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy to App Service
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ vars.AZURE_FRONTEND_APP }}
+          package: frontend-build.zip
+
+      # App Service reports the deployment finished before the Node process is actually serving.
+      # Poll rather than assert immediately, and fail the run if it never comes up -- a green deploy
+      # over a dead site is worse than a red one.
+      - name: Smoke test
+        run: |
+          URL="https://${{ vars.AZURE_FRONTEND_APP }}.azurewebsites.net/si"
+          for i in $(seq 1 20); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" -L --max-time 30 "$URL" || echo 000)
+            echo "attempt $i: $code"
+            if [ "$code" = "200" ]; then echo "Frontend healthy"; exit 0; fi
+            sleep 15
+          done
+          echo "Frontend did not return 200 after ~5 minutes"
+          exit 1

@@ -1,0 +1,100 @@
+name: Backend CD
+
+# Deploys the Flask tier to Azure App Service.
+#   development -> testing     (hecai-backend-dev)
+#   main        -> Production  (hecai-backend)
+#
+# UNLIKE THE FRONTEND, THIS TIER IS BUILT ON AZURE, NOT HERE. Oryx runs `pip install -r
+# requirements.txt` on arrival (SCM_DO_BUILD_DURING_DEPLOYMENT=true). That is deliberate: scipy,
+# scikit-learn, numpy and pandas resolve platform-specific wheels, and building them on a GitHub
+# runner would ship binaries built for a different image than the one that runs them. The backend
+# build also fits comfortably on B1 -- it is only `next build` that OOMs there.
+#
+# The ~36 MB of .joblib models under ml/models/ are committed to the repository, so the checkout
+# already contains them and nothing is fetched at boot.
+
+on:
+  push:
+    branches: [development, main]
+    paths:
+      - "backend/**"
+      - ".github/workflows/cd-backend.yml"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment to deploy to"
+        required: true
+        type: choice
+        options: [testing, Production]
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: cd-backend-${{ github.event.inputs.environment || (github.ref_name == 'main' && 'Production' || 'testing') }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || (github.ref_name == 'main' && 'Production' || 'testing') }}
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # 3.12, pinned to match render.yaml and backend-ci.yml. render.yaml records that production
+      # once ran 3.14 while every test ran on 3.12, so nothing had exercised the deployed version.
+      # Raise this only together with the CI matrix and the App Service runtime.
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Tests
+        env:
+          FLASK_TESTING: "true"
+        run: pytest -q
+
+      # Excludes the local virtualenv, caches and .env. The deployed app reads its configuration
+      # from App Service settings, never from a file in the package.
+      - name: Package
+        run: |
+          zip -qry ../backend-build.zip . \
+            -x "venv/*" "*/__pycache__/*" "__pycache__/*" ".pytest_cache/*" \
+               ".env" "tests/*" "*.pyc"
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy to App Service
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ vars.AZURE_BACKEND_APP }}
+          package: backend-build.zip
+
+      # Generous window: Oryx installs the scientific stack on a single Basic core, and the first
+      # request afterwards unpickles ~36 MB of joblib models.
+      - name: Health check
+        run: |
+          URL="https://${{ vars.AZURE_BACKEND_APP }}.azurewebsites.net/api/v1/health"
+          for i in $(seq 1 40); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 "$URL" || echo 000)
+            echo "attempt $i: $code"
+            if [ "$code" = "200" ]; then echo "Backend healthy"; exit 0; fi
+            sleep 20
+          done
+          echo "Backend did not return 200 after ~13 minutes"
+          exit 1
