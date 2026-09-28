@@ -91,6 +91,28 @@ function safeNext(raw: string | null, origin: string, fallback: string): string 
 }
 
 /**
+ * A redirect whose `Location` is RELATIVE, and that is not a style choice.
+ *
+ * Behind Azure App Service's front-end proxy the container is addressed internally, so
+ * `request.nextUrl.origin` resolves to `https://localhost:8080` — the port the Node process listens
+ * on — rather than the public hostname. Every absolute redirect built from that origin sent the
+ * browser to `https://localhost:8080/system/users` and the sign-in died there, on the live domain,
+ * with no error: the whole OAuth round-trip succeeds and then lands nowhere.
+ *
+ * `Location` is explicitly permitted to be a relative reference (RFC 7231 §7.1.2) and the browser
+ * resolves it against the URL it actually requested — which is the only party that reliably knows
+ * the public origin. This is also why next-intl's middleware redirects were unaffected while this
+ * route broke: it emits relative paths.
+ *
+ * Deriving the origin from `X-Forwarded-Host` instead would work only for as long as the platform
+ * keeps sending it, and would silently regress to the same dead end if it ever stopped. Not
+ * naming an origin at all cannot be wrong.
+ */
+function relativeRedirect(pathAndQuery: string): NextResponse {
+  return new NextResponse(null, { status: 307, headers: { Location: pathAndQuery } });
+}
+
+/**
  * Redirect to a login page, carrying over any cookies already written onto `response`.
  *
  * The cookie carry is not cosmetic. A failed exchange makes the SDK clear or rewrite the PKCE
@@ -105,9 +127,10 @@ function redirectToLogin(
   errorCode: string,
   carryFrom?: NextResponse,
 ): NextResponse {
+  // Built through URL for correct query encoding, then emitted relative — see relativeRedirect().
   const back = new URL(loginPathFor(next), origin);
   back.searchParams.set("error", errorCode);
-  const redirect = NextResponse.redirect(back);
+  const redirect = relativeRedirect(back.pathname + back.search);
   carryFrom?.cookies.getAll().forEach((cookie) => redirect.cookies.set(cookie));
   return redirect;
 }
@@ -136,7 +159,9 @@ export async function GET(request: NextRequest) {
   // Build the success response FIRST so the Supabase SDK's setAll() can write the session cookies
   // onto the very response that carries the redirect. Creating the redirect afterwards would
   // discard them — the same cookie-carry trap middleware.ts documents.
-  const response = NextResponse.redirect(new URL(next, origin));
+  //
+  // `next` is already a validated path+query from safeNext(), so it is emitted as-is.
+  const response = relativeRedirect(next);
 
   let exchangeFailed: string | null = null;
   try {
