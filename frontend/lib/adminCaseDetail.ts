@@ -35,6 +35,14 @@ export interface AdminAiResult {
   override_reason: string | null;
   override_category: string | null;
   ai_severity: string | null;
+  /** The open-set gate rejected the photo: `prediction` is no_damage because nothing was
+   *  recognised, not because intact land was. Optional so a response from an older backend, and
+   *  every row written before the gate existed, still renders. */
+  out_of_domain?: boolean;
+  /** Cosine distance to the nearest class prototype at the time of classification. */
+  domain_distance?: number | null;
+  /** What the closed-set softmax would have said. */
+  raw_prediction?: string | null;
   created_at: string | null;
 }
 

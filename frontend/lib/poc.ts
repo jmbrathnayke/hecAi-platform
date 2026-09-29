@@ -111,6 +111,23 @@ export function classificationFromDraft(
     was_overridden: overridden,
     override_category: overridden ? draft.override_category : null,
     override_reason: overridden && typeof draft.override_reason === "string" ? draft.override_reason : null,
+    // Open-set gate (lib/oodGate.ts). Forwarded only when the draft actually carries them: a
+    // draft classified before the gate existed must still sync, and the server distinguishes
+    // "absent" from "the gate ran and passed" (inference_log.parse_gate_fields). Each value is
+    // re-checked here because a draft is client-side storage, not a trusted source.
+    ...(typeof draft.ai_gate_version === "string"
+      ? {
+          ai_gate_version: draft.ai_gate_version,
+          ai_gate_applied: draft.ai_gate_applied === true,
+          ai_out_of_domain: draft.ai_out_of_domain === true,
+          ai_domain_distance:
+            typeof draft.ai_domain_distance === "number" ? draft.ai_domain_distance : null,
+          ai_raw_prediction:
+            typeof draft.ai_raw_prediction === "string" ? draft.ai_raw_prediction : null,
+          ai_raw_confidence:
+            typeof draft.ai_raw_confidence === "number" ? draft.ai_raw_confidence : null,
+        }
+      : {}),
   };
 }
 

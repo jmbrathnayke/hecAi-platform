@@ -21,6 +21,8 @@ import { assessImageQuality } from "@/lib/imageQuality";
 import { classifyImage, type ClassId, type ClassificationResult } from "@/lib/mobilenet";
 import { isKnownStage, isTranslatedStatus, statusKey } from "@/lib/status";
 import CropAssessmentFields from "@/components/CropAssessmentFields";
+import { PhotoGallery } from "@/components/admin/PhotoGallery";
+import { uploadCasePhoto } from "@/lib/casePhotos";
 import {
   buildAssessmentBody,
   EMPTY_CROP_ASSESSMENT,
@@ -84,6 +86,11 @@ export default function OfficerCaseReviewPage() {
   const [crop, setCrop] = useState<CropAssessment>(EMPTY_CROP_ASSESSMENT);
   const [override, setOverride] = useState<OverrideChoice | null>(null);
   const [thumbnails, setThumbnails] = useState<string[]>([]);
+  // The exact file MobileNetV2 classified, held so it can be attached to the case once the
+  // assessment is accepted. Until now it was used for a thumbnail and then dropped, which is why
+  // the administrator approving this case could never see what the officer had photographed.
+  const capturedRef = useRef<File | null>(null);
+  const [photoNotice, setPhotoNotice] = useState<"uploading" | "uploaded" | "failed" | null>(null);
   const inFlightRef = useRef(false);
   const mountedRef = useRef(true);
 
@@ -147,6 +154,7 @@ export default function OfficerCaseReviewPage() {
       }
       const classification = await classifyImage(file);
       if (!mountedRef.current) return;
+      capturedRef.current = file;
       try {
         const url = URL.createObjectURL(file);
         setThumbnails((prev) => {
@@ -175,6 +183,17 @@ export default function OfficerCaseReviewPage() {
     if (res.ok) {
       setLoad({ kind: "ready", detail: res.detail });
       setNotice(t("caseReview.assessmentRecorded"));
+      // Attach the photograph AFTER the assessment is recorded, never before: the classification
+      // is what the workflow depends on, and a failed upload must not cost the officer their
+      // assessment. A failure here is reported rather than swallowed -- silently losing the
+      // evidence is what this whole change exists to stop.
+      const file = capturedRef.current;
+      if (file) {
+        setPhotoNotice("uploading");
+        const up = await uploadCasePhoto(ref, file);
+        if (mountedRef.current) setPhotoNotice(up.ok ? "uploaded" : "failed");
+        if (up.ok) capturedRef.current = null;
+      }
       setResult(null);
       setDecision(null);
       setOverride(null);
@@ -260,6 +279,19 @@ export default function OfficerCaseReviewPage() {
             {notice}
           </p>
         )}
+        {/* Said separately from the assessment notice because they can differ: the classification
+            can be recorded while the photograph is still uploading, or fails to. */}
+        {photoNotice && (
+          <p
+            role="status"
+            data-testid="photo-upload-notice"
+            className={`rounded-md px-design-4 py-design-3 text-label ${
+              photoNotice === "failed" ? "bg-amber-pale text-amber" : "bg-forest-pale text-forest"
+            }`}
+          >
+            {t(`photo.${photoNotice === "failed" ? "uploadFailed" : photoNotice === "uploading" ? "uploading" : "uploaded"}`)}
+          </p>
+        )}
         {actionError && (
           <p role="alert" className="rounded-md border border-status-error px-design-4 py-design-3 text-body text-status-error">
             {t(failureKey(actionError))}
@@ -312,6 +344,12 @@ export default function OfficerCaseReviewPage() {
             </h2>
             <p className="text-caption text-ink-secondary">{t("caseReview.assessHint")}</p>
 
+            {/* Placed before the camera, because it is what the officer should look at first:
+                the household's own photographs of the damage they reported, taken before the
+                officer arrived. The officer then photographs the same damage themselves — that
+                photograph is the model input and what the assessment rests on. */}
+            <PhotoGallery caseRef={ref} variant="officer" />
+
             <CameraCapture
               onCapture={(file) => void handleCapture(file)}
               disabled={capture === "classifying" || busy}
@@ -332,6 +370,7 @@ export default function OfficerCaseReviewPage() {
                   confidence={result.confidence}
                   processingTimeMs={result.processingTimeMs}
                   modelVersion={result.modelVersion}
+                  outOfDomain={result.outOfDomain}
                   onAccept={() => {
                     setOverride(null);
                     setDecision("accepted");
@@ -388,6 +427,17 @@ export default function OfficerCaseReviewPage() {
             </dl>
           ) : (
             <p className="mt-design-2 text-body text-ink-secondary">{t("caseReview.noAiResult")}</p>
+          )}
+          {/* A gated row reads "No Damage" like any other. Left unexplained, the officer takes it
+              as a finding about the land instead of what it is: the model recognised nothing in
+              the photograph at all. */}
+          {detail.ai_result?.out_of_domain && (
+            <p
+              data-testid="recorded-ood-notice"
+              className="mt-design-2 rounded-md border border-amber bg-amber-pale p-design-3 text-caption leading-relaxed text-ink-primary"
+            >
+              {t("aiResult.outOfDomainNotice")}
+            </p>
           )}
           <p className="mt-design-2 text-caption text-ink-secondary">{t("caseReview.notFinalClassification")}</p>
         </section>

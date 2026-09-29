@@ -14,6 +14,7 @@ import Link from "next/link";
 import { fetchDsCases, type DsCase, type DsFailure } from "@/lib/dsCases";
 import { PaymentAuthorizationPanel } from "@/components/PaymentAuthorizationPanel";
 import { DsFinalDecisionPanel } from "@/components/DsFinalDecisionPanel";
+import { PhotoGallery } from "@/components/admin/PhotoGallery";
 import { DsBankDetailsPanel } from "@/components/DsBankDetailsPanel";
 import PushNotificationToggle from "@/components/PushNotificationToggle";
 
@@ -59,6 +60,10 @@ export default function DsDashboardPage() {
   const [payingFor, setPayingFor] = useState<string | null>(null);
   // The family's bank account, recorded or corrected at this office. One case at a time again.
   const [bankFor, setBankFor] = useState<string | null>(null);
+  // Which card has its evidence open. One at a time, like the bank-details panel: the gallery
+  // costs an authenticated fetch and a set of signed URLs per case, and firing that for every
+  // row of the list would be a burst of work for photographs nobody had asked to see.
+  const [evidenceFor, setEvidenceFor] = useState<string | null>(null);
   // The final compensation review panel, also one case at a time.
   const [decidingFor, setDecidingFor] = useState<string | null>(null);
   const [decidedNotice, setDecidedNotice] = useState<string | null>(null);
@@ -210,6 +215,27 @@ export default function DsDashboardPage() {
                   </>
                 )}
               </p>
+
+              {/* The photographs the claim rests on. This screen authorises a real payment, so the
+                  evidence has to be reachable from it -- until now the DS officer decided on an
+                  amount and a status with no way to see what was damaged. */}
+              <button
+                type="button"
+                onClick={() =>
+                  setEvidenceFor(evidenceFor === c.canonical_id ? null : c.canonical_id)
+                }
+                aria-expanded={evidenceFor === c.canonical_id}
+                className="mt-design-2 min-h-touch-target self-start rounded-md border border-border-default px-design-3 text-label font-medium text-ink-secondary"
+                data-testid="ds-evidence-toggle"
+              >
+                {t(evidenceFor === c.canonical_id ? "evidence.hide" : "evidence.show")}
+              </button>
+
+              {evidenceFor === c.canonical_id && (
+                <div className="mt-design-3">
+                  <PhotoGallery caseRef={c.canonical_id} />
+                </div>
+              )}
 
               {c.household_ref && bankFor !== c.canonical_id && (
                 <button

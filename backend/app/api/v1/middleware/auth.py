@@ -36,6 +36,8 @@ import time
 import jwt
 from flask import current_app, g, jsonify, request
 
+from app.infrastructure import user_directory
+
 # The single claim these guards trust for authorization.
 AUTHZ_CLAIM = "app_metadata"
 
@@ -231,6 +233,12 @@ def authenticated_claims():
             authz_role(claims),
             sorted(authz_metadata(claims).keys()),
         )
+        # Keep the `users` directory current (migration 037). Sign-up and sign-in are
+        # browser→Supabase calls the backend never sees, so this is the first moment an account
+        # becomes observable server-side. Throttled to once per account per 15 minutes, and it
+        # swallows everything -- authorization above has already been decided from the token, and
+        # a bookkeeping write must not be able to change or fail that.
+        user_directory.touch(claims)
         return claims, None
     except jwt.PyJWKClientConnectionError:
         # We could not REACH the JWKS endpoint. The token may well be perfectly valid, so

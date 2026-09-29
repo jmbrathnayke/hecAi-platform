@@ -53,7 +53,7 @@ test("exchanges the code and redirects to the requested destination", async () =
 
   expect(mockExchange).toHaveBeenCalledWith("abc-123");
   expect(res.status).toBe(307);
-  expect(res.headers.get("location")).toBe("http://localhost/officer/dashboard");
+  expect(res.headers.get("location")).toBe("/officer/dashboard");
 });
 
 test("session cookies written during the exchange survive onto the redirect response", async () => {
@@ -72,7 +72,7 @@ test("session cookies written during the exchange survive onto the redirect resp
   const res = await GET(req);
 
   expect(res.cookies.get("sb-test-auth-token")?.value).toBe("session-value");
-  expect(res.headers.get("location")).toBe("http://localhost/officer/dashboard");
+  expect(res.headers.get("location")).toBe("/officer/dashboard");
 });
 
 // The rejection fallback is "/" and deliberately NOT an officer path: an admin whose `next` went
@@ -83,7 +83,7 @@ test("an absolute off-origin `next` is refused (open-redirect guard)", async () 
     new URL("http://localhost/auth/callback?code=abc-123&next=https%3A%2F%2Fevil.example%2Fsteal"),
   );
   const res = await GET(req);
-  expect(res.headers.get("location")).toBe("http://localhost/");
+  expect(res.headers.get("location")).toBe("/");
 });
 
 test("a protocol-relative `next` is refused (browsers normalize //host to a host)", async () => {
@@ -91,7 +91,7 @@ test("a protocol-relative `next` is refused (browsers normalize //host to a host
     new URL("http://localhost/auth/callback?code=abc-123&next=%2F%2Fevil.example%2Fsteal"),
   );
   const res = await GET(req);
-  expect(res.headers.get("location")).toBe("http://localhost/");
+  expect(res.headers.get("location")).toBe("/");
 });
 
 test("a backslash-prefixed `next` is refused", async () => {
@@ -99,7 +99,7 @@ test("a backslash-prefixed `next` is refused", async () => {
     new URL("http://localhost/auth/callback?code=abc-123&next=%2F%5Cevil.example%2Fsteal"),
   );
   const res = await GET(req);
-  expect(res.headers.get("location")).toBe("http://localhost/");
+  expect(res.headers.get("location")).toBe("/");
 });
 
 test("a provider error redirects to the login page for the intended surface, without exchanging", async () => {
@@ -109,7 +109,7 @@ test("a provider error redirects to the login page for the intended surface, wit
   const res = await GET(req);
 
   expect(mockExchange).not.toHaveBeenCalled();
-  expect(res.headers.get("location")).toBe("http://localhost/admin/login?error=access_denied");
+  expect(res.headers.get("location")).toBe("/admin/login?error=access_denied");
 });
 
 test("a missing code redirects to login rather than attempting an exchange", async () => {
@@ -117,7 +117,7 @@ test("a missing code redirects to login rather than attempting an exchange", asy
   const res = await GET(req);
 
   expect(mockExchange).not.toHaveBeenCalled();
-  expect(res.headers.get("location")).toBe("http://localhost/officer/login?error=missing_code");
+  expect(res.headers.get("location")).toBe("/officer/login?error=missing_code");
 });
 
 test("a failed exchange redirects to login instead of leaving the user on a dead page", async () => {
@@ -126,7 +126,7 @@ test("a failed exchange redirects to login instead of leaving the user on a dead
     new URL("http://localhost/auth/callback?code=stale&next=%2Fofficer%2Fdashboard"),
   );
   const res = await GET(req);
-  expect(res.headers.get("location")).toBe("http://localhost/officer/login?error=exchange_failed");
+  expect(res.headers.get("location")).toBe("/officer/login?error=exchange_failed");
 });
 
 test("an unreachable Supabase fails closed to login, not an unhandled error page", async () => {
@@ -135,13 +135,13 @@ test("an unreachable Supabase fails closed to login, not an unhandled error page
     new URL("http://localhost/auth/callback?code=abc-123&next=%2Fofficer%2Fdashboard"),
   );
   const res = await GET(req);
-  expect(res.headers.get("location")).toBe("http://localhost/officer/login?error=unreachable");
+  expect(res.headers.get("location")).toBe("/officer/login?error=unreachable");
 });
 
 test("a citizen destination bounces to the unprefixed /login on failure (intl adds the locale)", async () => {
   const req = new NextRequest(new URL("http://localhost/auth/callback?error=access_denied&next=%2Fmy-cases"));
   const res = await GET(req);
-  expect(res.headers.get("location")).toBe("http://localhost/login?error=access_denied");
+  expect(res.headers.get("location")).toBe("/login?error=access_denied");
 });
 
 // --- Code review 2026-08-13 ----------------------------------------------------------------
@@ -157,7 +157,7 @@ test("an exchange that reports no error but yields no session is treated as a fa
   );
   const res = await GET(req);
 
-  expect(res.headers.get("location")).toBe("http://localhost/officer/login?error=exchange_failed");
+  expect(res.headers.get("location")).toBe("/officer/login?error=exchange_failed");
 });
 
 test("cookies written before a failed exchange survive onto the login redirect", async () => {
@@ -176,7 +176,7 @@ test("cookies written before a failed exchange survive onto the login redirect",
   );
   const res = await GET(req);
 
-  expect(res.headers.get("location")).toBe("http://localhost/officer/login?error=exchange_failed");
+  expect(res.headers.get("location")).toBe("/officer/login?error=exchange_failed");
   expect(res.cookies.get("sb-test-auth-token-code-verifier")?.value).toBe("");
 });
 
@@ -190,7 +190,7 @@ test("an unrecognized provider error is collapsed to a generic code, never refle
   const res = await GET(req);
 
   const location = res.headers.get("location") ?? "";
-  expect(location).toBe("http://localhost/officer/login?error=oauth_error");
+  expect(location).toBe("/officer/login?error=oauth_error");
   expect(location).not.toContain("077-1234567");
 });
 
@@ -200,7 +200,7 @@ test("a known provider error code is passed through unchanged", async () => {
   );
   const res = await GET(req);
 
-  expect(res.headers.get("location")).toBe("http://localhost/admin/login?error=access_denied");
+  expect(res.headers.get("location")).toBe("/admin/login?error=access_denied");
   expect(mockExchange).not.toHaveBeenCalled();
 });
 
@@ -217,7 +217,7 @@ test("a client that cannot be constructed fails closed to the login page, not an
   );
   const res = await GET(req);
 
-  expect(res.headers.get("location")).toBe("http://localhost/admin/login?error=unreachable");
+  expect(res.headers.get("location")).toBe("/admin/login?error=unreachable");
 });
 
 // ============================================================ every staff tree must be listed
@@ -230,10 +230,10 @@ test("a client that cannot be constructed fails closed to the login page, not an
 // This is the third place that enumerates the trees, after middleware.ts and the login pages. The
 // parametrised form is deliberate: adding a tree to the route without adding it here fails.
 test.each([
-  ["/admin/cases", "http://localhost/admin/login?error=exchange_failed"],
-  ["/officer/dashboard", "http://localhost/officer/login?error=exchange_failed"],
-  ["/ds/dashboard", "http://localhost/ds/login?error=exchange_failed"],
-  ["/system/users", "http://localhost/system/login?error=exchange_failed"],
+  ["/admin/cases", "/admin/login?error=exchange_failed"],
+  ["/officer/dashboard", "/officer/login?error=exchange_failed"],
+  ["/ds/dashboard", "/ds/login?error=exchange_failed"],
+  ["/system/users", "/system/login?error=exchange_failed"],
 ])("a failed exchange for %s bounces to its OWN login page", async (next, expected) => {
   mockExchange.mockResolvedValue({ error: { message: "invalid code" } });
   const req = new NextRequest(
@@ -241,6 +241,25 @@ test.each([
   );
   const res = await GET(req);
   expect(res.headers.get("location")).toBe(expected);
+});
+
+// Behind Azure App Service's proxy the container is addressed internally, so nextUrl.origin
+// resolves to https://localhost:8080 -- the port Node listens on. Absolute redirects built from it
+// sent staff to https://localhost:8080/system/users on the live domain and the sign-in died there
+// with no error. Location must stay a relative reference so the BROWSER resolves it against the
+// public origin; asserting the absence of a scheme is what stops an absolute form creeping back.
+test.each([
+  ["a successful exchange", "http://localhost:8080/auth/callback?code=abc-123&next=%2Fsystem%2Fusers"],
+  ["a provider error", "http://localhost:8080/auth/callback?error=access_denied&next=%2Fsystem%2Fusers"],
+  ["a missing code", "http://localhost:8080/auth/callback?next=%2Fsystem%2Fusers"],
+])("%s emits a relative Location even when the request origin is the container's", async (_label, url) => {
+  mockExchange.mockImplementation(async () => ({ data: { session: A_SESSION }, error: null }));
+  const res = await GET(new NextRequest(new URL(url)));
+  const location = res.headers.get("location") ?? "";
+
+  expect(location.startsWith("/")).toBe(true);
+  expect(location).not.toContain("localhost");
+  expect(location).not.toMatch(/^https?:/);
 });
 
 // ============================================================ email links verified by token_hash
@@ -259,7 +278,7 @@ test("a magic-link token_hash is verified server-side and redirects to the reque
 
   expect(mockVerifyOtp).toHaveBeenCalledWith({ token_hash: "h-1", type: "magiclink" });
   expect(mockExchange).not.toHaveBeenCalled();
-  expect(res.headers.get("location")).toBe("http://localhost/en/my-cases");
+  expect(res.headers.get("location")).toBe("/en/my-cases");
   expect(res.cookies.get("sb-test-auth-token")?.value).toBe("session-value");
 });
 
@@ -271,7 +290,7 @@ test.each(["recovery", "invite", "signup", ""])(
     );
     const res = await GET(req);
     expect(mockVerifyOtp).not.toHaveBeenCalled();
-    expect(res.headers.get("location")).toBe("http://localhost/login?error=missing_code");
+    expect(res.headers.get("location")).toBe("/login?error=missing_code");
   },
 );
 
@@ -281,7 +300,7 @@ test("a rejected token_hash (expired or already used) bounces to login", async (
     new URL("http://localhost/auth/callback?token_hash=h-1&type=magiclink&next=%2Fen%2Fmy-cases"),
   );
   const res = await GET(req);
-  expect(res.headers.get("location")).toBe("http://localhost/login?error=exchange_failed");
+  expect(res.headers.get("location")).toBe("/login?error=exchange_failed");
 });
 
 test("a token_hash link still refuses an off-origin `next`", async () => {
@@ -289,7 +308,7 @@ test("a token_hash link still refuses an off-origin `next`", async () => {
     new URL("http://localhost/auth/callback?token_hash=h-1&type=magiclink&next=https%3A%2F%2Fevil.example"),
   );
   const res = await GET(req);
-  expect(res.headers.get("location")).toBe("http://localhost/");
+  expect(res.headers.get("location")).toBe("/");
 });
 
 test("a provider error for a system destination returns to /system/login", async () => {
@@ -297,6 +316,6 @@ test("a provider error for a system destination returns to /system/login", async
     new URL("http://localhost/auth/callback?error=access_denied&next=%2Fsystem%2Fusers"),
   );
   const res = await GET(req);
-  expect(res.headers.get("location")).toBe("http://localhost/system/login?error=access_denied");
+  expect(res.headers.get("location")).toBe("/system/login?error=access_denied");
   expect(mockExchange).not.toHaveBeenCalled();
 });

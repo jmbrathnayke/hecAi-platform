@@ -165,6 +165,14 @@ export default function OfficerClassifyPage() {
         ai_processing_time_ms: classification.processingTimeMs,
         ai_model_version: classification.modelVersion,
         case_category: deriveCaseCategory(nextClassIds),
+        // The gate's record travels with the class, so an offline submission syncs the same
+        // evidence an online assessment posts (lib/poc.ts forwards these to inference_log).
+        ai_gate_version: classification.gateVersion,
+        ai_gate_applied: classification.gateApplied,
+        ai_out_of_domain: classification.outOfDomain,
+        ai_domain_distance: classification.domainDistance,
+        ai_raw_prediction: classification.rawClassId,
+        ai_raw_confidence: classification.rawConfidence,
       });
       classIdsRef.current = nextClassIds;
       if (!mountedRef.current) return;
@@ -313,6 +321,7 @@ export default function OfficerClassifyPage() {
                 confidence={result.confidence}
                 processingTimeMs={result.processingTimeMs}
                 modelVersion={result.modelVersion}
+                outOfDomain={result.outOfDomain}
                 onAccept={() => {
                   // Once an override is recorded, Accept must not flip the UI to "accepted"
                   // while the persisted draft still says overridden (contradictory record).

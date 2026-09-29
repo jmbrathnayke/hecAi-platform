@@ -238,7 +238,10 @@ export function CaseDetailPanel({ offlineId }: CaseDetailPanelProps) {
         </div>
       )}
 
-      <PhotoGallery />
+      {/* The admin route keys on offline_id; the endpoint accepts either that or the canonical
+          id, so the panel passes what it already has rather than waiting for a canonical id a
+          just-synced case may not carry yet. */}
+      <PhotoGallery caseRef={c.canonical_id ?? offlineId} />
       <AIResultPanel aiResult={ai_result} />
       <CompensationPanel compensation={compensation} />
       <AuditTrail trail={audit_trail} />

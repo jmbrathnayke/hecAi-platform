@@ -19,7 +19,11 @@ NOTHING HERE RAISES. Every notifier records its own outcome in the audit log, an
 roll back the citizen's submission, not merely the announcement of it.
 """
 from app.infrastructure.audit import write_audit_log
-from app.infrastructure.inference_log import insert_inference_log, parse_classification
+from app.infrastructure.inference_log import (
+    insert_inference_log,
+    parse_classification,
+    parse_gate_fields,
+)
 from app.infrastructure.notifications import notify_status_change_all
 from app.infrastructure.push.push_service import notify_staff_push
 
@@ -51,6 +55,13 @@ def record_officer_assisted_assessment(cur, case_id, offline_id, officer_id, cla
                             {"error": error})
             fields = None
         else:
+            # A malformed gate field must not lose the whole classification here: this path is a
+            # sync of work already done in the field, and the classification itself has passed.
+            gate, gate_error = parse_gate_fields(classification, fields["prediction"])
+            if gate_error:
+                write_audit_log(cur, case_id, "officer_gate_fields_not_recorded", officer_id,
+                                {"error": gate_error})
+                gate = {}
             processing_ms = classification.get("ai_processing_time_ms")
             insert_inference_log(cur, case_id, fields, {
                 "offline_id": offline_id,
@@ -60,6 +71,7 @@ def record_officer_assisted_assessment(cur, case_id, offline_id, officer_id, cla
                 if isinstance(processing_ms, (int, float)) and not isinstance(processing_ms, bool)
                 else None,
                 "source": "officer_assisted_submission",
+                **gate,
             })
 
     metadata = {"channel": "officer_assisted_submission", "ai_severity": ai_severity,

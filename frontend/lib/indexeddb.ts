@@ -308,6 +308,18 @@ export interface CaseClassification {
   ai_processing_time_ms: number;
   ai_model_version: string;
   case_category?: string; // derived case-level rollup (crop_damage|property_damage|combined|no_damage)
+
+  // Open-set gate (lib/oodGate.ts). Optional, because a draft written before the gate existed
+  // must still sync, and because `ai_category` already carries the SERVED class either way —
+  // these only record how it was reached. Without them an offline-submitted case would lose the
+  // distinction between "the model recognised undamaged land" and "the model recognised nothing",
+  // which is the whole reason the gate writes a flag rather than silently changing the class.
+  ai_gate_version?: string;
+  ai_gate_applied?: boolean;
+  ai_out_of_domain?: boolean;
+  ai_domain_distance?: number | null;
+  ai_raw_prediction?: string | null; // what the closed-set softmax said, when it was discarded
+  ai_raw_confidence?: number | null;
 }
 
 export async function saveClassification(

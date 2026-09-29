@@ -160,6 +160,7 @@ def create_app(config=None):
     from app.api.v1.ds import ds_bp
     from app.api.v1.notifications import notifications_bp
     from app.api.v1.users import users_bp
+    from app.api.v1.case_photos import case_photos_bp
 
     app.register_blueprint(health_bp, url_prefix="/api/v1")
     app.register_blueprint(cases_bp, url_prefix="/api/v1")
@@ -173,6 +174,7 @@ def create_app(config=None):
     app.register_blueprint(research_bp, url_prefix="/api/v1")
     app.register_blueprint(households_bp, url_prefix="/api/v1")
     app.register_blueprint(ds_bp, url_prefix="/api/v1")
+    app.register_blueprint(case_photos_bp, url_prefix="/api/v1")
     app.register_blueprint(notifications_bp, url_prefix="/api/v1")
     app.register_blueprint(users_bp, url_prefix="/api/v1")
 

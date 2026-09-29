@@ -3,8 +3,9 @@
 // A citizen's report reaches the field officers of its DS division as a push notification; a tap
 // opens /officer/cases/<ref>, which uses these calls. The officer takes responsibility for the case,
 // captures THEIR OWN verification photo at the site, classifies it with MobileNetV2 on this device,
-// and submits only the classification result. No image is uploaded: the citizen's photo is not the
-// model input, and the officer's photo never leaves the phone.
+// and submits the classification result. The model input never leaves the device -- no image is sent
+// anywhere to be classified (FR-2.1/2.2). The photograph itself is attached separately, as case
+// evidence, through lib/casePhotos.ts; none of it is part of this module's request.
 //
 // Backend: app/api/v1/officer_cases.py. Scope (own case or assigned division), the audit trail and
 // the AI-assisted estimate are all server-side; nothing here is a security boundary.
@@ -44,6 +45,10 @@ export interface OfficerCaseDetail {
     override_category: string | null;
     model_version: string | null;
     ai_severity: string | null;
+    /** The open-set gate rejected the photo: `prediction` is no_damage because nothing was
+     *  recognised, not because intact land was. Optional — rows written before the gate
+     *  existed, and an older backend, simply omit it. */
+    out_of_domain?: boolean;
     created_at: string | null;
   } | null;
   ai_assisted_estimate: {
@@ -125,14 +130,46 @@ export const CROP_AREA_TRAINED_MAX = 3.5;
  * assessment would be harmless — the server drops them — but omitting them keeps the request an
  * honest description of what the officer actually assessed.
  */
+/** The classification an assessment is built from. The open-set gate fields are OPTIONAL so a
+ *  result assembled without them still submits — a classification restored from an IndexedDB draft
+ *  written before the gate existed (lib/indexeddb.ts CaseClassification) has none. Absent fields
+ *  are omitted from the body rather than sent as nulls, so the server can tell "this
+ *  classification predates the gate" from "the gate ran and the photo passed". */
+type GatedResult = Pick<
+  ClassificationResult,
+  "classId" | "confidence" | "severity" | "processingTimeMs" | "modelVersion"
+> &
+  Partial<
+    Pick<
+      ClassificationResult,
+      "outOfDomain" | "domainDistance" | "gateApplied" | "rawClassId" | "rawConfidence" | "gateVersion"
+    >
+  >;
+
 export function buildAssessmentBody(
-  result: Pick<ClassificationResult, "classId" | "confidence" | "severity" | "processingTimeMs" | "modelVersion">,
+  result: GatedResult,
   override: OverrideChoice | null,
   crop: CropAssessment | null = null,
 ): Record<string, unknown> {
   const overridden = override !== null && override.category !== result.classId;
   const finalClass = overridden ? override!.category : result.classId;
   const cropFields = finalClass === "crop_damage" && crop ? parseCropAssessment(crop) : null;
+  // The open-set gate's own record (lib/oodGate.ts). `prediction` below already carries the
+  // SERVED class, which is what the workflow acted on; these say how it was arrived at, so
+  // "the model recognised an intact field" and "the model recognised nothing at all" stay
+  // distinguishable in inference_log. Without them the research log would show a rising
+  // no_damage rate with no way to explain it.
+  const gateFields =
+    result.gateVersion === undefined
+      ? {}
+      : {
+          ai_gate_version: result.gateVersion,
+          ai_gate_applied: result.gateApplied,
+          ai_out_of_domain: result.outOfDomain,
+          ai_domain_distance: result.domainDistance,
+          ai_raw_prediction: result.rawClassId,
+          ai_raw_confidence: result.rawConfidence,
+        };
   return {
     model_type: "mobilenetv2",
     model_version: result.modelVersion,
@@ -143,6 +180,7 @@ export function buildAssessmentBody(
     was_overridden: overridden,
     override_category: overridden ? override!.category : null,
     override_reason: overridden ? override!.reason.trim() : null,
+    ...gateFields,
     ...(cropFields ?? {}),
   };
 }
