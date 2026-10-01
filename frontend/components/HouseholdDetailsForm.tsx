@@ -8,6 +8,7 @@
 import { useState } from "react";
 import { useTranslations } from "next-intl";
 import { updateMyHousehold, type Household, type HouseholdChanges, type UpdateFailure } from "@/lib/households";
+import { formatMobile, normaliseMobile } from "@/lib/validation";
 
 const FIELD =
   "min-h-touch-target w-full rounded-md border border-border-default bg-surface-raised px-design-3 text-body text-ink-primary focus:border-border-focus focus:outline-none";
@@ -18,6 +19,8 @@ function failureKey(failure: UpdateFailure): string {
       return "addressRequired";
     case "invalid-email":
       return "emailInvalid";
+    case "invalid-mobile":
+      return "mobileInvalid";
     case "invalid-bank":
       return "bankInvalid";
     case "bank-locked":
@@ -44,6 +47,7 @@ export function HouseholdDetailsForm({
   const [address, setAddress] = useState(household.address ?? "");
   const [gnDivision, setGnDivision] = useState(household.gn_division ?? "");
   const [contactEmail, setContactEmail] = useState(household.contact_email ?? "");
+  const [mobile, setMobile] = useState(household.contact_mobile ? formatMobile(household.contact_mobile) : "");
   const [accountNumber, setAccountNumber] = useState("");
   const [bankName, setBankName] = useState("");
   const [branch, setBranch] = useState("");
@@ -67,6 +71,11 @@ export function HouseholdDetailsForm({
       setError(t("emailInvalid"));
       return;
     }
+    const canonicalMobile = normaliseMobile(mobile);
+    if (canonicalMobile === null) {
+      setError(t("mobileInvalid"));
+      return;
+    }
 
     // Only what actually changed: an unchanged field sent back would still be a no-op server-side,
     // but a request with nothing in it is clearer as no request at all.
@@ -74,6 +83,7 @@ export function HouseholdDetailsForm({
     if (address.trim() !== (household.address ?? "")) changes.address = address.trim();
     if (gnDivision.trim() !== (household.gn_division ?? "")) changes.gn_division = gnDivision.trim();
     if (email !== (household.contact_email ?? "")) changes.contact_email = email;
+    if (canonicalMobile !== (household.contact_mobile ?? "")) changes.contact_mobile = canonicalMobile;
     if (canAddBank && accountNumber.trim()) {
       changes.bank = {
         account_number: accountNumber.trim(),
@@ -142,6 +152,23 @@ export function HouseholdDetailsForm({
           onChange={(e) => setContactEmail(e.target.value)}
           className={FIELD}
         />
+      </div>
+
+      <div className="flex flex-col gap-design-1">
+        <label htmlFor="edit-mobile" className="text-label font-medium text-ink-primary">
+          {t("contactMobile")}
+        </label>
+        <input
+          id="edit-mobile"
+          type="tel"
+          inputMode="tel"
+          autoComplete="tel"
+          placeholder="07X XXX XXXX"
+          value={mobile}
+          onChange={(e) => setMobile(e.target.value)}
+          className={FIELD}
+        />
+        <p className="text-caption text-ink-secondary">{t("contactMobileHint")}</p>
       </div>
 
       {canAddBank ? (

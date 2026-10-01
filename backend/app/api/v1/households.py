@@ -26,6 +26,7 @@ the DS office. A collision on a declared member's NIC returns a generic refusal 
 the member nor the other household, so nobody learns which relative, or whose family, is involved.
 Rate limiting is the remaining mitigation and is not implemented here (deferred-work).
 """
+import re
 from datetime import datetime, timezone
 
 import psycopg2
@@ -60,6 +61,38 @@ def _clean_text(value, limit=MAX_NAME_LEN):
         return None
     trimmed = value.strip()[:limit]
     return trimmed or None
+
+
+# A Sri Lankan mobile number without its prefix: 7, then eight digits (070-078 ...).
+_MOBILE_DIGITS = re.compile(r"^7[0-9]{8}$")
+
+
+def _clean_mobile(value):
+    """-> (canonical, ok). Canonical is "+947XXXXXXXX", or None when no number was given.
+
+    One number, one spelling (migration 039): "077 123 4567", "0771234567", "771234567",
+    "+94 77 123 4567" and "0094771234567" all become "+94771234567". `ok` is False for anything
+    that is not a Sri Lankan mobile, so each caller decides what a bad number costs. Mirrors
+    frontend/lib/validation.ts normaliseMobile; the two must agree.
+    """
+    if value is None:
+        return None, True
+    if not isinstance(value, str):
+        return None, False
+    digits = re.sub(r"[\s\-().]", "", value)
+    if not digits:
+        return None, True
+    if digits.startswith("+94"):
+        digits = digits[3:]
+    elif digits.startswith("0094"):
+        digits = digits[4:]
+    elif digits.startswith("94") and len(digits) == 11:
+        digits = digits[2:]
+    elif digits.startswith("0"):
+        digits = digits[1:]
+    if not _MOBILE_DIGITS.match(digits):
+        return None, False
+    return "+94" + digits, True
 
 
 def _parse_members(raw):
@@ -181,6 +214,13 @@ def register_household():
     if contact_email is not None and ("@" not in contact_email or " " in contact_email):
         contact_email = None
 
+    # Optional mobile number (migration 039), for the DS office to phone; never messaged, since
+    # SMS is retired (034). Same rule as the email: a number that is not a Sri Lankan mobile is
+    # dropped rather than costing the family its registration. The form checks it before sending.
+    contact_mobile, mobile_ok = _clean_mobile(body.get("contact_mobile"))
+    if not mobile_ok:
+        contact_mobile = None
+
     try:
         conn = _get_connection()
         try:
@@ -218,11 +258,12 @@ def register_household():
                     cur.execute(
                         """INSERT INTO households
                              (household_ref, district, ds_division, gn_division, registrant_uid,
-                              bank_details_ciphertext, bank_account_last4, contact_email, address)
-                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+                              bank_details_ciphertext, bank_account_last4, contact_email, address,
+                              contact_mobile)
+                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
                         (household_ref, district, ds_division,
                          _clean_text(body.get("gn_division")), citizen_id,
-                         bank_ciphertext, bank_last4, contact_email, address),
+                         bank_ciphertext, bank_last4, contact_email, address, contact_mobile),
                     )
                     household_id = cur.fetchone()[0]
 
@@ -243,7 +284,8 @@ def register_household():
                          "ds_division": ds_division, "member_count": len(people),
                          # Whether, not what. The audit trail must not become the PII store the
                          # rest of this design goes to lengths to avoid.
-                         "bank_details_provided": bank_ciphertext is not None},
+                         "bank_details_provided": bank_ciphertext is not None,
+                         "contact_mobile_provided": contact_mobile is not None},
                     )
         finally:
             conn.close()
@@ -358,11 +400,11 @@ def lookup_household():
 
 def _read_own_household(cur, citizen_id):
     """The caller's active household as the /me response body, or None. Never nic_hmac or the bank
-    ciphertext — see the module docstring. Address, contact email and account tail are their own."""
+    ciphertext — see the module docstring. Address, contact details and account tail are their own."""
     cur.execute(
         """SELECT id, household_ref, district, ds_division, gn_division,
                   status, registered_at, address, contact_email,
-                  bank_account_last4
+                  bank_account_last4, contact_mobile
              FROM households
             WHERE registrant_uid = %s AND status = 'active'
             ORDER BY id DESC LIMIT 1""",
@@ -393,6 +435,7 @@ def _read_own_household(cur, citizen_id):
         "address": row[7],
         "contact_email": row[8],
         "bank_account_last4": row[9],
+        "contact_mobile": row[10],
         "members": members,
     }
 
@@ -457,6 +500,12 @@ def update_my_household():
         if contact_email is not None and ("@" not in contact_email or " " in contact_email):
             return jsonify({"error": "invalid_email"}), 400
         updates["contact_email"] = contact_email  # None clears it: the field is optional
+    if "contact_mobile" in body:
+        contact_mobile, mobile_ok = _clean_mobile(body.get("contact_mobile"))
+        # Refused rather than dropped, for the same reason as the email above.
+        if not mobile_ok:
+            return jsonify({"error": "invalid_mobile"}), 400
+        updates["contact_mobile"] = contact_mobile  # None clears it: the field is optional
     if "gn_division" in body:
         updates["gn_division"] = _clean_text(body.get("gn_division"))
 
@@ -482,7 +531,7 @@ def update_my_household():
                 with conn.cursor() as cur:
                     cur.execute(
                         """SELECT id, household_ref, address, contact_email, gn_division,
-                                  bank_details_ciphertext, bank_account_last4
+                                  bank_details_ciphertext, bank_account_last4, contact_mobile
                              FROM households
                             WHERE registrant_uid = %s AND status = 'active'
                             ORDER BY id DESC LIMIT 1
@@ -495,7 +544,7 @@ def update_my_household():
                     household_id, household_ref = row[0], row[1]
                     current = dict(zip(
                         ("address", "contact_email", "gn_division",
-                         "bank_details_ciphertext", "bank_account_last4"),
+                         "bank_details_ciphertext", "bank_account_last4", "contact_mobile"),
                         row[2:],
                     ))
                     if bank is not None and current["bank_details_ciphertext"] is not None:
@@ -511,11 +560,11 @@ def update_my_household():
                             """UPDATE households
                                   SET address = %s, contact_email = %s, gn_division = %s,
                                       bank_details_ciphertext = %s, bank_account_last4 = %s,
-                                      updated_at = now()
+                                      contact_mobile = %s, updated_at = now()
                                 WHERE id = %s""",
                             (merged["address"], merged["contact_email"], merged["gn_division"],
                              merged["bank_details_ciphertext"], merged["bank_account_last4"],
-                             household_id),
+                             merged["contact_mobile"], household_id),
                         )
                         # Which fields, never their values: the audit trail must not become the PII
                         # store the rest of this design avoids.

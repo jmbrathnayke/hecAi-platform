@@ -43,6 +43,7 @@ it("PATCHes the caller's own household with the bearer token", async () => {
 it.each([
   [400, { error: "missing_fields", fields: ["address"] }, "invalid-address"],
   [400, { error: "invalid_email" }, "invalid-email"],
+  [400, { error: "invalid_mobile" }, "invalid-mobile"],
   [400, { error: "invalid_bank_details" }, "invalid-bank"],
   [409, { error: "bank_details_locked" }, "bank-locked"],
   [404, { error: "not_registered" }, "not-registered"],

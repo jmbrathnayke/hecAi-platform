@@ -10,6 +10,8 @@ import { fetchMyHousehold, type MyHouseholdResult } from "@/lib/households";
 import { signOutCitizen } from "@/lib/citizenSession";
 import { HouseholdDetailsForm } from "@/components/HouseholdDetailsForm";
 import { PasswordForm } from "@/components/PasswordForm";
+import { CitizenGuide } from "@/components/CitizenGuide";
+import { formatMobile } from "@/lib/validation";
 
 type LoadState = { kind: "loading" } | MyHouseholdResult;
 
@@ -168,6 +170,14 @@ export default function ProfilePage() {
                   value={state.household.contact_email ?? t("notRecorded")}
                 />
                 <Row
+                  label={t("contactMobile")}
+                  value={
+                    state.household.contact_mobile
+                      ? formatMobile(state.household.contact_mobile)
+                      : t("notRecorded")
+                  }
+                />
+                <Row
                   label={t("bankAccount")}
                   value={
                     state.household.bank_account_last4
@@ -201,6 +211,8 @@ export default function ProfilePage() {
             </ul>
           </section>
         )}
+
+        {state.kind !== "loading" && <CitizenGuide defaultOpen={state.kind === "not-registered"} />}
 
         {/* The account is created by a one-time email link; a password is what makes the next
             sign-in immediate, and is set here on an address the link already verified. */}

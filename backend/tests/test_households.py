@@ -5,6 +5,7 @@ deliberate: the duplicate-claim control IS that index, so a fake that let duplic
 would make every "is blocked" test below pass for the wrong reason.
 """
 import json
+import re
 
 import jwt
 import psycopg2
@@ -116,7 +117,10 @@ class FakeCursor:
             self.store["seq"] += 1
             self._one = (self.store["seq"],)
         elif s.startswith("INSERT INTO households"):
-            ref, district, ds_division, gn, uid, bank_ct, bank_last4, contact_email, address = params
+            (ref, district, ds_division, gn, uid, bank_ct, bank_last4, contact_email, address,
+             contact_mobile) = params
+            # Mirrors CHECK households_contact_mobile_format (migration 039).
+            assert contact_mobile is None or re.fullmatch(r"\+947[0-9]{8}", contact_mobile)
             new_id = len(self.store["households"]) + 1
             self.store["households"].append({
                 "id": new_id, "household_ref": ref, "district": district,
@@ -124,6 +128,7 @@ class FakeCursor:
                 "status": "active", "registered_at": None,
                 "bank_details_ciphertext": bank_ct, "bank_account_last4": bank_last4,
                 "contact_email": contact_email, "address": address,
+                "contact_mobile": contact_mobile,
             })
             self._one = (new_id,)
         elif s.startswith("INSERT INTO household_members"):
@@ -134,19 +139,22 @@ class FakeCursor:
                         if h["registrant_uid"] == params[0] and h["status"] == "active"), None)
             self._one = (hit["id"], hit["household_ref"], hit["district"], hit["ds_division"],
                          hit["gn_division"], hit["status"], hit["registered_at"], hit["address"],
-                         hit["contact_email"], hit["bank_account_last4"]) if hit else None
+                         hit["contact_email"], hit["bank_account_last4"],
+                         hit.get("contact_mobile")) if hit else None
         elif s.startswith("SELECT id, household_ref, address, contact_email"):
             # PATCH /me: the caller's household, locked for update.
             hit = next((h for h in self.store["households"]
                         if h["registrant_uid"] == params[0] and h["status"] == "active"), None)
             self._one = (hit["id"], hit["household_ref"], hit["address"], hit["contact_email"],
                          hit["gn_division"], hit["bank_details_ciphertext"],
-                         hit["bank_account_last4"]) if hit else None
+                         hit["bank_account_last4"], hit.get("contact_mobile")) if hit else None
         elif s.startswith("UPDATE households SET address"):
-            address, contact_email, gn, bank_ct, bank_last4, household_id = params
+            address, contact_email, gn, bank_ct, bank_last4, contact_mobile, household_id = params
+            assert contact_mobile is None or re.fullmatch(r"\+947[0-9]{8}", contact_mobile)
             h = next(h for h in self.store["households"] if h["id"] == household_id)
             h.update(address=address, contact_email=contact_email, gn_division=gn,
-                     bank_details_ciphertext=bank_ct, bank_account_last4=bank_last4)
+                     bank_details_ciphertext=bank_ct, bank_account_last4=bank_last4,
+                     contact_mobile=contact_mobile)
             self._one = None
         elif "SELECT full_name, relationship, is_registrant" in s:
             self._rows = [(m["full_name"], m["relationship"], m["is_registrant"])
@@ -719,3 +727,70 @@ def test_patch_rejects_a_non_object_body(client):
     res = client.patch("/api/v1/households/me", headers=_auth(), json=["address"])
     assert res.status_code == 400
     assert res.get_json()["error"] == "invalid_body"
+
+
+# --------------------------------------------------------------------------- contact mobile (039)
+@pytest.mark.parametrize("typed", [
+    "0771234567", "077 123 4567", "077-123-4567", "771234567",
+    "+94771234567", "+94 77 123 4567", "94771234567", "0094771234567",
+])
+def test_registration_stores_one_canonical_spelling_of_the_mobile(client, store, typed):
+    res = client.post("/api/v1/households", json=_payload(contact_mobile=typed), headers=_auth())
+    assert res.status_code == 201
+    assert store["households"][0]["contact_mobile"] == "+94771234567"
+
+
+@pytest.mark.parametrize("typed", ["0112345678", "12345", "07712345678", "abc", 771234567])
+def test_registration_drops_a_number_that_is_not_a_sri_lankan_mobile_but_still_registers(
+        client, store, typed):
+    """Same rule as the contact email: a contact field never costs a family its registration."""
+    res = client.post("/api/v1/households", json=_payload(contact_mobile=typed), headers=_auth())
+    assert res.status_code == 201
+    assert store["households"][0]["contact_mobile"] is None
+
+
+def test_registration_without_a_mobile_leaves_it_empty(client, store):
+    assert client.post("/api/v1/households", json=_payload(), headers=_auth()).status_code == 201
+    assert store["households"][0]["contact_mobile"] is None
+
+
+def test_me_returns_the_mobile_to_its_own_family(client):
+    client.post("/api/v1/households", json=_payload(contact_mobile="0771234567"), headers=_auth())
+    assert client.get("/api/v1/households/me", headers=_auth()).get_json()["contact_mobile"] == "+94771234567"
+
+
+def test_the_registration_audit_says_whether_a_mobile_was_given_never_which(client, store):
+    client.post("/api/v1/households", json=_payload(contact_mobile="0771234567"), headers=_auth())
+    entry = next(a for a in store["audit"] if a["event"] == "household_registered")
+    assert _meta(entry)["contact_mobile_provided"] is True
+    blob = json.dumps(entry["metadata"], ensure_ascii=False)
+    assert "771234567" not in blob
+
+
+def test_patch_adds_changes_and_clears_the_mobile(client, store):
+    _registered(client)
+    added = client.patch("/api/v1/households/me", headers=_auth(), json={"contact_mobile": "071 234 5678"})
+    assert added.status_code == 200
+    assert added.get_json()["contact_mobile"] == "+94712345678"
+    assert _meta(store["audit"][-1])["fields"] == ["contact_mobile"]
+    assert "712345678" not in json.dumps(store["audit"][-1]["metadata"])
+
+    cleared = client.patch("/api/v1/households/me", headers=_auth(), json={"contact_mobile": ""})
+    assert cleared.status_code == 200
+    assert store["households"][0]["contact_mobile"] is None
+
+
+def test_patch_refuses_a_malformed_mobile_instead_of_dropping_it(client, store):
+    _registered(client, contact_mobile="0771234567")
+    res = client.patch("/api/v1/households/me", headers=_auth(), json={"contact_mobile": "0112345678"})
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "invalid_mobile"
+    assert store["households"][0]["contact_mobile"] == "+94771234567"
+
+
+def test_migration_039_constrains_the_stored_spelling():
+    from pathlib import Path
+    sql = (Path(__file__).resolve().parent.parent / "app" / "infrastructure" / "db" / "migrations"
+           / "039_add_contact_mobile_to_households.sql").read_text(encoding="utf-8")
+    assert "ADD COLUMN IF NOT EXISTS contact_mobile TEXT" in sql
+    assert r"'^\+947[0-9]{8}$'" in sql

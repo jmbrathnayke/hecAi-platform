@@ -2,7 +2,7 @@
  * Citizen sign-in: email + password every day, the one-time email link to create an account or to
  * recover a forgotten password.
  */
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import CitizenLoginPage from "@/app/[locale]/login/page";
 import { createClient } from "@/lib/supabase";
 
@@ -188,4 +188,86 @@ it("reports a transport failure as a network problem, not a wrong password", asy
   fillCredentials();
   fireEvent.click(screen.getByText("signIn"));
   expect(await screen.findByRole("alert")).toHaveTextContent("networkError");
+});
+
+describe("confirming the address on another device", () => {
+  const NOT_CONFIRMED = { data: { session: null }, error: { message: "Email not confirmed" } };
+  const SIGNED_IN = { data: { session: { user: { id: "u-1" } } }, error: null };
+
+  async function waitOnConfirmScreen() {
+    render(<CitizenLoginPage />);
+    fillSignUp("correct-horse");
+    expect(await screen.findByText("confirmSent")).toBeInTheDocument();
+  }
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    signInWithPassword.mockResolvedValue(NOT_CONFIRMED);
+  });
+  afterEach(() => jest.useRealTimers());
+
+  it("keeps trying the new credentials and opens the dashboard once the link is opened anywhere", async () => {
+    await waitOnConfirmScreen();
+    expect(screen.getByTestId("confirm-note")).toHaveTextContent("confirmWaiting");
+
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(5_000);
+    });
+    expect(signInWithPassword).toHaveBeenCalledWith({ email: "new@example.lk", password: "correct-horse" });
+    expect(push).not.toHaveBeenCalled();
+
+    signInWithPassword.mockResolvedValue(SIGNED_IN); // confirmed on the laptop meanwhile
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(10_000);
+    });
+    expect(push).toHaveBeenCalledWith("/en/my-cases");
+  });
+
+  it("tries at once when the citizen comes back to this tab", async () => {
+    await waitOnConfirmScreen();
+    signInWithPassword.mockResolvedValue(SIGNED_IN);
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    expect(push).toHaveBeenCalledWith("/en/my-cases");
+  });
+
+  it("lets the citizen check by hand, and says so when it is not confirmed yet", async () => {
+    await waitOnConfirmScreen();
+    await act(async () => {
+      fireEvent.click(screen.getByText("confirmCheckNow"));
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    expect(screen.getByTestId("confirm-note")).toHaveTextContent("confirmStillWaiting");
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it("stays inside the sign-in rate limit and stops after ten minutes", async () => {
+    await waitOnConfirmScreen();
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(5 * 60_000);
+    });
+    // Supabase allows 30 sign-ins per 5 minutes per IP; the sign-up itself was one more request.
+    expect(signInWithPassword.mock.calls.length).toBeLessThanOrEqual(25);
+
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(6 * 60_000);
+    });
+    expect(screen.getByTestId("confirm-note")).toHaveTextContent("confirmTimedOut");
+    const total = signInWithPassword.mock.calls.length;
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(10 * 60_000);
+    });
+    expect(signInWithPassword.mock.calls.length).toBe(total);
+  });
+
+  it("stops trying as soon as the citizen leaves the screen", async () => {
+    await waitOnConfirmScreen();
+    fireEvent.click(screen.getByText("haveAccount"));
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(60_000);
+    });
+    expect(signInWithPassword).not.toHaveBeenCalled();
+  });
 });
