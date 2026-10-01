@@ -19,7 +19,7 @@ import { useTranslations } from "next-intl";
 import { useRouter } from "@/navigation";
 import { StepIndicator } from "@/components/StepIndicator";
 import { DistrictPicker, type DistrictSelection } from "@/components/DistrictPicker";
-import { isValidNIC } from "@/lib/validation";
+import { isValidNIC, normaliseMobile } from "@/lib/validation";
 import { registerHousehold, type RegisterFailure } from "@/lib/households";
 import {
   HouseholdConflictScreen,
@@ -139,6 +139,7 @@ export default function RegisterHouseholdForm({
   const [step, setStep] = useState(0);
   const [nic, setNic] = useState("");
   const [fullName, setFullName] = useState("");
+  const [mobile, setMobile] = useState("");
   const [members, setMembers] = useState<MemberDraft[]>([]);
   const [area, setArea] = useState<DistrictSelection | null>(null);
   const [gnDivision, setGnDivision] = useState("");
@@ -163,6 +164,10 @@ export default function RegisterHouseholdForm({
     if (step === 0) {
       if (!isValidNIC(nic)) {
         setFieldError(t("step1.nicError"));
+        return;
+      }
+      if (normaliseMobile(mobile) === null) {
+        setFieldError(t("step1.mobileError"));
         return;
       }
     }
@@ -214,6 +219,8 @@ export default function RegisterHouseholdForm({
       gn_division: gnDivision.trim() || undefined,
       address: address.trim(),
       contact_email: contactEmail.trim() || undefined,
+      // Checked on step 1, so here it is either a valid mobile or blank.
+      contact_mobile: normaliseMobile(mobile) || undefined,
       // Omitted entirely when the citizen skipped the step — an empty object would be a 400.
       bank: accountNumber.trim()
         ? {
@@ -332,6 +339,24 @@ export default function RegisterHouseholdForm({
               onChange={(e) => setFullName(e.target.value)}
               className={FIELD}
             />
+          </div>
+          {/* Optional (migration 039). The hint says what it is for and what it is not: the office
+              may phone it, and nothing messages it, because SMS is retired. */}
+          <div className="flex flex-col gap-design-1">
+            <label htmlFor="registrant-mobile" className="text-label font-medium text-ink-primary">
+              {t("step1.mobile")}
+            </label>
+            <input
+              id="registrant-mobile"
+              type="tel"
+              inputMode="tel"
+              autoComplete="tel"
+              placeholder="07X XXX XXXX"
+              value={mobile}
+              onChange={(e) => setMobile(e.target.value)}
+              className={FIELD}
+            />
+            <p className="text-caption text-ink-secondary">{t("step1.mobileHint")}</p>
           </div>
 
           {/* Asking a villager for a national identity number deserves an answer to "what happens

@@ -55,6 +55,12 @@ export interface RegisterHouseholdInput {
    * the public status page needs no address, no login and no permission.
    */
   contact_email?: string;
+  /**
+   * Optional (migration 039). A mobile number the Divisional Secretariat office can phone, sent in
+   * the canonical "+947XXXXXXXX" form (lib/validation.ts normaliseMobile). Nothing ever messages
+   * it: SMS is retired, so this is a contact detail and not a notification channel.
+   */
+  contact_mobile?: string;
 }
 
 export interface Household {
@@ -68,6 +74,8 @@ export interface Household {
   address: string | null;
   contact_email: string | null;
   bank_account_last4: string | null;
+  /** "+947XXXXXXXX", or null when none was given. Absent from servers older than migration 039. */
+  contact_mobile?: string | null;
   members: { full_name: string | null; relationship: string | null; is_registrant: boolean }[];
 }
 
@@ -245,6 +253,8 @@ export interface HouseholdChanges {
   address?: string;
   /** An empty string clears it. */
   contact_email?: string;
+  /** "+947XXXXXXXX"; an empty string clears it. */
+  contact_mobile?: string;
   gn_division?: string;
   /** Accepted only while no bank details are on file; the server refuses a replacement (409). */
   bank?: BankDetailsInput;
@@ -253,6 +263,7 @@ export interface HouseholdChanges {
 export type UpdateFailure =
   | { reason: "invalid-address" }
   | { reason: "invalid-email" }
+  | { reason: "invalid-mobile" }
   | { reason: "invalid-bank" }
   | { reason: "bank-locked" }
   | { reason: "not-registered" }
@@ -293,6 +304,7 @@ export async function updateMyHousehold(changes: HouseholdChanges): Promise<Upda
   const code = (await errorBody(res)).error ?? "";
   if (res.status === 400 && code === "missing_fields") return { ok: false, failure: { reason: "invalid-address" } };
   if (res.status === 400 && code === "invalid_email") return { ok: false, failure: { reason: "invalid-email" } };
+  if (res.status === 400 && code === "invalid_mobile") return { ok: false, failure: { reason: "invalid-mobile" } };
   if (res.status === 400 && code === "invalid_bank_details") return { ok: false, failure: { reason: "invalid-bank" } };
   if (res.status === 409 && code === "bank_details_locked") return { ok: false, failure: { reason: "bank-locked" } };
   if (res.status === 404) return { ok: false, failure: { reason: "not-registered" } };

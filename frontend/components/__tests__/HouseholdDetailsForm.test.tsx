@@ -36,7 +36,7 @@ it("never offers the area or family members for editing", () => {
   expect(screen.getByText("lockedNote")).toBeInTheDocument();
   expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
   expect(screen.getAllByRole("textbox").map((el) => el.id).sort()).toEqual(
-    ["edit-account", "edit-address", "edit-bank", "edit-branch", "edit-email", "edit-gn", "edit-holder"].sort(),
+    ["edit-account", "edit-address", "edit-bank", "edit-branch", "edit-email", "edit-gn", "edit-holder", "edit-mobile"].sort(),
   );
 });
 
@@ -111,4 +111,38 @@ it("hands an expired session back to the page", async () => {
   fireEvent.change(screen.getByLabelText("gnDivision"), { target: { value: "Galnewa North" } });
   fireEvent.click(screen.getByText("save"));
   await waitFor(() => expect(onSessionEnded).toHaveBeenCalled());
+});
+
+describe("mobile number (migration 039)", () => {
+  it("sends a typed number in its one stored spelling", async () => {
+    mockUpdate.mockResolvedValue({ ok: true, household: { ...HOUSEHOLD, contact_mobile: "+94771234567" } });
+    renderForm();
+    fireEvent.change(screen.getByLabelText("contactMobile"), { target: { value: "077 123 4567" } });
+    fireEvent.click(screen.getByText("save"));
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith({ contact_mobile: "+94771234567" }));
+  });
+
+  it("shows a number on file the way it is written locally, and sends nothing when it is unchanged", async () => {
+    const { onCancel } = renderForm({ ...HOUSEHOLD, contact_mobile: "+94771234567" });
+    expect(screen.getByLabelText("contactMobile")).toHaveValue("077 123 4567");
+    fireEvent.click(screen.getByText("save"));
+    await waitFor(() => expect(onCancel).toHaveBeenCalled());
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
+  it("clears a number with an empty field", async () => {
+    mockUpdate.mockResolvedValue({ ok: true, household: HOUSEHOLD });
+    renderForm({ ...HOUSEHOLD, contact_mobile: "+94771234567" });
+    fireEvent.change(screen.getByLabelText("contactMobile"), { target: { value: "" } });
+    fireEvent.click(screen.getByText("save"));
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith({ contact_mobile: "" }));
+  });
+
+  it("refuses a number that is not a Sri Lankan mobile before asking the server", async () => {
+    renderForm();
+    fireEvent.change(screen.getByLabelText("contactMobile"), { target: { value: "011 234 5678" } });
+    fireEvent.click(screen.getByText("save"));
+    expect(await screen.findByRole("alert")).toHaveTextContent("mobileInvalid");
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
 });

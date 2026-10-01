@@ -17,6 +17,24 @@ import { MIN_PASSWORD_LENGTH } from "@/lib/password";
 
 type SupabaseClient = ReturnType<typeof createClient>;
 
+// CROSS-DEVICE CONFIRMATION. Supabase creates the session on whichever device OPENS the
+// confirmation link, so a citizen who signs up on a phone and opens the email on a laptop is signed
+// in on the laptop and left waiting on the phone. The "check your email" screen therefore keeps
+// trying the email and password it already holds: the answer is "Email not confirmed" until the
+// link is opened anywhere, and a session the moment it has been. Paced to stay well inside Supabase's
+// sign-in limit (30 per 5 minutes per IP): a try after 5 s, every 10 s for two minutes, every 20 s
+// after that, none after ten minutes, plus one at once whenever the citizen comes back to this tab.
+// (Not exported: a Next.js page module may export only the page and its route config.)
+const CONFIRM_POLL = {
+  firstMs: 5_000,
+  fastMs: 10_000,
+  fastForMs: 120_000,
+  slowMs: 20_000,
+  giveUpMs: 600_000,
+  /** Focus and visibility events can fire together; never two tries closer than this. */
+  minGapMs: 4_000,
+} as const;
+
 export default function CitizenLoginPage() {
   const t = useTranslations("login");
   const locale = useLocale();
@@ -49,6 +67,77 @@ export default function CitizenLoginPage() {
       mountedRef.current = false;
     };
   }, []);
+
+  // Cross-device confirmation (CONFIRM_POLL). Held in refs so the waiting loop never restarts on a
+  // re-render; the credentials are the ones just used to sign up, kept in memory only.
+  const credentialsRef = useRef({ email: "", password: "" });
+  const navRef = useRef({ router, locale });
+  useEffect(() => {
+    navRef.current = { router, locale };
+  });
+  const lastTryRef = useRef(0);
+  const [confirmNote, setConfirmNote] = useState<"waiting" | "still-waiting" | "timed-out">("waiting");
+  const [checking, setChecking] = useState(false);
+
+  /** -> true once the address is confirmed and the citizen is signed in and on their way. */
+  const tryConfirmedSignIn = useCallback(
+    async (force: boolean): Promise<boolean> => {
+      const now = Date.now();
+      if (!force && now - lastTryRef.current < CONFIRM_POLL.minGapMs) return false;
+      lastTryRef.current = now;
+      try {
+        const { error: signInError } = await getSupabase().auth.signInWithPassword(credentialsRef.current);
+        // "Email not confirmed" is the expected answer while waiting, so it is never shown as an error.
+        if (signInError || !mountedRef.current) return false;
+        navRef.current.router.push(`/${navRef.current.locale}/my-cases`);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    [getSupabase],
+  );
+
+  useEffect(() => {
+    if (mode !== "confirm-sent") return;
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const startedAt = Date.now();
+    setConfirmNote("waiting");
+
+    const tick = async () => {
+      if (stopped || (await tryConfirmedSignIn(false)) || stopped) return;
+      const elapsed = Date.now() - startedAt;
+      if (elapsed >= CONFIRM_POLL.giveUpMs) {
+        setConfirmNote("timed-out");
+        return;
+      }
+      timer = setTimeout(tick, elapsed < CONFIRM_POLL.fastForMs ? CONFIRM_POLL.fastMs : CONFIRM_POLL.slowMs);
+    };
+    timer = setTimeout(tick, CONFIRM_POLL.firstMs);
+
+    // Back on this tab after confirming in the mail app or on another device: try straight away.
+    const onReturn = () => {
+      if (document.visibilityState === "visible") void tryConfirmedSignIn(false);
+    };
+    document.addEventListener("visibilitychange", onReturn);
+    window.addEventListener("focus", onReturn);
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onReturn);
+      window.removeEventListener("focus", onReturn);
+    };
+  }, [mode, tryConfirmedSignIn]);
+
+  async function handleCheckNow() {
+    if (checking) return;
+    setChecking(true);
+    const ok = await tryConfirmedSignIn(true);
+    if (!mountedRef.current || ok) return;
+    setChecking(false);
+    setConfirmNote("still-waiting");
+  }
 
   async function handlePasswordSignIn(e: React.FormEvent) {
     e.preventDefault();
@@ -103,6 +192,7 @@ export default function CitizenLoginPage() {
         router.push(`/${locale}/my-cases`);
         return;
       }
+      credentialsRef.current = { email: email.trim(), password };
       setMode("confirm-sent");
     } catch {
       if (mountedRef.current) setError(t("networkError"));
@@ -281,6 +371,25 @@ export default function CitizenLoginPage() {
             <p role="status" className="text-body text-ink-primary text-center">
               {t("confirmSent")}
             </p>
+            <p
+              data-testid="confirm-note"
+              aria-live="polite"
+              className="text-caption text-ink-secondary text-center"
+            >
+              {confirmNote === "waiting"
+                ? t("confirmWaiting")
+                : confirmNote === "still-waiting"
+                  ? t("confirmStillWaiting")
+                  : t("confirmTimedOut")}
+            </p>
+            <button
+              type="button"
+              onClick={() => void handleCheckNow()}
+              disabled={checking}
+              className="w-full min-h-touch-target bg-amber text-ink-on-amber text-label font-semibold rounded-md disabled:opacity-60"
+            >
+              {t("confirmCheckNow")}
+            </button>
             <button
               type="button"
               onClick={() => {

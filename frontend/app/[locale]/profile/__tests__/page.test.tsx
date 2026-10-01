@@ -135,3 +135,43 @@ it("cancelling an edit leaves the details as they were", async () => {
   expect(screen.getByTestId("profile-household")).toHaveTextContent("No. 12, Tank Road, Galnewa");
   expect(updateMyHousehold).not.toHaveBeenCalled();
 });
+
+it("shows the mobile number as it is written locally, or 'not recorded'", async () => {
+  mockFetch.mockResolvedValue({ kind: "ok", household: { ...HOUSEHOLD, contact_mobile: "+94771234567" } });
+  const { unmount } = render(<ProfilePage />);
+  expect(await screen.findByTestId("profile-household")).toHaveTextContent("077 123 4567");
+  unmount();
+
+  mockFetch.mockResolvedValue({ kind: "ok", household: { ...HOUSEHOLD, contact_mobile: null } });
+  render(<ProfilePage />);
+  const card = await screen.findByTestId("profile-household");
+  expect(card).toHaveTextContent("contactMobile");
+  expect(card).not.toHaveTextContent("077");
+});
+
+describe("the step-by-step guide", () => {
+  it("is open for a family that has not registered yet, with all eight steps", async () => {
+    mockFetch.mockResolvedValue({ kind: "not-registered" });
+    render(<ProfilePage />);
+    const guide = await screen.findByTestId("citizen-guide");
+    expect(guide).toHaveAttribute("open");
+    expect(guide).toHaveTextContent("title");
+    for (let n = 1; n <= 8; n++) {
+      expect(guide).toHaveTextContent(`s${n}Title`);
+      expect(guide).toHaveTextContent(`s${n}Body`);
+    }
+  });
+
+  it("is folded away for a registered family, so their own details come first", async () => {
+    mockFetch.mockResolvedValue({ kind: "ok", household: HOUSEHOLD });
+    render(<ProfilePage />);
+    await screen.findByTestId("profile-household");
+    expect(screen.getByTestId("citizen-guide")).not.toHaveAttribute("open");
+  });
+
+  it("waits for the profile to load rather than flashing open and shut", () => {
+    mockFetch.mockReturnValue(new Promise(() => {}));
+    render(<ProfilePage />);
+    expect(screen.queryByTestId("citizen-guide")).not.toBeInTheDocument();
+  });
+});

@@ -95,7 +95,10 @@
       "intro": "Only one person from each family registers. Start with your own ID number.",
       "nic": "Your NIC number",
       "fullName": "Your full name",
-      "nicError": "Enter a valid NIC number (9 digits and V, or 12 digits)."
+      "nicError": "Enter a valid NIC number (9 digits and V, or 12 digits).",
+      "mobile": "Mobile number (optional)",
+      "mobileHint": "So your Divisional Secretariat office can call you about your claim. We never send messages to it.",
+      "mobileError": "Enter a Sri Lankan mobile number like 077 123 4567, or leave it empty."
     },
     "step2": {
       "title": "Who is in your family?",
@@ -279,8 +282,12 @@
     "passwordMismatch": "The two passwords do not match.",
     "emailTaken": "That email already has an account. Sign in instead.",
     "signUpError": "Couldn’t create the account. Please try again.",
-    "confirmSent": "Check your email to confirm your address, then sign in.",
-    "haveAccount": "I already have an account"
+    "confirmSent": "We sent a confirmation link to your email. Open it on this phone or on any other device.",
+    "haveAccount": "I already have an account",
+    "confirmWaiting": "Waiting for you to confirm… This screen will sign you in by itself.",
+    "confirmCheckNow": "I’ve confirmed — continue",
+    "confirmStillWaiting": "Not confirmed yet. Open the link in the email, then tap the button above.",
+    "confirmTimedOut": "We stopped checking automatically. After confirming, tap “I’ve confirmed — continue”, or sign in with your password."
   },
   "myCases": {
     "title": "My Cases",
@@ -1088,7 +1095,10 @@
     "passwordTitle": "Password",
     "setPassword": "Set a password",
     "changePassword": "Change password",
-    "passwordHint": "With a password you can sign in without waiting for an email link."
+    "passwordHint": "With a password you can sign in without waiting for an email link.",
+    "contactMobile": "Mobile number",
+    "contactMobileHint": "Your Divisional Secretariat office may call this number. We never send messages to it.",
+    "mobileInvalid": "Enter a Sri Lankan mobile number like 077 123 4567, or leave it empty."
   },
   "staffAccount": {
     "account": "Account",
@@ -1152,5 +1162,25 @@
       "bada_irigu": "Maize (bada irigu)",
       "vegetable": "Vegetable"
     }
+  },
+  "guide": {
+    "title": "How to use this app — step by step",
+    "intro": "Follow these steps in order. Steps 1 and 2 are done only once.",
+    "s1Title": "Create your account",
+    "s1Body": "Tap “Sign in”, then “Create an account”. Use your email and choose a password. We email you a confirmation link: open it on this phone or on any other device. If you open it somewhere else, this phone signs you in by itself a few seconds later.",
+    "s2Title": "Register your family once",
+    "s2Body": "One person per family registers. Enter your NIC number, the NIC numbers of the family members who live with you, your district, Divisional Secretariat division and home address. You can also add a mobile number, an email address and a bank account. Each NIC number can belong to only one family.",
+    "s3Title": "Report an incident",
+    "s3Body": "On the Home page tap “Report Incident”. Take clear photos of the damage and confirm where it happened. This works without a network: the report is kept on your phone.",
+    "s4Title": "Keep your Proof of Claim",
+    "s4Body": "When you submit, you get a Proof of Claim. Once the report reaches the office it shows your reference number (HEC-…). Download it or take a screenshot: you need this number to follow your claim.",
+    "s5Title": "Sending happens by itself",
+    "s5Body": "If there was no signal, the report is sent automatically the next time the phone is online. Open the app once when you have signal.",
+    "s6Title": "Follow your claim",
+    "s6Body": "See all your claims under “My Claims”. Anyone can check a claim under “Status” with its reference number, without signing in. Turn on notifications, or give an email address, to be told when the status changes.",
+    "s7Title": "What happens next",
+    "s7Body": "A wildlife officer reviews your report, the DWC administrator recommends an amount, and your Divisional Secretariat office decides the final amount and pays it into your bank account.",
+    "s8Title": "Need a change or help?",
+    "s8Body": "You can change your address, email, mobile number and password here on your profile. To change your district, division, family members or a saved bank account, visit your Divisional Secretariat office."
   }
 }

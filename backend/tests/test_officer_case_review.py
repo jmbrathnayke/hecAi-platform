@@ -244,7 +244,7 @@ def _keys(value):
 def test_the_detail_carries_no_personal_data(client):
     body = client.get(f"/api/v1/officer/cases/{REF}", headers=_auth()).get_json()
     forbidden = {"citizen_mobile_plain", "submitter_identity_hash", "nic", "nic_hmac",
-                 "citizen_nic_plain", "bank_details", "contact_email"}
+                 "citizen_nic_plain", "bank_details", "contact_email", "contact_mobile"}
     assert not (_keys(body) & forbidden)
 
 

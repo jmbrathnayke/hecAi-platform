@@ -406,3 +406,31 @@ describe("bank details are optional", () => {
     expect(screen.getByLabelText("step4.accountNumber")).toBeInTheDocument();
   });
 });
+
+describe("mobile number (optional, migration 039)", () => {
+  it("is asked for on step 1 and sent in its one stored spelling", async () => {
+    render(<RegisterHouseholdPage />);
+    fireEvent.change(screen.getByLabelText("step1.mobile"), { target: { value: "077-123 4567" } });
+    reachStep3();
+    fireEvent.click(screen.getByText("submit"));
+    await waitFor(() =>
+      expect(mockRegister).toHaveBeenCalledWith(expect.objectContaining({ contact_mobile: "+94771234567" })),
+    );
+  });
+
+  it("can be left empty, and then is not sent at all", async () => {
+    render(<RegisterHouseholdPage />);
+    reachStep3();
+    fireEvent.click(screen.getByText("submit"));
+    await waitFor(() => expect(mockRegister).toHaveBeenCalled());
+    expect(mockRegister.mock.calls[0][0].contact_mobile).toBeUndefined();
+  });
+
+  it("stops on step 1 for a number that is not a Sri Lankan mobile", () => {
+    render(<RegisterHouseholdPage />);
+    fireEvent.change(screen.getByLabelText("step1.mobile"), { target: { value: "0112345678" } });
+    completeStep1();
+    expect(screen.getByRole("alert")).toHaveTextContent("step1.mobileError");
+    expect(screen.getByLabelText("step1.nic")).toBeInTheDocument();
+  });
+});
