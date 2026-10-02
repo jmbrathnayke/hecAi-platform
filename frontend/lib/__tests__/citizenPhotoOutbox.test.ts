@@ -10,6 +10,7 @@
 import {
   flushCitizenPhotos,
   pendingPhotoRecords,
+  photoDelivery,
   __resetCitizenPhotoOutboxForTests,
 } from "@/lib/citizenPhotoOutbox";
 import { getAccessToken } from "@/lib/auth";
@@ -185,5 +186,26 @@ describe("flushCitizenPhotos", () => {
     release();
     await first;
     expect(mockUpload).toHaveBeenCalledTimes(2); // the held flush, once released, did the work
+  });
+});
+
+describe("photoDelivery", () => {
+  it("counts what reached the server, what never will, and what is still on the phone", () => {
+    expect(
+      photoDelivery(record({ photo_blob_keys: ["k1", "k2", "k3", "k4"], photos_uploaded_keys: ["k1", "k2"],
+                             photos_rejected_keys: ["k3"] }) as never),
+    ).toEqual({ total: 4, uploaded: 2, rejected: 1, pending: 1 });
+  });
+
+  it("reads a report with no progress yet as all pending", () => {
+    expect(photoDelivery(record() as never)).toEqual({ total: 2, uploaded: 0, rejected: 0, pending: 2 });
+  });
+});
+
+describe("Send now", () => {
+  it("ignores the retry backoff for that one attempt", async () => {
+    mockAllCases.mockResolvedValue([record({ photos_next_attempt_at: 10_000 })]);
+    expect((await flushCitizenPhotos(5_000)).attempted).toBe(0);
+    expect((await flushCitizenPhotos(5_000, { force: true })).attempted).toBe(2);
   });
 });

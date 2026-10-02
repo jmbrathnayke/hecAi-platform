@@ -12,6 +12,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { Link, useRouter } from "@/navigation";
 import { PoCCard } from "@/components/PoCCard";
+import { PhotoDeliveryStatus } from "@/components/PhotoDeliveryStatus";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import { getCase, updateDraft } from "@/lib/indexeddb";
 import { getDraftId } from "@/lib/draft";
@@ -210,6 +211,10 @@ export default function PoCPage() {
           {t("offlineNotice")}
         </p>
       )}
+
+      {/* The photographs go as soon as the case exists, and the family is told whether they
+          arrived: before this, they waited for a background pass that often never came. */}
+      <PhotoDeliveryStatus offlineId={poc.offline_id} canonicalId={canonicalId} />
 
       {/* Reminder strip — tells the citizen what happens next and repeats the reference. */}
       {!awaitingReference && (

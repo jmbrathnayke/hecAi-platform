@@ -5,6 +5,7 @@ assigns the canonical HEC-YYYY-NNNN id, and writes an append-only audit_log row.
 Idempotent on offline_id: a repeated submission returns the same canonical_id (200)
 rather than creating a duplicate (CRITICAL #6) — race-safe via INSERT ... ON CONFLICT.
 """
+import unicodedata
 from datetime import datetime, timezone
 
 import psycopg2
@@ -17,6 +18,25 @@ from app.infrastructure import workflow_events
 from app.infrastructure.ml import compensation
 
 cases_bp = Blueprint("cases", __name__)
+
+# Migration 040. The form caps the description at 500 characters; the column holds 1000, so the
+# CHECK only ever stops a client that bypasses the form. Longer text is cut here rather than
+# refused: a 400 would leave an offline report in the citizen's outbox forever over a free-text
+# field that is not even required.
+MAX_DESCRIPTION = 1000
+
+
+def _clean_description(value):
+    """-> the family's description of the damage, or None when they wrote none.
+
+    Control characters other than newline and tab are dropped. Format characters are KEPT: Sinhala
+    conjuncts such as ප්‍ර are written with a zero-width joiner (U+200D, category Cf), and stripping
+    it would change the words the family wrote.
+    """
+    if not isinstance(value, str):
+        return None
+    text = "".join(ch for ch in value if ch in "\n\t" or unicodedata.category(ch) != "Cc").strip()
+    return text[:MAX_DESCRIPTION] or None
 
 
 def _get_connection():
@@ -106,6 +126,10 @@ def submit_case():
     locale = body.get("locale")
     locale = locale if isinstance(locale, str) and locale in ("si", "ta", "en") else "si"
 
+    # The family's own description of the damage (Step 3 of the report, migration 040). Shown to
+    # the officer, administrator and Divisional Secretariat covering the case, and to no one else.
+    citizen_description = _clean_description(body.get("description"))
+
     conn = _get_connection()
     try:
         with conn:
@@ -154,8 +178,9 @@ def submit_case():
                          (offline_id, canonical_id, damage_category,
                           gps_lat, gps_lng, submitter_identity_hash,
                           officer_id, submitted_by_officer, citizen_id,
-                          district, ds_division_id, locale, household_id)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                          district, ds_division_id, locale, household_id,
+                          citizen_description)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                        ON CONFLICT (offline_id) DO NOTHING
                        RETURNING id""",
                     (
@@ -175,6 +200,8 @@ def submit_case():
                         # index in this statement — and in the tests that assert on them — is
                         # unchanged.
                         household_id,
+                        # Appended last for the same reason (migration 040).
+                        citizen_description,
                     ),
                 )
                 row = cur.fetchone()

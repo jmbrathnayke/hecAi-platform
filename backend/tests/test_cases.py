@@ -80,6 +80,7 @@ class FakeCursor:
                 "ds_division": params[10],
                 "locale": params[11] if len(params) > 11 else "si",
                 "household_id": params[12] if len(params) > 12 else None,
+                "citizen_description": params[13] if len(params) > 13 else None,
             }
             self._result = (self.store["case_pk"],)
         elif "officer_assessed_at = COALESCE" in sql:
@@ -665,3 +666,48 @@ def test_a_retried_submission_announces_nothing_twice(client, store, announced):
     assert again.status_code == 200
     assert len(announced["staff"]) == 1 and announced["citizen"] == ["Submitted"]
     assert len(store["cases"]) == 1
+
+
+
+# --- migration 040: the family's own description of the damage ------------------------------
+
+def _submit(client, **overrides):
+    body = _body(**overrides)
+    res = client.post("/api/v1/cases/submit", json=body,
+                      headers={"Authorization": f"Bearer {_token()}"})
+    return res, body
+
+
+def test_the_familys_description_is_stored_with_the_case(client, store, estimate_spy):
+    res, body = _submit(client, description="  The elephant broke the kitchen wall.  ")
+    assert res.status_code == 201
+    assert store["rows"][body["offline_id"]]["citizen_description"] == "The elephant broke the kitchen wall."
+
+
+def test_a_sinhala_description_keeps_its_zero_width_joiners(client, store, estimate_spy):
+    # ප්‍ර is written with U+200D. Stripping "invisible" characters would change the words.
+    text = "අලියා ප්\u200dරධාන ගේට්ටුව කැඩුවා"
+    res, body = _submit(client, description=text)
+    assert res.status_code == 201
+    stored = store["rows"][body["offline_id"]]["citizen_description"]
+    assert stored == text
+    assert "\u200d" in stored
+
+
+def test_control_characters_are_dropped_but_line_breaks_kept(client, store, estimate_spy):
+    res, body = _submit(client, description="wall\x00 broken\x07\nroof too")
+    assert store["rows"][body["offline_id"]]["citizen_description"] == "wall broken\nroof too"
+
+
+@pytest.mark.parametrize("value", [None, "", "   ", 42, ["x"], {"a": 1}])
+def test_no_description_is_stored_as_null(client, store, estimate_spy, value):
+    res, body = _submit(client, description=value)
+    assert res.status_code == 201
+    assert store["rows"][body["offline_id"]]["citizen_description"] is None
+
+
+def test_an_over_long_description_is_trimmed_rather_than_refusing_the_report(client, store, estimate_spy):
+    # A 400 would strand an offline report in the outbox over an optional free-text field.
+    res, body = _submit(client, description="x" * 1500)
+    assert res.status_code == 201
+    assert len(store["rows"][body["offline_id"]]["citizen_description"]) == 1000

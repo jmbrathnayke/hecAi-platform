@@ -9,10 +9,14 @@
 // photographs now upload, and this shows them.
 //
 // TWO SOURCES, KEPT APART ON PURPOSE. `citizen` is the household's own account of the damage;
-// `officer` is what the field officer photographed at the site, which is the image MobileNetV2
-// classified and therefore the one the assessment actually rests on. An approver reading a case
-// file needs to know which they are looking at, so the label is part of the tile and not a legend
+// `officer` is what the field officer photographed at the site. An approver reading a case file
+// needs to know which they are looking at, so the label is part of the tile and not a legend
 // somewhere else.
+//
+// EITHER CAN BE CLASSIFIED (2026-10-02). With `onClassify`, the officer page offers "Classify with
+// AI" on each of the family's photographs: the image is downloaded into the officer's browser and
+// MobileNetV2 runs on it there, so an officer can assess a report without first travelling to it.
+// The assessment records which photograph it rests on (officer_cases.py `input_source`).
 //
 // URLS EXPIRE. The server hands out signed URLs valid for minutes against a private bucket. That
 // is deliberate — a link that leaked would otherwise never expire — and it means this component
@@ -29,6 +33,12 @@ type Props = {
   caseRef?: string;
   /** `admin` reads a finished case file; `officer` is about to capture the assessment photo. */
   variant?: "admin" | "officer";
+  /** Offered on the family's photographs while the officer may assess the case. */
+  onClassify?: (photo: CasePhoto) => void;
+  /** The photograph being classified, or the one the result on screen came from. */
+  activePhotoId?: number | null;
+  /** True while a classification or submission is in flight. */
+  classifyDisabled?: boolean;
 };
 
 type State =
@@ -36,7 +46,13 @@ type State =
   | { kind: "ready"; photos: CasePhoto[] }
   | { kind: "failed"; failure: PhotoFailure };
 
-export function PhotoGallery({ caseRef, variant = "admin" }: Props) {
+export function PhotoGallery({
+  caseRef,
+  variant = "admin",
+  onClassify,
+  activePhotoId = null,
+  classifyDisabled = false,
+}: Props) {
   const t = useTranslations("admin");
   const [state, setState] = useState<State>({ kind: "loading" });
   // Which tile is open full-size. Kept here rather than in a route so the approver never loses
@@ -145,12 +161,28 @@ export function PhotoGallery({ caseRef, variant = "admin" }: Props) {
             <p className="text-caption text-ink-secondary" data-testid={`photo-source-${photo.source}`}>
               {t(`photo.source.${photo.source}`)}
             </p>
+            {onClassify && photo.source === "citizen" && photo.url && (
+              <button
+                type="button"
+                onClick={() => onClassify(photo)}
+                disabled={classifyDisabled}
+                aria-pressed={activePhotoId === photo.id}
+                data-testid={`photo-classify-${photo.id}`}
+                className={`flex min-h-touch-target w-full items-center justify-center rounded-md px-design-2 text-label font-semibold disabled:opacity-60 ${
+                  activePhotoId === photo.id
+                    ? "bg-forest text-ink-on-dark"
+                    : "border border-forest text-forest"
+                }`}
+              >
+                {t(activePhotoId === photo.id ? "photo.classifySelected" : "photo.classify")}
+              </button>
+            )}
           </li>
         ))}
       </ul>
 
-      {/* The officer's photograph is the model input; the citizen's is not. Said once under the
-          grid rather than on every tile, so the distinction is available without shouting. */}
+      {/* Said once under the grid rather than on every tile, so the distinction is available
+          without shouting. */}
       <p className="mt-design-3 text-caption text-ink-secondary">{t("photo.sourceNote")}</p>
 
       {expanded?.url && (

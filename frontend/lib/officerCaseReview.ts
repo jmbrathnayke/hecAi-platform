@@ -29,6 +29,8 @@ export interface OfficerCaseDetail {
     district: string | null;
     ds_division: string | null;
     household_ref: string | null;
+    /** What the family wrote about the damage (migration 040). Absent from an older backend. */
+    citizen_description?: string | null;
   };
   workflow: {
     stage: string;
@@ -49,6 +51,10 @@ export interface OfficerCaseDetail {
      *  recognised, not because intact land was. Optional — rows written before the gate
      *  existed, and an older backend, simply omit it. */
     out_of_domain?: boolean;
+    /** Which image was classified: the officer's own site photo, or one the family submitted.
+     *  Null on assessments recorded before the field existed. */
+    input_source?: "officer_capture" | "citizen_photo" | null;
+    input_photo_id?: number | null;
     created_at: string | null;
   } | null;
   ai_assisted_estimate: {
@@ -146,10 +152,18 @@ type GatedResult = Pick<
     >
   >;
 
+/**
+ * What the officer classified. `camera` is their own photo of the site; `citizen_photo` is one of
+ * the photographs the family submitted, downloaded into this browser and classified here. The
+ * server checks the photo is one of THIS case's citizen photographs and records which it was.
+ */
+export type AssessmentInput = { kind: "camera" } | { kind: "citizen_photo"; photoId: number };
+
 export function buildAssessmentBody(
   result: GatedResult,
   override: OverrideChoice | null,
   crop: CropAssessment | null = null,
+  input: AssessmentInput = { kind: "camera" },
 ): Record<string, unknown> {
   const overridden = override !== null && override.category !== result.classId;
   const finalClass = overridden ? override!.category : result.classId;
@@ -182,6 +196,11 @@ export function buildAssessmentBody(
     override_reason: overridden ? override!.reason.trim() : null,
     ...gateFields,
     ...(cropFields ?? {}),
+    // Omitted for the officer's own photo, which the server records as officer_capture: the body
+    // of every assessment made that way stays exactly what it was.
+    ...(input.kind === "citizen_photo"
+      ? { input_source: "citizen_photo", input_photo_id: input.photoId }
+      : {}),
   };
 }
 

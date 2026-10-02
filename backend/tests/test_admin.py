@@ -231,6 +231,7 @@ class FakeCursor:
                 c.get("officer_id"), c.get("officer_review_started_at"),
                 c.get("officer_assessed_at"), c.get("officer_assessed_by"),
                 c.get("ds_final_amount"), c.get("ds_final_reason"), c.get("ds_final_at"),
+                c.get("citizen_description"),
             )
         elif "SELECT officer_assessed_at FROM cases WHERE id" in sql:
             (case_id,) = params
@@ -774,6 +775,11 @@ def test_case_detail_never_returns_citizen_nic_plain(client):
         # The approver needs it: submitted_via is 'app' for both the citizen and the
         # officer-assisted path, so nothing else here says whether anyone saw the damage.
         "submitted_by_officer",
+        # The family's own account of the damage (migration 040). Admitted to this ONE-case view,
+        # which is already scoped to the administrator's district, because an approval that never
+        # read the claimant's words is not a review of the claim. It stays out of the case list,
+        # the CSV/PDF export and the research export, which are where bulk exposure would happen.
+        "citizen_description",
     }
 
 
@@ -1441,3 +1447,32 @@ def test_cases_can_be_organised_by_assessment_reference_and_officer(client, stor
 def test_list_items_carry_division_and_responsible_officer(client, store):
     items = client.get("/api/v1/admin/cases?limit=50", headers=_auth()).get_json()["items"]
     assert all("ds_division" in c and "responsible_officer_id" in c for c in items)
+
+
+# --- the family's description and the classified photo (migration 040, 2026-10-02) ---------------
+
+def test_case_detail_carries_the_familys_own_description(client, store):
+    case = next(c for c in store["cases"] if c["id"] == _CASE_1_ID)
+    case["citizen_description"] = "අලියා ගෙදර බිත්තිය කැඩුවා"
+    body = client.get(f"/api/v1/admin/cases/{_CASE_1_OFFLINE_ID}", headers=_auth()).get_json()
+    assert body["case"]["citizen_description"] == "අලියා ගෙදර බිත්තිය කැඩුවා"
+
+
+def test_case_detail_description_is_null_when_the_family_wrote_none(client):
+    body = client.get(f"/api/v1/admin/cases/{_CASE_1_OFFLINE_ID}", headers=_auth()).get_json()
+    assert body["case"]["citizen_description"] is None
+
+
+def test_case_detail_ai_result_says_which_photo_was_classified(client, store):
+    store["inference_log"].append(
+        _inference_row(_CASE_1_ID, gate={"input_source": "citizen_photo", "input_photo_id": 7})
+    )
+    ai = client.get(f"/api/v1/admin/cases/{_CASE_1_OFFLINE_ID}", headers=_auth()).get_json()["ai_result"]
+    assert ai["input_source"] == "citizen_photo"
+    assert ai["input_photo_id"] == 7
+
+
+def test_case_detail_input_source_is_null_on_rows_older_than_the_field(client, store):
+    store["inference_log"].append(_inference_row(_CASE_1_ID))
+    ai = client.get(f"/api/v1/admin/cases/{_CASE_1_OFFLINE_ID}", headers=_auth()).get_json()["ai_result"]
+    assert ai["input_source"] is None

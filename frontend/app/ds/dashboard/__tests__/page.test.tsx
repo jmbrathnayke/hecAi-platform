@@ -10,6 +10,8 @@ jest.mock("next/link", () => ({
   ),
 }));
 jest.mock("@/lib/dsCases", () => ({ fetchDsCases: jest.fn() }));
+// The evidence panel renders the gallery, which fetches on its own; these tests are about the card.
+jest.mock("@/lib/casePhotos", () => ({ listCasePhotos: jest.fn().mockResolvedValue({ ok: true, photos: [] }) }));
 
 const mockFetch = fetchDsCases as jest.Mock;
 
@@ -134,5 +136,26 @@ describe("failures are told apart", () => {
     render(<DsDashboardPage />);
     await screen.findByText("error.network");
     expect(screen.queryByText("error.detail")).not.toBeInTheDocument();
+  });
+});
+
+describe("the evidence a payment is decided on (migration 040)", () => {
+  it("shows what the family wrote beside their photographs", async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      cases: [dsCase("HEC-2026-0001", { citizen_description: "අලියා ගෙදර බිත්තිය කැඩුවා" })],
+      count: 1,
+      dsDivision: THALAWA,
+    });
+    render(<DsDashboardPage />);
+    fireEvent.click(await screen.findByTestId("ds-evidence-toggle"));
+    expect(await screen.findByTestId("ds-citizen-description")).toHaveTextContent("අලියා ගෙදර බිත්තිය කැඩුවා");
+  });
+
+  it("says so when the family wrote nothing", async () => {
+    mockFetch.mockResolvedValue({ ok: true, cases: [dsCase("HEC-2026-0001")], count: 1, dsDivision: THALAWA });
+    render(<DsDashboardPage />);
+    fireEvent.click(await screen.findByTestId("ds-evidence-toggle"));
+    expect(await screen.findByTestId("ds-citizen-description")).toHaveTextContent("evidence.noDescription");
   });
 });

@@ -172,3 +172,24 @@ describe("submitCaseOnline", () => {
     expect(await submitCaseOnline(record, "t")).toBeNull();
   });
 });
+
+describe("the family's description (migration 040)", () => {
+  it("travels in the request body when the family wrote one", () => {
+    const rec = toPoCRecord({ damage_category: "property", description: "  wall broken  " }, "off-d1", "ts", "h");
+    expect(rec.description).toBe("wall broken");
+    expect(buildCasePayload(rec).description).toBe("wall broken");
+  });
+
+  it("is left out entirely when there is none, keeping the old body byte for byte", () => {
+    for (const description of [undefined, "", "    ", 42]) {
+      const rec = toPoCRecord({ damage_category: "crop", description }, "off-d2", "ts", "h");
+      expect(rec.description).toBeUndefined();
+      expect(buildCasePayload(rec)).not.toHaveProperty("description");
+    }
+  });
+
+  it("is capped at the form's own limit", () => {
+    const rec = toPoCRecord({ description: "x".repeat(800) }, "off-d3", "ts", "h");
+    expect(rec.description).toHaveLength(500);
+  });
+});

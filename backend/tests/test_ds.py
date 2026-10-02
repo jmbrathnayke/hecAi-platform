@@ -53,6 +53,7 @@ def _case(canonical, division, status="Submitted", household_ref="HH-2026-0001")
         "ds_final_at": None,
         "ds_authorized_at": None,
         "bank_account_last4": "5678",
+        "citizen_description": None,
         # PII that must never appear in a response:
         "citizen_nic_plain": "200012345678",
         "submitter_identity_hash": "deadbeef",
@@ -64,7 +65,7 @@ _PROJECTION = (
     "submitted_at", "updated_at", "approved_amount", "household_ref",
     "ai_estimate", "ai_model_version", "district", "officer_assessed",
     "ds_final_amount", "ds_final_reason", "ds_final_at", "ds_authorized_at",
-    "bank_account_last4",
+    "bank_account_last4", "citizen_description",
 )
 
 
@@ -269,3 +270,13 @@ def test_a_recorded_final_decision_is_listed(client, store):
         "amount_lkr": 42000.0, "reason": "Confirmed on site visit.",
         "decided_at": "2026-08-21T10:00:00",
     }
+
+
+# --------------------------------------------------------------------- the family's description
+def test_the_familys_own_description_travels_with_each_case(client, store):
+    # Migration 040. The DS office decides a real payment and must be able to read what the family
+    # wrote about the damage, beside the photographs.
+    store["cases"][0]["citizen_description"] = "අලියා ගෙදර බිත්තිය කැඩුවා"
+    cases = {c["canonical_id"]: c for c in client.get("/api/v1/ds/cases", headers=_auth()).get_json()["cases"]}
+    assert cases["HEC-2026-0001"]["citizen_description"] == "අලියා ගෙදර බිත්තිය කැඩුවා"
+    assert cases["HEC-2026-0002"]["citizen_description"] is None

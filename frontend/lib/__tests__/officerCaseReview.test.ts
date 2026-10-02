@@ -233,3 +233,22 @@ describe("officer-assisted submission carries the on-device classification", () 
     expect(buildCasePayload(stray)).not.toHaveProperty("ai_classification");
   });
 });
+
+describe("what was classified (2026-10-02)", () => {
+  const RESULT = { classId: "property_damage" as const, confidence: 0.9, severity: "Severe" as const,
+                   processingTimeMs: 100, modelVersion: "mobilenetv2-v1" };
+
+  it("names the family's photograph when it was the input", () => {
+    expect(buildAssessmentBody(RESULT, null, null, { kind: "citizen_photo", photoId: 11 })).toMatchObject({
+      input_source: "citizen_photo",
+      input_photo_id: 11,
+    });
+  });
+
+  it("leaves the body of an officer-capture assessment exactly as it always was", () => {
+    const body = buildAssessmentBody(RESULT, null, null, { kind: "camera" });
+    expect(body).not.toHaveProperty("input_source");
+    expect(body).not.toHaveProperty("input_photo_id");
+    expect(buildAssessmentBody(RESULT, null)).toEqual(body);
+  });
+});

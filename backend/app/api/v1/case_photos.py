@@ -9,10 +9,13 @@ officer could see what had been photographed, so a decision could not be shown t
 appeal against it could not be examined. The photographs existed the whole time -- in the
 citizen's browser and in the officer's -- with nowhere to go.
 
-WHAT IT DOES NOT CHANGE. MobileNetV2 still runs entirely in the officer's browser on the officer's
-own photograph (FR-2.1/2.2). No image is sent anywhere to be classified, and nothing here is a
-model input. Storing evidence and running inference on-device are independent claims; only the
-first is new.
+WHAT IT DOES NOT CHANGE. MobileNetV2 still runs entirely in the officer's browser (FR-2.1/2.2). No
+image is sent anywhere to be classified, and this endpoint runs no model. Since 2026-10-02 an
+officer may classify one of the family's photographs instead of photographing the damage
+themselves: the browser downloads it through the signed URL below (Storage answers with
+Access-Control-Allow-Origin: *) and classifies it on the device, and officer_cases.py records
+which photo the assessment rests on. Storing evidence and running inference on-device remain
+independent claims.
 
 SCOPE IS THE CASE'S OWN SCOPE, TAKEN FROM THE JWT. A photograph is the most revealing thing this
 system holds about a household, so its visibility is not widened by an inch beyond the case it
