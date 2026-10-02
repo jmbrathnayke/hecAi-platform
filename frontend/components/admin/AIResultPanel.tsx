@@ -87,6 +87,14 @@ export function AIResultPanel({ aiResult }: AIResultPanelProps) {
 
       <p className="text-caption text-ink-disabled">{aiResult.model_version}</p>
 
+      {/* What the classification is evidence of. A result from the family's own photograph means
+          no officer has photographed the damage; the approver should know that before deciding. */}
+      {(aiResult.input_source === "citizen_photo" || aiResult.input_source === "officer_capture") && (
+        <p className="text-caption text-ink-secondary" data-testid="ai-input-source">
+          {t("ai.classifiedFrom")} <span className="font-medium text-ink-primary">{t(`ai.inputSource.${aiResult.input_source}`)}</span>
+        </p>
+      )}
+
       {aiResult.was_overridden && (
         <div className="rounded-md border border-amber bg-amber-pale p-design-3 text-body text-ink-primary">
           <p>

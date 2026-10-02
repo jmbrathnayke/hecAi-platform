@@ -232,7 +232,15 @@ export default function DsDashboardPage() {
               </button>
 
               {evidenceFor === c.canonical_id && (
-                <div className="mt-design-3">
+                <div className="mt-design-3 space-y-design-3">
+                  {/* The family's own words (migration 040) belong with the photographs: both are
+                      the claim this screen is about to pay. */}
+                  <div data-testid="ds-citizen-description">
+                    <p className="text-label font-semibold text-ink-primary">{t("evidence.description")}</p>
+                    <p className={`mt-design-1 whitespace-pre-wrap text-body ${c.citizen_description ? "text-ink-primary" : "text-ink-disabled"}`}>
+                      {c.citizen_description || t("evidence.noDescription")}
+                    </p>
+                  </div>
                   <PhotoGallery caseRef={c.canonical_id} />
                 </div>
               )}

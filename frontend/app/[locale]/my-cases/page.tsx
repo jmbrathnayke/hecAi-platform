@@ -26,6 +26,7 @@ import {
   type CitizenFailure,
 } from "@/lib/citizenCases";
 import { StatusChip } from "@/components/StatusChip";
+import { PhotoDeliveryStatus } from "@/components/PhotoDeliveryStatus";
 import PushNotificationToggle from "@/components/PushNotificationToggle";
 import NotificationBell from "@/components/NotificationBell";
 
@@ -208,6 +209,13 @@ export default function MyCasesPage() {
                     <dd className="text-body text-ink-primary">{formatDate(c.submitted_at)}</dd>
                   </div>
                 </dl>
+                {/* Whether this case's photographs reached the DWC, from this phone's own outbox.
+                    Nothing is shown for a report filed on another device. */}
+                {c.offline_id && (
+                  <div className="mt-design-3">
+                    <PhotoDeliveryStatus offlineId={c.offline_id} canonicalId={c.canonical_id} autoSend={false} />
+                  </div>
+                )}
               </li>
             ))}
           </ul>

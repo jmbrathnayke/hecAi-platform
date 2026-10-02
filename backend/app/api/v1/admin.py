@@ -454,6 +454,10 @@ def _load_case_detail(cur, offline_id, district, known_row=None, known_comp_row=
             "out_of_domain": bool(input_features.get("ai_out_of_domain")),
             "domain_distance": input_features.get("ai_domain_distance"),
             "raw_prediction": input_features.get("ai_raw_prediction"),
+            # Which image was classified: the officer's own site photo or one the family
+            # submitted (officer_cases.py). None on rows older than the field.
+            "input_source": input_features.get("input_source"),
+            "input_photo_id": input_features.get("input_photo_id"),
             "created_at": ai_row[8].isoformat() if ai_row[8] else None,
         }
 
@@ -495,11 +499,14 @@ def _load_case_detail(cur, offline_id, district, known_row=None, known_comp_row=
     cur.execute(
         """SELECT district, ds_division_id, assigned_officer_id, officer_id,
                   officer_review_started_at, officer_assessed_at, officer_assessed_by,
-                  ds_final_amount, ds_final_reason, ds_final_at
+                  ds_final_amount, ds_final_reason, ds_final_at, citizen_description
              FROM cases WHERE id = %s""",
         (case_id,),
     )
-    wf = cur.fetchone() or (None,) * 10
+    wf = cur.fetchone() or (None,) * 11
+    # The family's own description of the damage (migration 040), read here rather than added to
+    # the positional SELECT above for the same reason as the workflow columns.
+    case["citizen_description"] = wf[10] if len(wf) > 10 else None
 
     def _ts(value):
         return value.isoformat() if value else None

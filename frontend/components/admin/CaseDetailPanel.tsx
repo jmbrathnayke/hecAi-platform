@@ -241,6 +241,14 @@ export function CaseDetailPanel({ offlineId }: CaseDetailPanelProps) {
       {/* The admin route keys on offline_id; the endpoint accepts either that or the canonical
           id, so the panel passes what it already has rather than waiting for a canonical id a
           just-synced case may not carry yet. */}
+      {/* The family's own words about the damage (migration 040), read beside their photographs:
+          an approval that never read the claim is not a review of it. */}
+      <div className="rounded-md border border-border-subtle bg-surface-raised p-design-4" data-testid="admin-citizen-description">
+        <h3 className="text-label font-semibold text-ink-primary">{t("citizenDescription.heading")}</h3>
+        <p className={`mt-design-1 whitespace-pre-wrap text-body ${c.citizen_description ? "text-ink-primary" : "text-ink-disabled"}`}>
+          {c.citizen_description || t("citizenDescription.none")}
+        </p>
+      </div>
       <PhotoGallery caseRef={c.canonical_id ?? offlineId} />
       <AIResultPanel aiResult={ai_result} />
       <CompensationPanel compensation={compensation} />

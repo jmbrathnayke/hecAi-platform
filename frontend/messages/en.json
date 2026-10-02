@@ -196,7 +196,14 @@
     "notRecorded": "Not recorded",
     "assigningRef": "Getting your reference number…",
     "temporaryLabel": "Temporary reference",
-    "temporaryHint": "Your HEC reference number appears in My Claims once this report reaches the server."
+    "temporaryHint": "Your HEC reference number appears in My Claims once this report reaches the server.",
+    "photosBeforeCase": "{count, plural, one {Your photo} other {Your # photos}} will be sent to the DWC officer as soon as your report reaches the DWC.",
+    "photosSending": "Sending your photos to the DWC officer… ({done} of {total})",
+    "photosSent": "{count, plural, one {Your photo has} other {All # of your photos have}} reached the DWC officer.",
+    "photosWaiting": "{count, plural, one {1 photo is} other {# photos are}} still on this phone. They will be sent automatically when you are online — stay signed in to this app.",
+    "photosPartial": "{done} of {total} photos reached the DWC officer.",
+    "photosRejected": "{count, plural, one {1 photo} other {# photos}} could not be sent (too large, or no longer on this phone).",
+    "photosSendNow": "Send now"
   },
   "status": {
     "title": "Check Claim Status",
@@ -368,7 +375,9 @@
       "overrideError": "Could not save the override. Please try again.",
       "overridden": "Override recorded.",
       "photosCaptured": "{count, plural, one {# photo classified} other {# photos classified}}",
-      "photoStripAria": "Photos classified in this case"
+      "photoStripAria": "Photos classified in this case",
+      "photoFetchError": "This photo could not be loaded for classification. Reload the page and try again.",
+      "analyzingCitizenPhoto": "Classifying the family's photo on this device…"
     },
     "camera": {
       "viewfinderLabel": "Camera viewfinder",
@@ -546,7 +555,7 @@
       "reviewStarted": "Review started. The citizen has been told their report is under review.",
       "assessTitle": "Officer assessment",
       "reassessTitle": "Update assessment",
-      "assessHint": "Inspect the site and photograph the damage yourself. The photo is classified on this device — the model never sends it anywhere — and it is then attached to the case as evidence for the reviewers.",
+      "assessHint": "Classify one of the family's photos above, or inspect the site and photograph the damage yourself. Either way the photo is classified on this device — the model never sends it anywhere. A photo you take is then attached to the case as evidence for the reviewers.",
       "notFinalClassification": "AI classification assists the officer. It is not a final decision.",
       "submitAssessment": "Submit assessment",
       "submitting": "Submitting…",
@@ -587,7 +596,17 @@
         "ds_authorized_payment": "Payment authorised",
         "case_paid": "Payment processed"
       },
-      "estimateSynthetic": "Prototype estimate — the crop model is trained on synthetic data, not official compensation records."
+      "estimateSynthetic": "Prototype estimate — the crop model is trained on synthetic data, not official compensation records.",
+      "citizenReportTitle": "The family's report",
+      "citizenDescription": "What the family wrote",
+      "noCitizenDescription": "The family did not write a description.",
+      "classifyCitizenHint": "Tap “Classify with AI” on one of the family's photos to assess it on this device, or photograph the damage yourself below.",
+      "resultFromCitizenPhoto": "This result is for the family's own photo, not one you took at the site.",
+      "classifiedFrom": "Classified from",
+      "inputSource": {
+        "citizen_photo": "The family's photo",
+        "officer_capture": "The officer's own photo"
+      }
     },
     "navProfile": "Profile",
     "photo": {
@@ -708,7 +727,9 @@
     },
     "evidence": {
       "show": "View evidence photographs",
-      "hide": "Hide evidence photographs"
+      "hide": "Hide evidence photographs",
+      "description": "What the family wrote",
+      "noDescription": "The family did not write a description."
     }
   },
   "admin": {
@@ -855,7 +876,12 @@
       "officerOverride": "Officer override:",
       "reasonLabel": "Reason:",
       "confidenceCaveat": "This is how strongly the model prefers this class over its other two — not the chance it is right. It only knows crop damage, property damage and no damage; a photo of something else is caught by a separate check and recorded as No Damage instead of being guessed at. Check the result against what you see.",
-      "outOfDomain": "Flagged by the out-of-domain check: the photo did not resemble any of the three trained classes, so it was recorded as No Damage rather than assigned a class. No compensation is estimated for such a case."
+      "outOfDomain": "Flagged by the out-of-domain check: the photo did not resemble any of the three trained classes, so it was recorded as No Damage rather than assigned a class. No compensation is estimated for such a case.",
+      "classifiedFrom": "Classified from:",
+      "inputSource": {
+        "citizen_photo": "the family's photo",
+        "officer_capture": "the officer's own photo"
+      }
     },
     "photo": {
       "unavailable": "This photograph could not be loaded.",
@@ -867,7 +893,7 @@
       "storageUnavailable": "Photograph storage is not configured for this deployment.",
       "retry": "Try again",
       "close": "Close",
-      "sourceNote": "The officer's photograph is the one the AI classified. The family's photographs are their own account of the damage and were not classified.",
+      "sourceNote": "Either photo can be classified by the AI on the officer's device. The recorded AI result says which one it was made from.",
       "source": {
         "citizen": "Reported by the family",
         "officer": "Taken by the field officer"
@@ -879,7 +905,9 @@
       "expand": {
         "citizen": "Open the family's photograph full size",
         "officer": "Open the officer's photograph full size"
-      }
+      },
+      "classify": "Classify with AI",
+      "classifySelected": "Selected for assessment"
     },
     "analytics": {
       "title": "Analytics Dashboard",
@@ -938,6 +966,10 @@
       "dsFinal": "DS final decision",
       "dsFinalPending": "Awaiting Divisional Secretariat decision",
       "dsFinalReason": "Reason"
+    },
+    "citizenDescription": {
+      "heading": "What the family wrote",
+      "none": "The family did not write a description."
     }
   },
   "notifications": {

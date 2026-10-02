@@ -24,6 +24,8 @@ export interface AdminCaseDetailCase {
   submitted_by_officer: boolean;
   submitter_identity_hash: string | null;
   approved_amount: number | null;
+  /** What the family wrote about the damage (migration 040). Absent from an older backend. */
+  citizen_description?: string | null;
 }
 
 export interface AdminAiResult {
@@ -43,6 +45,10 @@ export interface AdminAiResult {
   domain_distance?: number | null;
   /** What the closed-set softmax would have said. */
   raw_prediction?: string | null;
+  /** Which image was classified: the officer's own site photo or one the family submitted.
+   *  Null on rows older than the field. */
+  input_source?: "officer_capture" | "citizen_photo" | null;
+  input_photo_id?: number | null;
   created_at: string | null;
 }
 

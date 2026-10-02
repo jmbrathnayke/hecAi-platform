@@ -332,3 +332,46 @@ test("completing an action updates the panel's status and audit trail from the s
   expect(screen.getByText("statusLabels.UnderReview")).toBeInTheDocument();
   expect(mockFetchAdminCaseDetail).toHaveBeenCalledTimes(1);
 });
+
+// --- the family's description and the classified photo (migration 040, 2026-10-02) ---------------
+test("shows what the family wrote about the damage, beside their photographs", async () => {
+  mockFetchAdminCaseDetail.mockResolvedValue(
+    makeResponse({ case: { ...makeResponse().case, citizen_description: "අලියා ගෙදර බිත්තිය කැඩුවා" } }),
+  );
+  render(<CaseDetailPanel offlineId="off-1" />);
+  expect(await screen.findByTestId("admin-citizen-description")).toHaveTextContent("අලියා ගෙදර බිත්තිය කැඩුවා");
+});
+
+test("says so when the family wrote no description", async () => {
+  render(<CaseDetailPanel offlineId="off-1" />);
+  expect(await screen.findByTestId("admin-citizen-description")).toHaveTextContent("citizenDescription.none");
+});
+
+test("tells the approver the AI result was made from the family's own photograph", async () => {
+  mockFetchAdminCaseDetail.mockResolvedValue(
+    makeResponse({
+      ai_result: {
+        model_type: "mobilenetv2", model_version: "v1", prediction: "property_damage", confidence: 0.9,
+        was_overridden: false, override_reason: null, override_category: null, ai_severity: "Severe",
+        input_source: "citizen_photo", input_photo_id: 11, created_at: null,
+      },
+    }),
+  );
+  render(<CaseDetailPanel offlineId="off-1" />);
+  expect(await screen.findByTestId("ai-input-source")).toHaveTextContent("ai.inputSource.citizen_photo");
+});
+
+test("says nothing about the input on rows older than the field", async () => {
+  mockFetchAdminCaseDetail.mockResolvedValue(
+    makeResponse({
+      ai_result: {
+        model_type: "mobilenetv2", model_version: "v1", prediction: "crop_damage", confidence: 0.9,
+        was_overridden: false, override_reason: null, override_category: null, ai_severity: null,
+        created_at: null,
+      },
+    }),
+  );
+  render(<CaseDetailPanel offlineId="off-1" />);
+  await screen.findByTestId("admin-citizen-description");
+  expect(screen.queryByTestId("ai-input-source")).not.toBeInTheDocument();
+});

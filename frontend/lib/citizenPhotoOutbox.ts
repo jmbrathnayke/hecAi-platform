@@ -61,13 +61,40 @@ export function pendingPhotoRecords(all: OutboxRecord[]): OutboxRecord[] {
   });
 }
 
+/** How far one report's photographs have got. Read from this phone's own outbox record. */
+export interface PhotoDelivery {
+  total: number;
+  /** Confirmed stored on the server, where the officer, administrator and DS can see them. */
+  uploaded: number;
+  /** Will never upload (too large, wrong type, the blob is gone from this phone). */
+  rejected: number;
+  /** Still on this phone, waiting to be sent. */
+  pending: number;
+}
+
+export function photoDelivery(record: OutboxRecord): PhotoDelivery {
+  const keys = stringList(record.photo_blob_keys);
+  const uploaded = new Set(stringList(record.photos_uploaded_keys));
+  const rejected = new Set(stringList(record.photos_rejected_keys));
+  const up = keys.filter((k) => uploaded.has(k)).length;
+  const rej = keys.filter((k) => !uploaded.has(k) && rejected.has(k)).length;
+  return { total: keys.length, uploaded: up, rejected: rej, pending: keys.length - up - rej };
+}
+
 let inFlight = false;
 
 /**
  * Upload every citizen photograph that is due. Safe to call from any trigger, as often as wanted:
  * a no-op offline, while another flush runs, with no session, or with a staff session signed in.
+ *
+ * `force` is for a citizen pressing "Send now": it ignores the retry backoff for this attempt only.
+ * It is a separate flag rather than a far-future `now`, because `now` also stamps the next retry
+ * time, and a failure under a fake clock would schedule that retry years away.
  */
-export async function flushCitizenPhotos(now: number = Date.now()): Promise<PhotoFlushResult> {
+export async function flushCitizenPhotos(
+  now: number = Date.now(),
+  { force = false }: { force?: boolean } = {},
+): Promise<PhotoFlushResult> {
   const result: PhotoFlushResult = { attempted: 0, uploaded: 0, rejected: 0 };
   if (typeof navigator !== "undefined" && navigator.onLine === false) {
     return { ...result, skipped: "offline" };
@@ -76,6 +103,7 @@ export async function flushCitizenPhotos(now: number = Date.now()): Promise<Phot
   inFlight = true;
   try {
     const due = pendingPhotoRecords(await getAllCases()).filter((r) => {
+      if (force) return true;
       const next = r.photos_next_attempt_at;
       return typeof next !== "number" || next <= now;
     });

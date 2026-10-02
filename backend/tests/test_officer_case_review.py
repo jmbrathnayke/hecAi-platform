@@ -84,6 +84,7 @@ class FakeCursor:
                 c.get("submitted_by_officer", False), c["district"], c["ds_division_id"],
                 "HH-2026-0003", c.get("assigned_officer_id"), c.get("officer_review_started_at"),
                 c.get("officer_assessed_at"), c.get("officer_assessed_by"),
+                c.get("citizen_description"),
             )
         elif s.startswith("UPDATE cases SET status = 'Under Review'"):
             case = self._case_by_id(params[-1])
@@ -117,6 +118,11 @@ class FakeCursor:
         elif s.startswith("SELECT amount_lkr FROM compensation_estimates"):
             est = self.store["estimates"].get(params[0])
             self._one = None if est is None else (est,)
+        elif s.startswith("SELECT 1 FROM case_photos"):
+            photo_id, case_id = params
+            self._one = (1,) if any(p["id"] == photo_id and p["case_id"] == case_id
+                                    and p["source"] == "citizen"
+                                    for p in self.store["photos"]) else None
         elif s.startswith("SELECT event, created_at FROM audit_log"):
             self._rows = [(a["event"], datetime(2026, 9, 2, tzinfo=timezone.utc))
                           for a in reversed(self.store["audit"]) if a["case_id"] == params[0]]
@@ -161,6 +167,10 @@ def store():
                               "officer_id": None, "officer_assessed_at": datetime(2026, 9, 1)},
         },
         "estimates": {301: 100000.0},
+        # 11 is the family's photo of REF; 12 the officer's photo of REF; 13 another case's.
+        "photos": [{"id": 11, "case_id": 301, "source": "citizen"},
+                   {"id": 12, "case_id": 301, "source": "officer"},
+                   {"id": 13, "case_id": 302, "source": "citizen"}],
         "inference": [],
         "audit": [],
         "sql": [],
@@ -494,3 +504,72 @@ def test_invalid_assessments_are_rejected_without_writing(client, store, overrid
     assert res.status_code == 400
     assert res.get_json()["error"] == error
     assert store["inference"] == [] and store["audit"] == []
+
+
+# ------------------------------------------------------------------------------ what was classified
+def _meta(entry):
+    meta = entry["metadata"]
+    return json.loads(meta) if isinstance(meta, str) else meta
+
+
+def test_an_assessment_naming_no_input_is_recorded_as_the_officers_own_capture(client, store):
+    res = _assess(client)
+    assert res.status_code == 200
+    features = json.loads(store["inference"][0]["input_features"])
+    assert features["input_source"] == "officer_capture"
+    assert features["input_photo_id"] is None
+    assert res.get_json()["ai_result"]["input_source"] == "officer_capture"
+
+
+def test_the_officer_can_assess_from_the_familys_own_photo(client, store):
+    res = _assess(client, input_source="citizen_photo", input_photo_id=11)
+    assert res.status_code == 200
+    features = json.loads(store["inference"][0]["input_features"])
+    assert features["input_source"] == "citizen_photo"
+    assert features["input_photo_id"] == 11
+    recorded = next(a for a in store["audit"] if a["event"] == "officer_assessment_recorded")
+    assert _meta(recorded)["input_source"] == "citizen_photo"
+    assert _meta(recorded)["input_photo_id"] == 11
+    body = res.get_json()
+    assert body["ai_result"]["input_source"] == "citizen_photo"
+    assert body["ai_result"]["input_photo_id"] == 11
+    # The estimate is regenerated from this classification exactly as for the officer's own photo.
+    assert store["estimate_calls"][0]["category"] == "property"
+    assert body["ai_assisted_estimate"]["amount_lkr"] == 130000.0
+
+
+@pytest.mark.parametrize("photo_id", [12, 13, 999])
+def test_only_a_citizen_photo_of_this_case_can_be_named(client, store, photo_id):
+    # 12 is this case's OFFICER photo, 13 is another case's citizen photo, 999 does not exist.
+    res = _assess(client, input_source="citizen_photo", input_photo_id=photo_id)
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "input_photo_not_found"
+    assert store["inference"] == []
+    assert "officer_assessment_recorded" not in events(store)
+    assert store["estimate_calls"] == []
+
+
+@pytest.mark.parametrize("photo_id", [None, 0, -4, "11", True])
+def test_a_citizen_photo_assessment_must_name_the_photo(client, store, photo_id):
+    res = _assess(client, input_source="citizen_photo", input_photo_id=photo_id)
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "input_photo_required"
+    assert store["inference"] == []
+
+
+def test_an_unknown_input_source_is_refused(client, store):
+    res = _assess(client, input_source="satellite")
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "invalid_input_source"
+
+
+def test_a_photo_id_sent_with_the_officers_own_capture_is_not_recorded(client, store):
+    res = _assess(client, input_source="officer_capture", input_photo_id=11)
+    assert res.status_code == 200
+    assert json.loads(store["inference"][0]["input_features"])["input_photo_id"] is None
+
+
+def test_the_officer_reads_the_familys_own_description(client, store):
+    store["cases"][REF]["citizen_description"] = "අලියා ගෙදර බිත්තිය කැඩුවා"
+    res = client.get(f"/api/v1/officer/cases/{REF}", headers=_auth())
+    assert res.get_json()["case"]["citizen_description"] == "අලියා ගෙදර බිත්තිය කැඩුවා"

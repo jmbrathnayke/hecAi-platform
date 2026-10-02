@@ -1,7 +1,9 @@
 /**
  * Officer case review page (final governance workflow): where a "new report in your division"
- * notification lands. The officer classifies THEIR OWN photo on-device and submits only the result;
- * the compensation figure is shown as an AI-assisted estimate, never as a decision.
+ * notification lands. The family's description and photographs are always shown; the officer
+ * classifies one of those photographs, or their own capture, on-device and submits only the result
+ * (with which photo it was); the compensation figure is shown as an AI-assisted estimate, never as
+ * a decision.
  */
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import OfficerCaseReviewPage from "@/app/officer/cases/[ref]/page";
@@ -337,4 +339,102 @@ it("leaves an ordinary recorded result without a gate notice", async () => {
   render(<OfficerCaseReviewPage />);
   await screen.findByTestId("recorded-ai-result");
   expect(screen.queryByTestId("recorded-ood-notice")).not.toBeInTheDocument();
+});
+
+// ------------------------------------------------------------------ the family's report (2026-10-02)
+describe("the family's report", () => {
+  const CITIZEN_PHOTO = {
+    id: 11, source: "citizen", content_type: "image/jpeg", byte_size: 10, created_at: null,
+    url: "https://storage.example/sign/case-photos/p11.jpg?token=t",
+  };
+  const OFFICER_PHOTO = {
+    id: 12, source: "officer", content_type: "image/jpeg", byte_size: 10, created_at: null,
+    url: "https://storage.example/sign/case-photos/p12.jpg?token=t",
+  };
+  const originalFetch = global.fetch;
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it("stays visible on a closed case, with the family's own description, and offers nothing to classify", async () => {
+    // Before, the photographs lived inside the assessment box and vanished once a case was approved.
+    mockGet.mockResolvedValue({
+      ok: true,
+      detail: detail({
+        case: { ...detail().case, status: "Approved", citizen_description: "අලියා ගෙදර බිත්තිය කැඩුවා" },
+        actions: { can_start_review: false, can_assess: false, already_assessed: true },
+      }),
+    });
+    mockListCasePhotos.mockResolvedValue({ ok: true, photos: [CITIZEN_PHOTO] });
+    render(<OfficerCaseReviewPage />);
+    const report = await screen.findByTestId("citizen-report");
+    expect(report).toHaveTextContent("අලියා ගෙදර බිත්තිය කැඩුවා");
+    expect(await screen.findByTestId("photo-gallery")).toBeInTheDocument();
+    expect(screen.queryByTestId("photo-classify-11")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("officer-assessment")).not.toBeInTheDocument();
+  });
+
+  it("says so when the family wrote no description", async () => {
+    render(<OfficerCaseReviewPage />);
+    expect(await screen.findByTestId("citizen-description-none")).toHaveTextContent("caseReview.noCitizenDescription");
+  });
+
+  it("classifies the family's own photo on this device and records which photo it was", async () => {
+    mockListCasePhotos.mockResolvedValue({ ok: true, photos: [CITIZEN_PHOTO, OFFICER_PHOTO] });
+    const image = new Blob(["img"], { type: "image/jpeg" });
+    const fetchMock = jest.fn().mockResolvedValue({ ok: true, blob: async () => image });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    mockClassify.mockResolvedValue({
+      classId: "property_damage", confidence: 0.93, severity: "Severe", processingTimeMs: 110,
+      modelVersion: "mobilenetv2-v1", probabilities: {},
+    });
+    mockAssess.mockResolvedValue({ ok: true, detail: detail() });
+
+    render(<OfficerCaseReviewPage />);
+    fireEvent.click(await screen.findByTestId("photo-classify-11"));
+    // Only the family's photographs are offered; the officer's own are already the officer's input.
+    expect(screen.queryByTestId("photo-classify-12")).not.toBeInTheDocument();
+
+    expect(await screen.findByTestId("classified-from-citizen")).toHaveTextContent("caseReview.resultFromCitizenPhoto");
+    expect(fetchMock).toHaveBeenCalledWith(CITIZEN_PHOTO.url);
+    expect(mockClassify).toHaveBeenCalledWith(image);
+
+    fireEvent.click(screen.getByText("accept-ai"));
+    await act(async () => {
+      fireEvent.click(screen.getByText("caseReview.submitAssessment"));
+    });
+    await waitFor(() => expect(mockAssess).toHaveBeenCalled());
+    expect(mockAssess.mock.calls[0][1]).toMatchObject({
+      prediction: "property_damage",
+      input_source: "citizen_photo",
+      input_photo_id: 11,
+    });
+    // The family's photograph is already stored; it must not be re-uploaded under the officer's label.
+    expect(mockUploadCasePhoto).not.toHaveBeenCalled();
+  });
+
+  it("tells the officer when the family's photo cannot be loaded, and classifies nothing", async () => {
+    mockListCasePhotos.mockResolvedValue({ ok: true, photos: [CITIZEN_PHOTO] });
+    global.fetch = jest.fn().mockRejectedValue(new TypeError("Failed to fetch")) as unknown as typeof fetch;
+    render(<OfficerCaseReviewPage />);
+    fireEvent.click(await screen.findByTestId("photo-classify-11"));
+    expect(await screen.findByTestId("citizen-photo-fetch-failed")).toHaveTextContent("classify.photoFetchError");
+    expect(mockClassify).not.toHaveBeenCalled();
+  });
+
+  it("records the officer's own capture with no input source, and still attaches it as evidence", async () => {
+    mockClassify.mockResolvedValue({
+      classId: "property_damage", confidence: 0.9, severity: "Severe", processingTimeMs: 100,
+      modelVersion: "mobilenetv2-v1", probabilities: {},
+    });
+    mockAssess.mockResolvedValue({ ok: true, detail: detail() });
+    render(<OfficerCaseReviewPage />);
+    fireEvent.click(await screen.findByText("capture-photo"));
+    fireEvent.click(await screen.findByText("accept-ai"));
+    await act(async () => {
+      fireEvent.click(screen.getByText("caseReview.submitAssessment"));
+    });
+    await waitFor(() => expect(mockUploadCasePhoto).toHaveBeenCalled());
+    expect(mockAssess.mock.calls[0][1]).not.toHaveProperty("input_source");
+  });
 });

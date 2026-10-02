@@ -45,8 +45,8 @@ beforeEach(() => {
 });
 
 it("shows both photographs and says who took each", async () => {
-  // The distinction decides how much weight the approver gives a photograph: the officer's is the
-  // image the model classified, the family's is their own account of the damage.
+  // The distinction decides how much weight the approver gives a photograph: the officer's was taken
+  // at the site, the family's is their own account of the damage.
   render(<PhotoGallery caseRef="HEC-2026-0295" />);
   await screen.findByTestId("photo-gallery");
   expect(screen.getByTestId("photo-source-citizen")).toHaveTextContent("photo.source.citizen");
@@ -115,4 +115,32 @@ it("fetches nothing, and explains itself, without a case reference", async () =>
   render(<PhotoGallery variant="officer" />);
   expect(screen.getByTestId("photo-notice-officer")).toHaveTextContent("photo.officerNotice");
   expect(mockList).not.toHaveBeenCalled();
+});
+
+describe("classifying the family's photograph (2026-10-02)", () => {
+  it("offers 'Classify with AI' on the family's photographs only, and hands back the photo", async () => {
+    const onClassify = jest.fn();
+    render(<PhotoGallery caseRef="HEC-2026-0295" variant="officer" onClassify={onClassify} />);
+    fireEvent.click(await screen.findByTestId("photo-classify-1"));
+    expect(onClassify).toHaveBeenCalledWith(citizenPhoto);
+    // The officer's own photograph is already the officer's input; offering it again would blur
+    // which image the assessment rests on.
+    expect(screen.queryByTestId("photo-classify-2")).not.toBeInTheDocument();
+  });
+
+  it("offers nothing to classify where no one may assess (admin, DS, a closed case)", async () => {
+    render(<PhotoGallery caseRef="HEC-2026-0295" />);
+    await screen.findByTestId("photo-gallery");
+    expect(screen.queryByTestId("photo-classify-1")).not.toBeInTheDocument();
+  });
+
+  it("marks the photograph being assessed, and disables the buttons while work is in flight", async () => {
+    render(
+      <PhotoGallery caseRef="HEC-2026-0295" variant="officer" onClassify={jest.fn()} activePhotoId={1} classifyDisabled />,
+    );
+    const button = await screen.findByTestId("photo-classify-1");
+    expect(button).toHaveTextContent("photo.classifySelected");
+    expect(button).toHaveAttribute("aria-pressed", "true");
+    expect(button).toBeDisabled();
+  });
 });

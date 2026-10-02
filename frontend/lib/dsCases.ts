@@ -40,6 +40,8 @@ export interface DsCase {
   payment_authorized?: boolean;
   /** The account tail on the family's registration, or null when they have given none. */
   bank_account_last4?: string | null;
+  /** What the family wrote about the damage (migration 040). Absent from an older backend. */
+  citizen_description?: string | null;
 }
 
 export type DsFailure =

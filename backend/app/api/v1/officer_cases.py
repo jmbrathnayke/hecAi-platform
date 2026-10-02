@@ -10,11 +10,19 @@ had no case view, and /officer/classify built a brand-new draft rather than asse
 case. The AI assessment therefore could never be attached to the citizen's claim, and the
 administrator approved citizen cases nobody had verified.
 
-WHAT THE OFFICER CLASSIFIES. The officer's OWN verification image, captured in the field and
-classified by MobileNetV2 in the officer's browser. The citizen's photo is not the input here, and
-no image is ever sent anywhere TO BE CLASSIFIED -- the model runs on the device (FR-2.1/2.2). What
-this endpoint records is the classification result, through the same research log as every other
-classification (inference_log, migration 006, validated by inference.parse_classification).
+WHAT THE OFFICER CLASSIFIES. Either of two images, and the record says which:
+  * `officer_capture` -- the officer's OWN verification photo, taken at the site (the default, and
+    the only input before 2026-10-02);
+  * `citizen_photo`   -- one of the photographs the family submitted with the report (case_photos,
+    source 'citizen'), downloaded into the officer's browser so the officer can assess a report
+    without first travelling to it.
+Either way MobileNetV2 runs in the officer's browser, and no image is ever sent anywhere TO BE
+CLASSIFIED (FR-2.1/2.2): the citizen's photo reached the server as case evidence and comes back
+to the device as evidence. What this endpoint records is the classification result, through the
+same research log as every other classification (inference_log, migration 006, validated by
+inference.parse_classification), with `input_source` / `input_photo_id` beside it, so the
+administrator can see whether the assessment rests on the officer's own photo or on the
+claimant's.
 
 The image itself now travels separately, as case EVIDENCE, through case_photos.py (migration 038) --
 a different endpoint, a different table, and no part of the model path. Until that existed nothing
@@ -61,6 +69,10 @@ ASSESSMENT_COMPLETE_EVENT = "Assessment Complete"
 
 VALID_SEVERITIES = {"None", "Minor", "Moderate", "Severe"}
 
+# What the classified image was (see WHAT THE OFFICER CLASSIFIES above). Absent means the officer's
+# own capture, which is what every assessment recorded before this field existed was.
+INPUT_SOURCES = ("officer_capture", "citizen_photo")
+
 # On-device class -> the case damage category the estimator reads (compensation._DAMAGE_TYPE_MAP).
 _CLASS_TO_CATEGORY = {"crop_damage": "crop", "property_damage": "property", "no_damage": "none"}
 
@@ -71,10 +83,10 @@ _CASE_COLUMNS = """c.id, c.canonical_id, c.offline_id, c.status, c.damage_catego
                    c.gps_lat, c.gps_lng, c.submitted_at, c.updated_at, c.submitted_via,
                    c.submitted_by_officer, c.district, c.ds_division_id, h.household_ref,
                    c.assigned_officer_id, c.officer_review_started_at, c.officer_assessed_at,
-                   c.officer_assessed_by"""
+                   c.officer_assessed_by, c.citizen_description"""
 (_ID, _REF, _OFFLINE, _STATUS, _CATEGORY, _LAT, _LNG, _SUBMITTED, _UPDATED, _VIA, _BY_OFFICER,
- _DISTRICT, _DIVISION, _HOUSEHOLD, _ASSIGNED, _REVIEW_AT, _ASSESSED_AT, _ASSESSED_BY,
-) = range(18)
+ _DISTRICT, _DIVISION, _HOUSEHOLD, _ASSIGNED, _REVIEW_AT, _ASSESSED_AT, _ASSESSED_BY, _DESCRIPTION,
+) = range(19)
 
 
 def _get_connection():
@@ -149,6 +161,9 @@ def _detail_payload(cur, row):
             "district": row[_DISTRICT],
             "ds_division": row[_DIVISION],
             "household_ref": row[_HOUSEHOLD],
+            # What the family wrote about the damage (migration 040). The officer verifying the
+            # claim reads it beside their photographs; no one outside the case's scope ever does.
+            "citizen_description": row[_DESCRIPTION],
         },
         "workflow": {
             "stage": workflow_stage(status, row[_REVIEW_AT], row[_ASSESSED_AT], None,
@@ -169,6 +184,9 @@ def _detail_payload(cur, row):
             # The open-set gate's decision, so a no_damage row can be read correctly: the photo
             # matched no trained class, rather than being recognised as intact land.
             "out_of_domain": bool((ai[5] or {}).get("ai_out_of_domain")) if isinstance(ai[5], dict) else False,
+            # Which image the classification was made from. None on rows older than the field.
+            "input_source": (ai[5] or {}).get("input_source") if isinstance(ai[5], dict) else None,
+            "input_photo_id": (ai[5] or {}).get("input_photo_id") if isinstance(ai[5], dict) else None,
             "created_at": _iso(ai[6]),
         },
         # Named for what it is. The UI labels it "AI-Assisted Compensation Estimate"; the final
@@ -306,6 +324,19 @@ def record_assessment(reference):
                                       or processing_ms < 0):
         return jsonify({"error": "invalid_processing_time"}), 400
 
+    # Which image was classified. A citizen photo must be named, and is checked below to be one of
+    # THIS case's citizen photographs -- an officer cannot attach a classification of some other
+    # family's photo, or of an officer photo labelled as the claimant's.
+    input_source = body.get("input_source", "officer_capture")
+    if input_source not in INPUT_SOURCES:
+        return jsonify({"error": "invalid_input_source"}), 400
+    input_photo_id = body.get("input_photo_id")
+    if input_source == "citizen_photo":
+        if isinstance(input_photo_id, bool) or not isinstance(input_photo_id, int) or input_photo_id <= 0:
+            return jsonify({"error": "input_photo_required"}), 400
+    else:
+        input_photo_id = None
+
     final_class = fields["override_category"] if fields["was_overridden"] else fields["prediction"]
 
     # Crop assessment (Story 5.2b). Validated against the SETTLED class, so an officer who overrides
@@ -352,12 +383,24 @@ def record_assessment(reference):
                     case_id = row[_ID]
                     first_assessment = row[_ASSESSED_AT] is None
 
+                    if input_photo_id is not None:
+                        # Checked before anything is written, so a refusal leaves no trace.
+                        cur.execute(
+                            """SELECT 1 FROM case_photos
+                                WHERE id = %s AND case_id = %s AND source = 'citizen'""",
+                            (input_photo_id, case_id),
+                        )
+                        if cur.fetchone() is None:
+                            return jsonify({"error": "input_photo_not_found"}), 400
+
                     insert_inference_log(cur, case_id, fields, {
                         "offline_id": str(row[_OFFLINE]) if row[_OFFLINE] is not None else None,
                         "officer_id": g.officer_id,
                         "ai_severity": ai_severity,
                         "ai_processing_time_ms": processing_ms,
                         "source": "officer_case_assessment",
+                        "input_source": input_source,
+                        "input_photo_id": input_photo_id,
                         **gate,
                     })
 
@@ -399,6 +442,8 @@ def record_assessment(reference):
                         "ai_severity": ai_severity,
                         "model_version": fields["model_version"],
                         "reassessment": not first_assessment,
+                        "input_source": input_source,
+                        "input_photo_id": input_photo_id,
                     })
 
                     cur.execute("SELECT amount_lkr FROM compensation_estimates WHERE case_id = %s",

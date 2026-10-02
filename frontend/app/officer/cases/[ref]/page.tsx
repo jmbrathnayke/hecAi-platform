@@ -3,12 +3,19 @@
 // notification lands: the protected, officer-scoped view of ONE citizen case, not the public status
 // page.
 //
-// THE ASSESSMENT IS THE OFFICER'S. The officer inspects the site, captures their own verification
-// photo, and MobileNetV2 classifies it on this device (lib/mobilenet.ts). Only the classification
-// result is submitted -- no photo is uploaded, and the citizen's photo is not the model's input.
-// The officer accepts or overrides the result before it is recorded (NFR-6.1), and the resulting
-// compensation figure is shown as an AI-assisted estimate: the DWC administrator reviews it and the
-// Divisional Secretariat decides the final amount.
+// THE FAMILY'S REPORT COMES FIRST, AND STAYS VISIBLE. Their description and photographs are shown
+// for every case the officer can open, whatever its status. They used to sit inside the assessment
+// box, so they vanished the moment a case was approved -- and an officer asked about a case later
+// could no longer see what had been reported.
+//
+// THE ASSESSMENT IS THE OFFICER'S. MobileNetV2 classifies on this device (lib/mobilenet.ts), from
+// one of two inputs, and the record says which:
+//   * one of the family's own photographs -- downloaded into this browser and classified here, so a
+//     report can be assessed before anyone travels to it; or
+//   * the officer's own photo of the site, which is then attached to the case as evidence.
+// No image is ever sent anywhere TO BE CLASSIFIED. The officer accepts or overrides the result
+// before it is recorded (NFR-6.1), and the resulting compensation figure is shown as an AI-assisted
+// estimate: the DWC administrator reviews it and the Divisional Secretariat decides the final amount.
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -22,9 +29,10 @@ import { classifyImage, type ClassId, type ClassificationResult } from "@/lib/mo
 import { isKnownStage, isTranslatedStatus, statusKey } from "@/lib/status";
 import CropAssessmentFields from "@/components/CropAssessmentFields";
 import { PhotoGallery } from "@/components/admin/PhotoGallery";
-import { uploadCasePhoto } from "@/lib/casePhotos";
+import { uploadCasePhoto, type CasePhoto } from "@/lib/casePhotos";
 import {
   buildAssessmentBody,
+  type AssessmentInput,
   EMPTY_CROP_ASSESSMENT,
   getOfficerCase,
   isDeliveryEvent,
@@ -91,6 +99,11 @@ export default function OfficerCaseReviewPage() {
   // the administrator approving this case could never see what the officer had photographed.
   const capturedRef = useRef<File | null>(null);
   const [photoNotice, setPhotoNotice] = useState<"uploading" | "uploaded" | "failed" | null>(null);
+  // What the result on screen was classified from. The family's photo is already on the server,
+  // so only the officer's own capture is uploaded after the assessment is recorded.
+  const [input, setInput] = useState<AssessmentInput>({ kind: "camera" });
+  const [photoFetchFailed, setPhotoFetchFailed] = useState(false);
+  const assessmentRef = useRef<HTMLElement | null>(null);
   const inFlightRef = useRef(false);
   const mountedRef = useRef(true);
 
@@ -137,26 +150,29 @@ export default function OfficerCaseReviewPage() {
     }
   }
 
-  async function handleCapture(file: File) {
-    if (inFlightRef.current) return;
-    inFlightRef.current = true;
+  // One classification path for both inputs, so the family's photo is quality-checked and
+  // classified exactly as the officer's own capture is.
+  async function classify(image: Blob, source: AssessmentInput) {
     setCapture("classifying");
     setQualityWarning(false);
     setDecision(null);
     setOverride(null);
+    setInput(source);
     try {
       try {
-        const quality = await assessImageQuality(file);
+        const quality = await assessImageQuality(image);
         if (quality.blurry || quality.poorExposure) setQualityWarning(true);
       } catch {
         if (mountedRef.current) setCapture("error");
         return;
       }
-      const classification = await classifyImage(file);
+      const classification = await classifyImage(image);
       if (!mountedRef.current) return;
-      capturedRef.current = file;
+      // Only the officer's own capture is attached to the case afterwards. The family's photograph
+      // is already stored; uploading it again would duplicate it under the officer's label.
+      capturedRef.current = source.kind === "camera" && image instanceof File ? image : null;
       try {
-        const url = URL.createObjectURL(file);
+        const url = URL.createObjectURL(image);
         setThumbnails((prev) => {
           prev.forEach((u) => URL.revokeObjectURL(u));
           return [url];
@@ -168,6 +184,45 @@ export default function OfficerCaseReviewPage() {
       setCapture("result");
     } catch {
       if (mountedRef.current) setCapture("error");
+    }
+  }
+
+  async function handleCapture(file: File) {
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
+    setPhotoFetchFailed(false);
+    try {
+      await classify(file, { kind: "camera" });
+    } finally {
+      inFlightRef.current = false;
+    }
+  }
+
+  // The family's photograph, classified on this device. It is fetched through the signed URL the
+  // gallery already holds (Supabase Storage allows cross-origin reads), so nothing about it is
+  // sent anywhere to be classified.
+  async function handleClassifyCitizenPhoto(photo: CasePhoto) {
+    if (inFlightRef.current || !photo.url) return;
+    inFlightRef.current = true;
+    setPhotoFetchFailed(false);
+    assessmentRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+    try {
+      let image: Blob;
+      try {
+        const res = await fetch(photo.url);
+        if (!res.ok) throw new Error(`photo fetch ${res.status}`);
+        image = await res.blob();
+      } catch {
+        // A signed URL lasts ten minutes, so a gallery left open longer fails here; the message
+        // tells the officer to reload, which issues fresh ones.
+        if (mountedRef.current) {
+          setPhotoFetchFailed(true);
+          setCapture("idle");
+        }
+        return;
+      }
+      if (!mountedRef.current) return;
+      await classify(image, { kind: "citizen_photo", photoId: photo.id });
     } finally {
       inFlightRef.current = false;
     }
@@ -177,7 +232,7 @@ export default function OfficerCaseReviewPage() {
     if (!result || busy || decision === null || decision === "override") return;
     setBusy(true);
     setActionError(null);
-    const res = await submitOfficerAssessment(ref, buildAssessmentBody(result, override, crop));
+    const res = await submitOfficerAssessment(ref, buildAssessmentBody(result, override, crop, input));
     if (!mountedRef.current) return;
     setBusy(false);
     if (res.ok) {
@@ -198,6 +253,7 @@ export default function OfficerCaseReviewPage() {
       setDecision(null);
       setOverride(null);
       setCrop(EMPTY_CROP_ASSESSMENT);
+      setInput({ kind: "camera" });
       setCapture("idle");
     } else {
       // The classification stays on screen so the officer can retry without re-photographing.
@@ -325,6 +381,39 @@ export default function OfficerCaseReviewPage() {
           </dl>
         </section>
 
+        {/* ------------------------------------------------------------ the family's report */}
+        {/* Always shown, whatever the case's status: what the family wrote and photographed is the
+            claim itself, and the officer must be able to read it before, during and after their
+            own assessment. */}
+        <section
+          className="space-y-design-3 rounded-md border border-border-subtle bg-surface-raised p-design-4"
+          data-testid="citizen-report"
+        >
+          <h2 className="text-headline text-ink-primary">{t("caseReview.citizenReportTitle")}</h2>
+          <div>
+            <h3 className="text-label font-semibold text-ink-primary">{t("caseReview.citizenDescription")}</h3>
+            {c.citizen_description ? (
+              <p className="mt-design-1 whitespace-pre-wrap text-body text-ink-primary" data-testid="citizen-description">
+                {c.citizen_description}
+              </p>
+            ) : (
+              <p className="mt-design-1 text-body text-ink-secondary" data-testid="citizen-description-none">
+                {t("caseReview.noCitizenDescription")}
+              </p>
+            )}
+          </div>
+          <PhotoGallery
+            caseRef={ref}
+            variant="officer"
+            onClassify={detail.actions.can_assess ? (photo) => void handleClassifyCitizenPhoto(photo) : undefined}
+            activePhotoId={input.kind === "citizen_photo" && capture !== "idle" ? input.photoId : null}
+            classifyDisabled={capture === "classifying" || busy}
+          />
+          {detail.actions.can_assess && (
+            <p className="text-caption text-ink-secondary">{t("caseReview.classifyCitizenHint")}</p>
+          )}
+        </section>
+
         {detail.actions.can_start_review && (
           <button
             type="button"
@@ -338,32 +427,52 @@ export default function OfficerCaseReviewPage() {
 
         {/* ------------------------------------------------------------ officer assessment */}
         {detail.actions.can_assess && (
-          <section className="space-y-design-3 rounded-md border border-border-subtle bg-surface-raised p-design-4" data-testid="officer-assessment">
+          <section
+            ref={assessmentRef}
+            className="space-y-design-3 rounded-md border border-border-subtle bg-surface-raised p-design-4"
+            data-testid="officer-assessment"
+          >
             <h2 className="text-headline text-ink-primary">
               {detail.actions.already_assessed ? t("caseReview.reassessTitle") : t("caseReview.assessTitle")}
             </h2>
             <p className="text-caption text-ink-secondary">{t("caseReview.assessHint")}</p>
-
-            {/* Placed before the camera, because it is what the officer should look at first:
-                the household's own photographs of the damage they reported, taken before the
-                officer arrived. The officer then photographs the same damage themselves — that
-                photograph is the model input and what the assessment rests on. */}
-            <PhotoGallery caseRef={ref} variant="officer" />
 
             <CameraCapture
               onCapture={(file) => void handleCapture(file)}
               disabled={capture === "classifying" || busy}
               busyLabel={t("classify.analyzing")}
               atMax={false}
-              thumbnails={thumbnails}
+              thumbnails={input.kind === "camera" ? thumbnails : []}
               fileInputTestId="case-review-file-input"
             />
 
+            {photoFetchFailed && (
+              <p role="alert" className="text-caption text-status-error" data-testid="citizen-photo-fetch-failed">
+                {t("classify.photoFetchError")}
+              </p>
+            )}
             {qualityWarning && <p role="alert" className="text-caption text-status-warning">{t("classify.qualityWarning")}</p>}
             {capture === "error" && <p role="alert" className="text-caption text-status-error">{t("classify.classifyError")}</p>}
+            {capture === "classifying" && input.kind === "citizen_photo" && (
+              <p role="status" className="text-caption text-ink-secondary">{t("classify.analyzingCitizenPhoto")}</p>
+            )}
 
             {capture === "result" && result && (
               <>
+                {/* Said above the result, because it changes what the result is evidence of: the
+                    family's own photograph rather than what the officer saw at the site. */}
+                {input.kind === "citizen_photo" && (
+                  <div
+                    className="flex items-center gap-design-3 rounded-md bg-forest-pale p-design-2"
+                    data-testid="classified-from-citizen"
+                  >
+                    {thumbnails[0] && (
+                      // eslint-disable-next-line @next/next/no-img-element -- a local blob: URL
+                      <img src={thumbnails[0]} alt="" className="h-14 w-14 shrink-0 rounded object-cover" />
+                    )}
+                    <p className="text-caption text-forest">{t("caseReview.resultFromCitizenPhoto")}</p>
+                  </div>
+                )}
                 <AIResultCard
                   classId={result.classId}
                   severity={result.severity}
@@ -424,6 +533,12 @@ export default function OfficerCaseReviewPage() {
                 label={t("caseReview.officerDecision")}
                 value={detail.ai_result.was_overridden ? `${t("classify.overridden")} → ${labelFor(t, detail.ai_result.override_category)}` : t("classify.accepted")}
               />
+              {(detail.ai_result.input_source === "citizen_photo" || detail.ai_result.input_source === "officer_capture") && (
+                <Field
+                  label={t("caseReview.classifiedFrom")}
+                  value={t(`caseReview.inputSource.${detail.ai_result.input_source}`)}
+                />
+              )}
             </dl>
           ) : (
             <p className="mt-design-2 text-body text-ink-secondary">{t("caseReview.noAiResult")}</p>

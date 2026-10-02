@@ -93,7 +93,8 @@ def list_division_cases():
                                   (c.officer_assessed_at IS NOT NULL
                                    OR COALESCE(c.submitted_by_officer, FALSE)),
                                   c.ds_final_amount, c.ds_final_reason, c.ds_final_at,
-                                  pa.ds_authorized_at, h.bank_account_last4
+                                  pa.ds_authorized_at, h.bank_account_last4,
+                                  c.citizen_description
                              FROM cases c
                              LEFT JOIN households h ON h.id = c.household_id
                              LEFT JOIN compensation_estimates ce ON ce.case_id = c.id
@@ -140,6 +141,9 @@ def list_division_cases():
                             "payment_authorized": r[16] is not None,
                             # The tail only; the full number is revealed by authorize-payment alone.
                             "bank_account_last4": r[17],
+                            # What the family wrote about the damage (migration 040): part of the
+                            # evidence a payment is decided on.
+                            "citizen_description": r[18] if len(r) > 18 else None,
                         }
                         for r in rows
                     ]

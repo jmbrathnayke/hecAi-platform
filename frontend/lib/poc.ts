@@ -36,7 +36,17 @@ export interface PoCRecord {
    * path; the backend records it in inference_log and marks the case officer-assessed.
    */
   ai_classification?: Record<string, unknown>;
+  /**
+   * The family's own description of the damage (Step 3, optional). Until migration 040 this was
+   * collected and never sent, so no officer, administrator or Divisional Secretariat ever read it.
+   * Undefined (not empty) when the family wrote nothing, so a report without one keeps the exact
+   * request body it always had.
+   */
+  description?: string;
 }
+
+/** The form's limit (report/damage/page.tsx). The server keeps up to twice this. */
+export const MAX_DESCRIPTION = 500;
 
 export interface SubmitResult {
   canonical_id: string;
@@ -82,7 +92,15 @@ export function toPoCRecord(
     ds_division: typeof draft.ds_division === "string" ? draft.ds_division : undefined,
     ai_severity: typeof draft.ai_severity === "string" ? draft.ai_severity : undefined,
     ai_classification: classificationFromDraft(draft),
+    description: descriptionFromDraft(draft),
   };
+}
+
+/** The family's description, trimmed and capped, or undefined when there is none. */
+export function descriptionFromDraft(draft: Record<string, unknown>): string | undefined {
+  if (typeof draft.description !== "string") return undefined;
+  const text = draft.description.trim().slice(0, MAX_DESCRIPTION);
+  return text === "" ? undefined : text;
 }
 
 /**
@@ -194,6 +212,9 @@ export function buildCasePayload(record: PoCRecord): Record<string, unknown> {
   if (record.district) body.district = record.district;
   if (record.ds_division) body.ds_division = record.ds_division;
   if (record.ai_severity) body.ai_severity = record.ai_severity;
+  // Only when the family wrote one: the staff who verify, approve and pay the claim read it beside
+  // the photographs (migration 040).
+  if (record.description) body.description = record.description;
   return body;
 }
 
