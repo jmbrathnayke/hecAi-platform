@@ -116,13 +116,41 @@ SUBMITTED_AT = datetime(2026, 7, 13, tzinfo=timezone.utc)
 
 @pytest.mark.parametrize("category,expected", [
     ("crop", "property"),
+    ("crop_damage", "property"),
     ("property", "property"),
+    ("property_damage", "property"),
     ("combined", "property"),
+    ("death", "death"),
+    ("human_death", "death"),
+    ("injury", "injury"),
+    ("human_injury", "injury"),
     ("none", None),
     ("something-unrecognized", None),
 ])
 def test_map_damage_category(category, expected):
     assert compensation._map_damage_category(category) == expected
+
+
+def test_prior_year_features_with_raw_damage_type():
+    compensation._prior_year_lookup = {
+        "අනුරාධපුරය|ඉපලෝගම|death": {
+            "prior_year_amount": 500000.0,
+            "prior_year_incident_count": 1.0,
+            "prior_year_had_payout": 1.0,
+        },
+        "අනුරාධපුරය|ඉපලෝගම|property": {
+            "prior_year_amount": 31850.0,
+            "prior_year_incident_count": 2.0,
+            "prior_year_had_payout": 1.0,
+        },
+    }
+    # When raw_damage_type="death" is passed, look up death prior history even if damage_type="property"
+    res = compensation._prior_year_features("අනුරාධපුරය", "ඉපලෝගම", "property", raw_damage_type="death")
+    assert res["prior_year_amount"] == 500000.0
+
+    # Fallback to mapped damage_type if raw_damage_type isn't in lookup table
+    res_fallback = compensation._prior_year_features("අනුරාධපුරය", "ඉපලෝගම", "property", raw_damage_type="unknown_type")
+    assert res_fallback["prior_year_amount"] == 31850.0
 
 
 # --- _resolve_district -------------------------------------------------------------------

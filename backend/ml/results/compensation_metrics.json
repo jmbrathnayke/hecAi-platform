@@ -6,9 +6,9 @@
   "split": "time-based holdout: test = 2020-2021 (never seen in training)",
   "n_test": 359,
   "test_mean_lkr": 556395.938718663,
-  "mae": 338260.48922376643,
-  "rmse": 721452.977064152,
-  "r2": 0.569151666918883,
+  "mae": 338260.48922376626,
+  "rmse": 721452.9770641512,
+  "r2": 0.569151666918884,
   "features": [
     "damage_type",
     "district",
@@ -25,63 +25,63 @@
     "n_test": 359,
     "ai_severity_assumed": null,
     "severity_multiplier_applied": 1.0,
-    "cap_source": "read from compensation_caps (0 row(s) configured)",
+    "cap_source": "DATABASE_URL unset - scored with no cap enforced (migration 014 seeds none)",
     "n_predictions_capped": 0,
-    "n_rows_falling_back_to_zero_priors": 26,
+    "n_rows_falling_back_to_zero_priors": 4,
     "damage_type_sent_to_model": "property",
     "damage_type_collapse": "_DAMAGE_TYPE_MAP maps crop/property/combined -> 'property'; the incident form has no death or injury path, so those claims cannot reach the model as themselves",
-    "mae": 556473.1149064065,
-    "rmse": 1242017.9524566864,
-    "r2": -0.27692121918249457,
+    "mae": 312824.830783783,
+    "rmse": 822317.1871580634,
+    "r2": 0.4402590348611033,
     "per_true_damage_type": {
       "death": {
-        "mae": 793314.5958177283,
-        "rmse": 1313867.19727262,
-        "r2": -2.744872057267289,
+        "mae": 358631.8033401521,
+        "rmse": 519701.25069674774,
+        "r2": 0.4140756204569339,
         "n": 95,
         "true_mean_lkr": 809473.6842105263
       },
       "injury": {
-        "mae": 595030.6234782952,
-        "rmse": 1388383.591562586,
-        "r2": -50.43454240028274,
+        "mae": 87614.48375684324,
+        "rmse": 172528.13876034095,
+        "r2": 0.2057525851339651,
         "n": 91,
         "true_mean_lkr": 109907.63736263737
       },
       "property": {
-        "mae": 406133.9590300051,
-        "rmse": 1113216.9714714584,
-        "r2": 0.40559110136122833,
+        "mae": 406133.9590300052,
+        "rmse": 1113216.9714714587,
+        "r2": 0.4055911013612279,
         "n": 173,
         "true_mean_lkr": 652280.6184971099
       }
     },
     "severity_sensitivity_mae": {
-      "Minor": 494050.48125028296,
-      "Moderate": 556473.1149064064,
-      "Severe": 649802.1800278468
+      "Minor": 345212.44641158485,
+      "Moderate": 312824.83078378293,
+      "Severe": 315137.5115613039
     },
     "divergence_decomposition": {
       "_note": "isolates each serving-side divergence; D reproduces the served figures above",
       "A_true_type_true_lags__published_model": {
-        "mae": 338260.4892237663,
-        "rmse": 721452.9770641511,
-        "r2": 0.5691516669188842
+        "mae": 338260.48922376643,
+        "rmse": 721452.9770641514,
+        "r2": 0.5691516669188837
       },
       "B_true_type_snapshot_lookup": {
-        "mae": 297103.25515222386,
-        "rmse": 818138.433859903,
-        "r2": 0.44593343001143826
+        "mae": 297103.255152224,
+        "rmse": 818138.4338599027,
+        "r2": 0.4459334300114387
       },
       "C_collapsed_type_true_lags": {
         "mae": 357689.69783706736,
-        "rmse": 733326.7428293226,
-        "r2": 0.5548530486200915
+        "rmse": 733326.7428293227,
+        "r2": 0.5548530486200914
       },
       "D_collapsed_type_snapshot_lookup__deployed": {
-        "mae": 556473.114906406,
-        "rmse": 1242017.9524566848,
-        "r2": -0.27692121918249124
+        "mae": 556473.1149064064,
+        "rmse": 1242017.9524566862,
+        "r2": -0.2769212191824941
       },
       "reference_always_predict_test_mean": {
         "mae": 547945.1913160203,
@@ -96,16 +96,16 @@
       "test_mean_lkr": 652280.6184971099,
       "zero_share_test": 0.023121387283236993,
       "model_on_property_rows": {
-        "mae": 417061.40837783535,
-        "rmse": 912104.184118042,
-        "r2": 0.6009617189654481,
-        "mae_pct_of_test_mean": 63.93895457736696
+        "mae": 417061.4083778349,
+        "rmse": 912104.1841180413,
+        "r2": 0.6009617189654488,
+        "mae_pct_of_test_mean": 63.93895457736689
       },
       "served_on_property_rows": {
-        "mae": 406133.9590300051,
-        "rmse": 1113216.9714714587,
-        "r2": 0.4055911013612282,
-        "mae_pct_of_test_mean": 62.263686443077205
+        "mae": 406133.95903000486,
+        "rmse": 1113216.971471458,
+        "r2": 0.4055911013612289,
+        "mae_pct_of_test_mean": 62.26368644307716
       },
       "reference_always_predict_property_mean": {
         "mae": 736221.5923017808,
@@ -114,10 +114,10 @@
         "mae_pct_of_test_mean": 112.86884378046913
       },
       "retrained_property_only_rf": {
-        "mae": 415112.1065988713,
-        "rmse": 918248.5583232816,
-        "r2": 0.5955673814444641,
-        "mae_pct_of_test_mean": 63.64011053330272
+        "mae": 415112.10659887147,
+        "rmse": 918248.5583232836,
+        "r2": 0.5955673814444624,
+        "mae_pct_of_test_mean": 63.64011053330274
       },
       "retrained_property_only_gbm": {
         "mae": 474672.9755918662,

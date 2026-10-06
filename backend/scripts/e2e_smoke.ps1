@@ -98,7 +98,13 @@ function New-Jwt {
   if ($DistrictId) { $meta.district_id = $DistrictId }
   $exp = [int][double]::Parse((Get-Date -UFormat %s)) + ($Minutes * 60)
   $header  = @{ alg = 'HS256'; typ = 'JWT' } | ConvertTo-Json -Compress
-  $payload = @{ sub = $Sub; user_metadata = $meta; exp = $exp } | ConvertTo-Json -Compress -Depth 5
+  # `app_metadata`, not `user_metadata`. The authorization claims moved on 2026-08-11 because
+  # `user_metadata` is rewritable by the authenticated client itself through auth.updateUser(),
+  # so a citizen could mint themselves an admin role and present a perfectly valid signature;
+  # middleware/auth.py reads AUTHZ_CLAIM = "app_metadata" with deliberately no fallback. This
+  # probe was last run on 2026-08-10, the day before, and every authenticated check in it had
+  # been failing with HTTP 401 ever since -- the control working, not the app breaking.
+  $payload = @{ sub = $Sub; app_metadata = $meta; exp = $exp } | ConvertTo-Json -Compress -Depth 5
   function B64 { param([byte[]]$b) [Convert]::ToBase64String($b).TrimEnd('=').Replace('+','-').Replace('/','_') }
   $h = B64 ([Text.Encoding]::UTF8.GetBytes($header))
   $p = B64 ([Text.Encoding]::UTF8.GetBytes($payload))

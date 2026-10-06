@@ -282,7 +282,8 @@ def evaluate_compensation_serving() -> dict:
         for row in test.itertuples():
             est = serving.compute_estimate(
                 bundle, served_type, row.district, row.ds_division, row.year,
-                ai_severity, caps.get((row.district, served_type)))
+                ai_severity, caps.get((row.district, served_type)),
+                raw_damage_type=row.damage_type)
             amounts.append(est["amount"])
             capped_n += bool(est["capped"])
             if est["row"]["prior_year_incident_count"] == -1.0 and \

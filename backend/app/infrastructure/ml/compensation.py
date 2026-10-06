@@ -51,7 +51,9 @@ CROP_TYPES = ("bada_irigu", "banana", "coconut", "paddy", "vegetable")
 # 5 of the 8 such cases in the database carry no estimate at all -- a silent skip, not an error.
 _DAMAGE_TYPE_MAP = {"crop": "property", "crop_damage": "property",
                     "property": "property", "property_damage": "property",
-                    "combined": "property"}
+                    "combined": "property",
+                    "death": "death", "human_death": "death",
+                    "injury": "injury", "human_injury": "injury"}
 
 # Which categories route to the crop model instead, when a crop type is supplied. Falls back to the
 # property model when it is not, so an officer who does not know the crop still gets the previous
@@ -149,12 +151,18 @@ def _resolve_district(district, ds_division_id):
     return "unknown", "unknown"
 
 
-def _prior_year_features(district, ds_division, damage_type):
+def _prior_year_features(district, ds_division, damage_type, raw_damage_type=None):
     lookup, _ = _load_lookup()
-    key = f"{district}|{ds_division}|{damage_type}"
+    lookup_type = raw_damage_type or damage_type
+    key = f"{district}|{ds_division}|{lookup_type}"
     entry = lookup.get(key)
     if entry:
         return entry
+    if lookup_type != damage_type:
+        fallback_key = f"{district}|{ds_division}|{damage_type}"
+        entry = lookup.get(fallback_key)
+        if entry:
+            return entry
     return {"prior_year_amount": 0.0, "prior_year_incident_count": -1.0,
             "prior_year_had_payout": 0.0}
 
@@ -163,7 +171,7 @@ def _severity_multiplier(ai_severity):
     return _SEVERITY_MULTIPLIER.get(ai_severity, 1.0)  # absent/unrecognized -> neutral
 
 
-def compute_estimate(bundle, damage_type, district, ds_division, year, ai_severity, cap):
+def compute_estimate(bundle, damage_type, district, ds_division, year, ai_severity, cap, raw_damage_type=None):
     """The whole serving transform, with no I/O of its own -- pure given `bundle` and `cap`.
 
     Extracted from estimate_and_store so the dissertation evaluation can score THIS code
@@ -174,7 +182,7 @@ def compute_estimate(bundle, damage_type, district, ds_division, year, ai_severi
     `cap` is the policy ceiling in LKR or None for "no cap enforced"; the caller owns
     fetching it, because that is the one step here that needs a database.
     """
-    prior = _prior_year_features(district, ds_division, damage_type)
+    prior = _prior_year_features(district, ds_division, damage_type, raw_damage_type=raw_damage_type)
     row = {
         "damage_type": damage_type, "district": district, "ds_division": ds_division,
         "year": year, **prior,
@@ -350,7 +358,8 @@ def estimate_and_store(cur, case_id, damage_category, ds_division_id, submitted_
                                         submitted_at.year, ai_severity, acres, percent, cap)
         else:
             est = compute_estimate(bundle, damage_type, resolved_district, ds_division,
-                                   submitted_at.year, ai_severity, cap)
+                                   submitted_at.year, ai_severity, cap,
+                                   raw_damage_type=damage_category)
 
         meta = bundle["meta"]
         if use_crop:
