@@ -380,7 +380,10 @@
       "photosCaptured": "{count, plural, one {# photo classified} other {# photos classified}}",
       "photoStripAria": "Photos classified in this case",
       "photoFetchError": "This photo could not be loaded for classification. Reload the page and try again.",
-      "analyzingCitizenPhoto": "Classifying the family's photo on this device…"
+      "analyzingCitizenPhoto": "Classifying the family's photo on this device…",
+      "removePhoto": "Remove photo {number}",
+      "photoRemoved": "Photo removed. It is no longer part of this case.",
+      "removeError": "Could not remove the photo. Try again."
     },
     "camera": {
       "viewfinderLabel": "Camera viewfinder",

@@ -11,13 +11,14 @@ import { useTranslations } from "next-intl";
 import { assessImageQuality } from "@/lib/imageQuality";
 import { classifyImage, type ClassId, type ClassificationResult } from "@/lib/mobilenet";
 import { deriveCaseCategory } from "@/lib/classification";
-import { saveClassification, saveOverride, getCase } from "@/lib/indexeddb";
+import { saveClassification, saveOverride, getCase, updateDraft } from "@/lib/indexeddb";
 import { getDraftId, getOrCreateDraftId, clearDraftId } from "@/lib/draft";
 import { AIResultCard } from "@/components/AIResultCard";
 import { OverrideForm } from "@/components/OverrideForm";
 import { OfficerTopBar } from "@/components/OfficerTopBar";
 import { CameraCapture } from "@/components/CameraCapture";
 import { PhotoStrip } from "@/components/PhotoStrip";
+import { planPhotoRemoval } from "@/lib/photoRemoval";
 import { FieldNotes } from "@/components/FieldNotes";
 import { Plus } from "@phosphor-icons/react";
 import { touchButtonStyles } from "@/components/admin/ui";
@@ -68,6 +69,14 @@ export default function OfficerClassifyPage() {
   // `thumbnails` in the effect's dependency array (which would revoke on every capture).
   const [thumbnails, setThumbnails] = useState<string[]>([]);
   const thumbnailsRef = useRef<string[]>([]);
+  // One classification per photo in the strip, same order (photo removal, 2026-10-07).
+  const resultsRef = useRef<ClassificationResult[]>([]);
+  // Said once after a removal, for screen readers and as on-screen confirmation.
+  const [photoRemoved, setPhotoRemoved] = useState(false);
+  const [removeError, setRemoveError] = useState(false);
+  // The result card, scrolled into view once a photo is classified: on a phone it sits below
+  // the camera and the strip, so the officer could take a photo and see nothing happen.
+  const resultCardRef = useRef<HTMLDivElement>(null);
   // Remount key for FieldNotes. That component owns its text in local state (so typing is not
   // routed through this page on every keystroke), which means "Start new case" has to discard
   // the instance outright — otherwise the previous case's note would greet the next citizen.
@@ -77,8 +86,13 @@ export default function OfficerClassifyPage() {
   // officer a classification they already waited for, so this swallows its own errors rather
   // than letting them escape into handleCapture's catch and flip the screen to "error".
   function addThumbnail(file: File) {
+    let url = "";
     try {
-      const url = URL.createObjectURL(file);
+      url = URL.createObjectURL(file);
+    } catch {
+      /* no preview for this photo — an empty tile keeps the strip aligned with its class */
+    }
+    try {
       thumbnailsRef.current = [...thumbnailsRef.current, url];
       setThumbnails(thumbnailsRef.current);
     } catch {
@@ -90,7 +104,7 @@ export default function OfficerClassifyPage() {
   // reason as addThumbnail: revoke is best-effort cleanup, never a failure path.
   function revokeThumbnails() {
     try {
-      thumbnailsRef.current.forEach((url) => URL.revokeObjectURL(url));
+      thumbnailsRef.current.forEach((url) => url && URL.revokeObjectURL(url));
     } catch {
       /* nothing to revoke / API unavailable */
     }
@@ -180,6 +194,9 @@ export default function OfficerClassifyPage() {
       if (!mountedRef.current) return;
 
       addThumbnail(file);
+      resultsRef.current = [...resultsRef.current, classification];
+      setPhotoRemoved(false);
+      setRemoveError(false);
       setResult(classification);
       setStatus("result");
     } catch (err) {
@@ -197,6 +214,53 @@ export default function OfficerClassifyPage() {
       inFlightRef.current = false;
     }
   }
+
+  // Take one photo back out of the case (2026-10-07): a frame taken by accident -- a covered lens,
+  // a stray tap -- had no way out. The draft is updated first; the screen follows only once the
+  // write has succeeded, so what the officer sees is always what will be submitted.
+  async function handleRemovePhoto(index: number) {
+    if (inFlightRef.current || overrideSavingRef.current) return;
+    const plan = planPhotoRemoval(classIdsRef.current, resultsRef.current, index);
+    if (!plan) return;
+    setRemoveError(false);
+    try {
+      const draftId = getDraftId();
+      if (draftId) await updateDraft(draftId, plan.draftFields);
+    } catch {
+      if (mountedRef.current) setRemoveError(true);
+      return;
+    }
+    if (!mountedRef.current) return;
+    const url = thumbnailsRef.current[index];
+    try {
+      if (url) URL.revokeObjectURL(url);
+    } catch {
+      /* best-effort cleanup */
+    }
+    thumbnailsRef.current = thumbnailsRef.current.filter((_, i) => i !== index);
+    setThumbnails(thumbnailsRef.current);
+    resultsRef.current = plan.results;
+    classIdsRef.current = plan.classIds;
+    if (plan.currentChanged) {
+      // The card described the removed photo: it now describes the previous one, which the
+      // officer decides on afresh, or nothing at all.
+      setResult(plan.current);
+      setDecision(null);
+      setOverrideError(false);
+      setQualityWarning(false);
+      setStatus(plan.current ? "result" : "idle");
+    }
+    setPhotoRemoved(true);
+  }
+
+  // Bring the result into view once a photo has been classified.
+  useEffect(() => {
+    if (status !== "result" || !result) return;
+    const el = resultCardRef.current;
+    if (!el || typeof el.scrollIntoView !== "function") return;
+    const reduce = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    el.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
+  }, [status, result]);
 
   // Story 3.4: the officer overrides the AI class for the just-classified photo. The override is
   // additive — ai_category/ai_confidence/ai_severity stay intact; original_ai_category snapshots
@@ -245,6 +309,9 @@ export default function OfficerClassifyPage() {
   function handleStartNewCase() {
     clearDraftId();
     classIdsRef.current = [];
+    resultsRef.current = [];
+    setPhotoRemoved(false);
+    setRemoveError(false);
     clearThumbnails();
     setNotesKey((n) => n + 1);
     setResult(null);
@@ -314,10 +381,24 @@ export default function OfficerClassifyPage() {
             thumbnails={thumbnails}
             countLabel={t("classify.photosCaptured", { count: thumbnails.length })}
             ariaLabel={t("classify.photoStripAria")}
+            onRemove={(i) => void handleRemovePhoto(i)}
+            removeLabel={(n) => t("classify.removePhoto", { number: n })}
+            removeDisabled={status === "classifying"}
           />
+          {photoRemoved && (
+            <p role="status" className="text-caption text-ink-secondary">
+              {t("classify.photoRemoved")}
+            </p>
+          )}
+          {removeError && (
+            <p role="alert" className="text-caption text-status-error">
+              {t("classify.removeError")}
+            </p>
+          )}
 
           {status === "result" && result && (
             <>
+              <div ref={resultCardRef} className="scroll-mt-design-4" />
               <AIResultCard
                 classId={result.classId}
                 severity={result.severity}
