@@ -34,8 +34,10 @@ import { DistrictPicker, type DistrictSelection } from "@/components/DistrictPic
 import { OfficerTopBar } from "@/components/OfficerTopBar";
 import { CameraCapture } from "@/components/CameraCapture";
 import { PhotoStrip } from "@/components/PhotoStrip";
+import { planPhotoRemoval } from "@/lib/photoRemoval";
 import { FieldNotes } from "@/components/FieldNotes";
 import type { LatLng } from "@/components/MapPinPicker";
+import { touchButtonStyles, touchFieldStyles } from "@/components/admin/ui";
 
 const MapPinPicker = dynamic(() => import("@/components/MapPinPicker"), { ssr: false });
 const SRI_LANKA_CENTER: LatLng = { lat: 7.8731, lng: 80.7718 };
@@ -115,6 +117,14 @@ export default function OfficerSubmitPage() {
   // without listing `thumbnails` as an effect dependency (which would revoke on every capture).
   const [thumbnails, setThumbnails] = useState<string[]>([]);
   const thumbnailsRef = useRef<string[]>([]);
+  // One classification per photo in the strip, same order (photo removal, 2026-10-07).
+  const resultsRef = useRef<ClassificationResult[]>([]);
+  // Said once after a removal, for screen readers and as on-screen confirmation.
+  const [photoRemoved, setPhotoRemoved] = useState(false);
+  const [removeError, setRemoveError] = useState(false);
+  // The result card, scrolled into view once a photo is classified: on a phone it sits below
+  // the camera and the strip, so the officer could take a photo and see nothing happen.
+  const resultCardRef = useRef<HTMLDivElement>(null);
 
   const classIdsRef = useRef<ClassId[]>([]);
   const inFlightRef = useRef(false);
@@ -125,8 +135,13 @@ export default function OfficerSubmitPage() {
   // officer a classification they already waited for, so this swallows its own errors rather
   // than letting them escape into handleCapture's catch and flip the step to "error".
   function addThumbnail(file: File) {
+    let url = "";
     try {
-      const url = URL.createObjectURL(file);
+      url = URL.createObjectURL(file);
+    } catch {
+      /* no preview for this photo — an empty tile keeps the strip aligned with its class */
+    }
+    try {
       thumbnailsRef.current = [...thumbnailsRef.current, url];
       setThumbnails(thumbnailsRef.current);
     } catch {
@@ -183,7 +198,7 @@ export default function OfficerSubmitPage() {
       // Revoke every object URL the strip created — without this each capture leaks a blob for
       // the lifetime of the document.
       try {
-        thumbnailsRef.current.forEach((url) => URL.revokeObjectURL(url));
+        thumbnailsRef.current.forEach((url) => url && URL.revokeObjectURL(url));
       } catch {
         /* nothing to revoke / API unavailable */
       }
@@ -362,6 +377,9 @@ export default function OfficerSubmitPage() {
       if (!mountedRef.current) return;
 
       addThumbnail(file);
+      resultsRef.current = [...resultsRef.current, classification];
+      setPhotoRemoved(false);
+      setRemoveError(false);
       setResult(classification);
       setClassifyStatus("result");
     } catch {
@@ -370,6 +388,53 @@ export default function OfficerSubmitPage() {
       inFlightRef.current = false;
     }
   }
+
+  // Take one photo back out of the case (2026-10-07): a frame taken by accident -- a covered lens,
+  // a stray tap -- had no way out. The draft is updated first; the screen follows only once the
+  // write has succeeded, so what the officer sees is always what will be submitted.
+  async function handleRemovePhoto(index: number) {
+    if (inFlightRef.current || overrideSavingRef.current) return;
+    const plan = planPhotoRemoval(classIdsRef.current, resultsRef.current, index);
+    if (!plan) return;
+    setRemoveError(false);
+    try {
+      const draftId = getDraftId();
+      if (draftId) await updateDraft(draftId, plan.draftFields);
+    } catch {
+      if (mountedRef.current) setRemoveError(true);
+      return;
+    }
+    if (!mountedRef.current) return;
+    const url = thumbnailsRef.current[index];
+    try {
+      if (url) URL.revokeObjectURL(url);
+    } catch {
+      /* best-effort cleanup */
+    }
+    thumbnailsRef.current = thumbnailsRef.current.filter((_, i) => i !== index);
+    setThumbnails(thumbnailsRef.current);
+    resultsRef.current = plan.results;
+    classIdsRef.current = plan.classIds;
+    if (plan.currentChanged) {
+      // The card described the removed photo: it now describes the previous one, which the
+      // officer decides on afresh, or nothing at all.
+      setResult(plan.current);
+      setDecision(null);
+      setOverrideError(false);
+      setQualityWarning(false);
+      setClassifyStatus(plan.current ? "result" : "idle");
+    }
+    setPhotoRemoved(true);
+  }
+
+  // Bring the result into view once a photo has been classified.
+  useEffect(() => {
+    if (classifyStatus !== "result" || !result) return;
+    const el = resultCardRef.current;
+    if (!el || typeof el.scrollIntoView !== "function") return;
+    const reduce = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    el.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
+  }, [classifyStatus, result]);
 
   async function handleOverrideConfirm(category: ClassId, reason: string) {
     if (!result) return;
@@ -514,7 +579,7 @@ export default function OfficerSubmitPage() {
                 value={nic}
                 onChange={(e) => setNic(e.target.value)}
                 aria-invalid={!!nicError}
-                className="min-h-touch-target rounded-md border border-border-default bg-surface-raised px-design-3 text-body text-ink-primary"
+                className={touchFieldStyles}
               />
               {nicError && (
                 <p role="alert" className="text-caption text-status-error">
@@ -534,7 +599,7 @@ export default function OfficerSubmitPage() {
                 value={mobile}
                 onChange={(e) => setMobile(e.target.value)}
                 aria-invalid={!!mobileError}
-                className="min-h-touch-target rounded-md border border-border-default bg-surface-raised px-design-3 text-body text-ink-primary"
+                className={touchFieldStyles}
               />
               {mobileError && (
                 <p role="alert" className="text-caption text-status-error">
@@ -555,7 +620,7 @@ export default function OfficerSubmitPage() {
             <button
               type="submit"
               disabled={saving || !sessionChecked || !officerId}
-              className="w-full min-h-primary-btn bg-amber text-ink-on-amber text-headline font-semibold rounded-md disabled:opacity-60"
+              className={touchButtonStyles.primary}
             >
               {sessionChecked ? t("submit.continue") : t("submit.verifyingSession")}
             </button>
@@ -590,7 +655,7 @@ export default function OfficerSubmitPage() {
                   type="button"
                   disabled={saving}
                   onClick={() => void saveLocation(coords, "gps")}
-                  className="w-full min-h-primary-btn bg-amber text-ink-on-amber text-headline font-semibold rounded-md disabled:opacity-60"
+                  className={touchButtonStyles.primary}
                 >
                   {t("submit.continue")}
                 </button>
@@ -639,7 +704,7 @@ export default function OfficerSubmitPage() {
               type="button"
               disabled={saving}
               onClick={() => void handleDamageNext()}
-              className="w-full min-h-primary-btn bg-amber text-ink-on-amber text-headline font-semibold rounded-md disabled:opacity-60"
+              className={touchButtonStyles.primary}
             >
               {t("submit.continue")}
             </button>
@@ -664,10 +729,24 @@ export default function OfficerSubmitPage() {
               thumbnails={thumbnails}
               countLabel={t("classify.photosCaptured", { count: thumbnails.length })}
               ariaLabel={t("classify.photoStripAria")}
+              onRemove={(i) => void handleRemovePhoto(i)}
+              removeLabel={(n) => t("classify.removePhoto", { number: n })}
+              removeDisabled={classifyStatus === "classifying"}
             />
+            {photoRemoved && (
+              <p role="status" className="text-caption text-ink-secondary">
+                {t("classify.photoRemoved")}
+              </p>
+            )}
+            {removeError && (
+              <p role="alert" className="text-caption text-status-error">
+                {t("classify.removeError")}
+              </p>
+            )}
 
             {classifyStatus === "result" && result && (
               <>
+                <div ref={resultCardRef} className="scroll-mt-design-4" />
                 <AIResultCard
                   classId={result.classId}
                   severity={result.severity}
@@ -715,7 +794,7 @@ export default function OfficerSubmitPage() {
                   <button
                     type="button"
                     onClick={() => setStep("review")}
-                    className="w-full min-h-primary-btn bg-amber text-ink-on-amber text-headline font-semibold rounded-md"
+                    className={touchButtonStyles.primary}
                   >
                     {t("submit.reviewAndSubmit")}
                   </button>

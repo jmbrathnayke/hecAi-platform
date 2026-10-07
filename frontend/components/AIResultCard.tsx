@@ -44,7 +44,7 @@ export function AIResultCard({
     <section
       data-testid="ai-result-card"
       aria-label={t("aiResult.cardLabel")}
-      className="border-l-4 border-forest bg-surface-raised rounded-md p-design-4 space-y-design-4"
+      className="border-l-4 border-forest bg-surface-raised rounded-md p-design-4 space-y-design-4 shadow-card"
     >
       {/* Section label + "Auto" chip (mockup): marks the result as machine-produced, which is
           what the Override affordance below is a response to. */}
@@ -52,13 +52,13 @@ export function AIResultCard({
         <span className="text-label font-semibold text-ink-primary">
           {t("aiResult.sectionLabel")}
         </span>
-        <span className="rounded-pill bg-forest-pale px-design-2 py-0.5 text-caption font-semibold text-forest">
+        <span className="rounded-sm bg-forest-pale px-design-2 py-0.5 text-caption font-semibold text-forest">
           {t("aiResult.autoChip")}
         </span>
         {outOfDomain && (
           <span
             data-testid="ood-badge"
-            className="rounded-pill bg-amber-pale px-design-2 py-0.5 text-caption font-semibold text-amber"
+            className="rounded-sm bg-amber-pale px-design-2 py-0.5 text-caption font-semibold text-amber"
           >
             {t("aiResult.outOfDomainBadge")}
           </span>
@@ -67,7 +67,7 @@ export function AIResultCard({
 
       <div className="flex items-start justify-between gap-design-3">
         <h2 className="text-headline text-ink-primary">{t(`aiResult.${classId}`)}</h2>
-        <span className="bg-amber-pale text-amber text-caption font-semibold rounded-pill px-design-3 py-design-1">
+        <span className="bg-amber-pale text-amber text-caption font-semibold rounded-sm px-design-3 py-design-1">
           {t(`severity.${severity}`)}
         </span>
       </div>
@@ -140,14 +140,14 @@ export function AIResultCard({
         <button
           type="button"
           onClick={onAccept}
-          className="min-h-touch-target flex-1 basis-[140px] bg-amber text-ink-on-amber text-label font-semibold rounded-md"
+          className="inline-flex min-h-touch-target flex-1 basis-[140px] items-center justify-center rounded-sm bg-forest px-design-4 text-label font-semibold text-ink-on-dark transition-[background-color,transform] duration-150 hover:bg-forest-mid active:scale-[0.98] motion-reduce:transition-none"
         >
           {t("aiResult.accept")}
         </button>
         <button
           type="button"
           onClick={onOverride}
-          className="min-h-touch-target flex-1 basis-[140px] border border-forest text-forest text-label font-semibold rounded-md"
+          className="inline-flex min-h-touch-target flex-1 basis-[140px] items-center justify-center rounded-sm border border-border-subtle bg-surface-raised px-design-4 text-label font-semibold text-ink-primary transition-[background-color,border-color,transform] duration-150 hover:border-border-default hover:bg-surface-base active:scale-[0.98] motion-reduce:transition-none"
         >
           {t("aiResult.override")}
         </button>

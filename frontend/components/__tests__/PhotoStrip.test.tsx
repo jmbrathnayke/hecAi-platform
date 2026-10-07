@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { PhotoStrip } from "@/components/PhotoStrip";
 
 describe("PhotoStrip", () => {
@@ -36,5 +36,39 @@ describe("PhotoStrip", () => {
       <PhotoStrip thumbnails={["blob:a"]} countLabel="1" ariaLabel="Photos" />,
     );
     expect(container.querySelector("img")).toHaveAttribute("alt", "");
+  });
+
+  it("offers no remove buttons unless the screen asks for them", () => {
+    render(<PhotoStrip thumbnails={["blob:a"]} countLabel="1" ariaLabel="Photos" />);
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+  });
+
+  it("removes the photo whose button was pressed (an accidental frame can be taken out)", () => {
+    const onRemove = jest.fn();
+    render(
+      <PhotoStrip
+        thumbnails={["blob:a", "blob:b"]}
+        countLabel="2"
+        ariaLabel="Photos"
+        onRemove={onRemove}
+        removeLabel={(n) => `Remove photo ${n}`}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Remove photo 2" }));
+    expect(onRemove).toHaveBeenCalledWith(1);
+  });
+
+  it("disables removal while a classification is running", () => {
+    render(<PhotoStrip thumbnails={["blob:a"]} countLabel="1" ariaLabel="Photos" onRemove={jest.fn()} removeDisabled />);
+    expect(screen.getByRole("button", { name: "Remove photo 1" })).toBeDisabled();
+  });
+
+  it("keeps a tile for a photo whose preview could not be made, so it can still be removed", () => {
+    const { container } = render(
+      <PhotoStrip thumbnails={["", "blob:b"]} countLabel="2" ariaLabel="Photos" onRemove={jest.fn()} />,
+    );
+    expect(screen.getAllByRole("listitem")).toHaveLength(2);
+    expect(container.querySelectorAll("img")).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "Remove photo 1" })).toBeInTheDocument();
   });
 });

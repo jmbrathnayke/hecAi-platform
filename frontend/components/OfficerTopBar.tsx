@@ -35,9 +35,11 @@ export function OfficerTopBar({ label, totalSteps, currentStep = 0, action }: Of
   return (
     <div
       data-testid="officer-top-bar"
-      className="flex items-center justify-between gap-design-3 border-b border-border-subtle bg-surface-raised px-design-5 py-design-3"
+      // Redesign (2026-10-07): the screen title under the app bar, at the size a page title should
+      // be read at on a phone rather than the size of a form label.
+      className="flex min-h-[3.5rem] items-center justify-between gap-design-3 border-b border-border-subtle bg-surface-raised px-design-4 py-design-2"
     >
-      <h1 className="text-label font-semibold text-ink-primary">{label}</h1>
+      <h1 className="text-headline tracking-tight text-ink-primary [text-wrap:balance]">{label}</h1>
 
       {totalSteps != null ? (
         <div className="flex shrink-0 gap-design-2" aria-hidden="true">

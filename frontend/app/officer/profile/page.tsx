@@ -9,6 +9,9 @@ import { OfficerTopBar } from "@/components/OfficerTopBar";
 import { StaffAccountDetails, StaffPasswordToggle } from "@/components/StaffAccountMenu";
 import { readStaffAccount, signOutStaff, type StaffAccount } from "@/lib/staffAccount";
 import { getQueuedItems } from "@/lib/syncQueue";
+import PushNotificationToggle from "@/components/PushNotificationToggle";
+import { SignOut, Warning } from "@phosphor-icons/react";
+import { touchButtonStyles } from "@/components/admin/ui";
 
 export default function OfficerProfilePage() {
   const t = useTranslations("staffAccount");
@@ -54,23 +57,29 @@ export default function OfficerProfilePage() {
     <main className="flex flex-1 flex-col bg-surface-base">
       <OfficerTopBar label={t("profileTitle")} />
 
-      <div className="mx-auto flex w-full max-w-md flex-col gap-design-5 px-design-5 py-design-6">
+      <div className="mx-auto flex w-full max-w-md flex-col gap-design-4 px-design-4 py-design-5">
         <section className="flex flex-col gap-design-4 rounded-md border border-border-subtle bg-surface-raised p-design-5 shadow-card">
           <StaffAccountDetails account={account} />
           <StaffPasswordToggle account={account} />
+        </section>
+
+        {/* FR-6.4: alerts for the divisions this officer is assigned to. Moved here from the top of
+            the case list (redesign, 2026-10-07): it is a setting for this phone, set once. */}
+        <section className="rounded-md border border-border-subtle bg-surface-raised p-design-5 shadow-card">
+          <PushNotificationToggle variant="staff" layout="row" />
         </section>
 
         {pending > 0 && (
           <div
             role="status"
             data-testid="pending-sync-warning"
-            className="flex flex-col gap-design-3 rounded-md border border-status-warning bg-amber-pale p-design-4"
+            className="flex flex-col gap-design-3 rounded-md border border-status-warning/40 bg-amber-pale p-design-4"
           >
-            <p className="text-body text-ink-primary">{t("pendingSync", { count: pending })}</p>
-            <Link
-              href="/officer/sync"
-              className="min-h-touch-target self-start rounded-md border border-forest px-design-4 py-design-2 text-label font-semibold text-forest"
-            >
+            <p className="flex items-start gap-design-2 text-body text-ink-primary">
+              <Warning aria-hidden="true" size={20} weight="fill" className="mt-0.5 shrink-0 text-status-warning" />
+              {t("pendingSync", { count: pending })}
+            </p>
+            <Link href="/officer/sync" className={`${touchButtonStyles.secondary} self-start`}>
               {t("goToSync")}
             </Link>
           </div>
@@ -82,14 +91,14 @@ export default function OfficerProfilePage() {
               type="button"
               disabled={signingOut}
               onClick={() => void signOut()}
-              className="min-h-primary-btn rounded-md bg-status-error px-design-4 text-label font-semibold text-ink-on-dark disabled:opacity-60"
+              className="inline-flex min-h-primary-btn items-center justify-center gap-design-2 rounded-sm bg-status-error px-design-4 text-label font-semibold text-ink-on-dark transition-transform duration-150 active:scale-[0.98] disabled:opacity-60 motion-reduce:transition-none"
             >
               {signingOut ? t("signingOut") : t("signOutAnyway")}
             </button>
             <button
               type="button"
               onClick={() => setConfirming(false)}
-              className="min-h-touch-target rounded-md border border-border-default px-design-4 text-label font-medium text-ink-secondary"
+              className={touchButtonStyles.secondary}
             >
               {t("cancel")}
             </button>
@@ -99,8 +108,9 @@ export default function OfficerProfilePage() {
             type="button"
             disabled={signingOut}
             onClick={handleSignOut}
-            className="min-h-primary-btn rounded-md border-2 border-status-error px-design-4 text-label font-semibold text-status-error transition-opacity hover:opacity-90 disabled:opacity-60"
+            className="inline-flex min-h-primary-btn items-center justify-center gap-design-2 rounded-sm border border-status-error bg-surface-raised px-design-4 text-label font-semibold text-status-error transition-[background-color,transform] duration-150 hover:bg-status-error-pale active:scale-[0.98] disabled:opacity-60 motion-reduce:transition-none"
           >
+            <SignOut aria-hidden="true" size={18} />
             {signingOut ? t("signingOut") : t("signOut")}
           </button>
         )}

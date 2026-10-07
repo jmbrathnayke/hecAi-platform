@@ -11,6 +11,7 @@ import type { SyncQueueItem } from "@/lib/indexeddb";
 import { SyncQueueItemCard } from "@/components/SyncQueueItem";
 import { Toast } from "@/components/Toast";
 import { OfficerTopBar } from "@/components/OfficerTopBar";
+import { CheckCircle } from "@phosphor-icons/react";
 
 const POLL_MS = 5_000;
 
@@ -122,8 +123,8 @@ export default function SyncQueuePage() {
           // was py-design-12 / text-heading — neither exists in the theme (spacing tops out at
           // design-8; the type scale has no `heading`), so both were no-ops.
           <div className="flex flex-col items-center justify-center gap-design-3 py-design-8" role="status">
-            <span className="text-4xl" aria-hidden="true">
-              ✓
+            <span className="flex h-14 w-14 items-center justify-center rounded-md bg-forest-pale text-forest" aria-hidden="true">
+              <CheckCircle size={30} weight="fill" />
             </span>
             <p className="text-headline text-forest">{t("syncPage.allSynced")}</p>
             {lastSynced !== null && (

@@ -9,6 +9,9 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { createClient, isAuthReachable } from "@/lib/supabase";
 import { callbackErrorKey } from "@/lib/authErrors";
+import { touchButtonStyles, touchFieldStyles } from "@/components/admin/ui";
+import { GoogleLogo } from "@phosphor-icons/react";
+import { StaffBrandMark } from "@/components/StaffBrandMark";
 
 type SupabaseClient = ReturnType<typeof createClient>;
 
@@ -123,70 +126,77 @@ function OfficerLoginPageContent() {
   }
 
   return (
-    <main className="min-h-screen bg-surface-base flex items-center justify-center px-design-4">
-      <div className="w-full max-w-sm bg-surface-raised rounded-lg border border-border-default p-design-6 space-y-design-4">
-        <h1 className="text-title text-ink-primary text-center">{t("login.title")}</h1>
+    // Redesign (2026-10-07), the staff portals' sign-in at field-app sizes: email and password
+    // first with labels above them, Sign in as the one primary action, Google as the alternative.
+    <main className="flex min-h-dvh items-center justify-center bg-surface-base px-design-4 py-design-7">
+      <div className="w-full max-w-[400px]">
+        <div className="mb-design-5">
+          <StaffBrandMark label="HEC" size="lg" />
+        </div>
+        <div className="space-y-design-5 rounded-md border border-border-subtle bg-surface-raised p-design-5 shadow-raised sm:p-design-6">
+        <div>
+          <h1 className="text-display tracking-tight text-ink-primary [text-wrap:balance]">{t("login.title")}</h1>
+          <p className="mt-design-1 text-label text-ink-secondary">{t("login.subtitle")}</p>
+        </div>
+
+        <form onSubmit={handleEmailSignIn} className="space-y-design-4">
+          <div className="flex flex-col gap-design-1">
+            <label htmlFor="officer-email" className="text-caption font-medium text-ink-secondary">
+              {t("login.emailLabel")}
+            </label>
+            <input
+              id="officer-email"
+              type="email"
+              autoComplete="username"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder={t("login.emailPlaceholder")}
+              required
+              className={touchFieldStyles}
+            />
+          </div>
+          <div className="flex flex-col gap-design-1">
+            <label htmlFor="officer-password" className="text-caption font-medium text-ink-secondary">
+              {t("login.passwordLabel")}
+            </label>
+            <input
+              id="officer-password"
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder={t("login.passwordPlaceholder")}
+              required
+              className={touchFieldStyles}
+            />
+          </div>
+          <button type="submit" disabled={submitting} className={touchButtonStyles.primary}>
+            {t("login.signIn")}
+          </button>
+        </form>
+
+        <div className="flex items-center gap-design-3 text-caption text-ink-secondary">
+          <span className="h-px flex-1 bg-border-subtle" aria-hidden="true" />
+          <span>{t("login.or")}</span>
+          <span className="h-px flex-1 bg-border-subtle" aria-hidden="true" />
+        </div>
 
         <button
           type="button"
           onClick={handleGoogleSignIn}
           disabled={submitting}
-          className="w-full min-h-touch-target bg-forest text-ink-on-dark text-label font-semibold rounded-md disabled:opacity-60"
+          className={`${touchButtonStyles.secondary} w-full`}
         >
+          <GoogleLogo aria-hidden="true" size={18} weight="bold" />
           {t("login.google")}
         </button>
-
-        {/* The rule was previously a bare `relative` with nothing to position against, so the
-            "or" floated with no divider either side of it. */}
-        <div className="flex items-center gap-design-3 text-label text-ink-disabled">
-          <span className="h-px flex-1 bg-border-default" aria-hidden="true" />
-          <span>{t("login.or")}</span>
-          <span className="h-px flex-1 bg-border-default" aria-hidden="true" />
-        </div>
-
-        <form onSubmit={handleEmailSignIn} className="space-y-design-3">
-          {/* Placeholders were carrying the whole labelling burden — they vanish on focus and are
-              not reliably announced. The visible design is unchanged; the names now exist. */}
-          <label htmlFor="officer-email" className="sr-only">
-            {t("login.emailPlaceholder")}
-          </label>
-          <input
-            id="officer-email"
-            type="email"
-            autoComplete="username"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder={t("login.emailPlaceholder")}
-            required
-            className="min-h-touch-target w-full rounded-md border border-border-default px-design-3 py-design-2 text-body"
-          />
-          <label htmlFor="officer-password" className="sr-only">
-            {t("login.passwordPlaceholder")}
-          </label>
-          <input
-            id="officer-password"
-            type="password"
-            autoComplete="current-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder={t("login.passwordPlaceholder")}
-            required
-            className="min-h-touch-target w-full rounded-md border border-border-default px-design-3 py-design-2 text-body"
-          />
-          <button
-            type="submit"
-            disabled={submitting}
-            className="w-full min-h-primary-btn bg-amber text-ink-on-amber text-headline font-semibold rounded-md disabled:opacity-60"
-          >
-            {t("login.signIn")}
-          </button>
-        </form>
 
         {error && (
           <p role="alert" className="text-status-error text-label text-center">
             {error}
           </p>
         )}
+        </div>
       </div>
     </main>
   );

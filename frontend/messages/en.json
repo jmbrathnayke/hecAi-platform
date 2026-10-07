@@ -338,7 +338,7 @@
         "noSession": "You are not signed in.",
         "signedOut": "Your session has expired.",
         "forbidden": "This account does not have officer access. An administrator must grant it the officer role, and you must sign in again afterwards.",
-        "serverMisconfigured": "The server could not verify your sign-in. This is a server problem, not your account — try again in a moment.",
+        "serverMisconfigured": "The server could not verify your sign-in. This is a server problem, not your account. Try again in a moment.",
         "server": "The server could not load your cases.",
         "network": "Could not reach the server. Check your connection.",
         "unknown": "Couldn’t load your cases.",
@@ -357,12 +357,15 @@
       "or": "or",
       "emailPlaceholder": "DWC email address",
       "passwordPlaceholder": "Password",
-      "signIn": "Sign In",
+      "signIn": "Sign in",
       "networkError": "Could not reach the sign-in service. Check your connection and try again.",
       "errorAccessDenied": "Sign-in was cancelled. Please try again.",
       "errorMissingCode": "That sign-in link is incomplete. Please start again from this page.",
       "errorExchangeFailed": "Your sign-in link has expired or was already used. Please try again.",
-      "errorProvider": "Sign-in failed. Please try again."
+      "errorProvider": "Sign-in failed. Please try again.",
+      "subtitle": "Field reports and assessments for your divisions",
+      "emailLabel": "Email",
+      "passwordLabel": "Password"
     },
     "classify": {
       "title": "Damage Classification",
@@ -377,7 +380,10 @@
       "photosCaptured": "{count, plural, one {# photo classified} other {# photos classified}}",
       "photoStripAria": "Photos classified in this case",
       "photoFetchError": "This photo could not be loaded for classification. Reload the page and try again.",
-      "analyzingCitizenPhoto": "Classifying the family's photo on this device…"
+      "analyzingCitizenPhoto": "Classifying the family's photo on this device…",
+      "removePhoto": "Remove photo {number}",
+      "photoRemoved": "Photo removed. It is no longer part of this case.",
+      "removeError": "Could not remove the photo. Try again."
     },
     "camera": {
       "viewfinderLabel": "Camera viewfinder",
@@ -406,15 +412,15 @@
       "label": "Field notes (optional)",
       "placeholder": "e.g. Approx 1.5 acres of paddy affected, east section of field.",
       "count": "{count}/{max}",
-      "saveError": "Note not saved yet — it will retry as you type."
+      "saveError": "Note not saved yet. It will retry as you type."
     },
     "submit": {
       "title": "Submit Report for Citizen",
-      "step1": "Step 1 of 5 — Citizen Identity",
-      "step2": "Step 2 of 5 — Location",
-      "step3": "Step 3 of 5 — Damage",
-      "step4": "Step 4 of 5 — Photo & Classification",
-      "step5": "Step 5 of 5 — Review & Submit",
+      "step1": "Step 1 of 5: Citizen identity",
+      "step2": "Step 2 of 5: Location",
+      "step3": "Step 3 of 5: Damage",
+      "step4": "Step 4 of 5: Photo and classification",
+      "step5": "Step 5 of 5: Review and submit",
       "identityHint": "Enter the <strong>citizen’s</strong> details (the person you are assisting), not your own.",
       "citizenNic": "Citizen’s NIC",
       "citizenMobile": "Citizen’s mobile number",
@@ -473,9 +479,9 @@
       "autoChip": "Auto",
       "modelFooter": "Classified using {model} · on-device · {ms} ms",
       "overrideHint": "If this classification is incorrect, tap Override to select the correct category.",
-      "confidenceCaveat": "This is how strongly the model prefers this class over its other two — not the chance it is right. It only knows crop damage, property damage and no damage; a photo of something else is caught by a separate check and recorded as No Damage instead of being guessed at. Check the result against what you see.",
+      "confidenceCaveat": "This is how strongly the model prefers this class over its other two, not the chance it is right. It only knows crop damage, property damage and no damage; a photo of something else is caught by a separate check and recorded as No Damage instead of being guessed at. Check the result against what you see.",
       "outOfDomainBadge": "Outside the model's scope",
-      "outOfDomainNotice": "The model does not recognise this photo as a crop, a field or a building — the three things it was trained on. It has therefore been recorded as No Damage, and no compensation will be estimated from it. If the photo really does show damage, tap Override and choose the category yourself; otherwise take the photo again.",
+      "outOfDomainNotice": "The model does not recognise this photo as a crop, a field or a building: the three things it was trained on. It has therefore been recorded as No Damage, and no compensation will be estimated from it. If the photo really does show damage, tap Override and choose the category yourself; otherwise take the photo again.",
       "outOfDomainNoConfidence": "No confidence figure is shown. That number only compares the three trained classes against each other, and this photo is outside all three, so it would mean nothing here."
     },
     "severity": {
@@ -521,7 +527,7 @@
       "loadError": "Couldn’t load the sync queue. Check your connection and try again.",
       "allSynced": "All reports synced",
       "lastSync": "Last sync: {time}",
-      "offlineRetry": "You are offline — retry when connected",
+      "offlineRetry": "You are offline. Retry when connected",
       "retryFailed": "Retry failed. Check your connection.",
       "syncedSuccess": "Report synced successfully",
       "errorNotConfirmed": "Sync couldn’t be confirmed. Try again or contact support.",
@@ -555,7 +561,7 @@
       "reviewStarted": "Review started. The citizen has been told their report is under review.",
       "assessTitle": "Officer assessment",
       "reassessTitle": "Update assessment",
-      "assessHint": "Classify one of the family's photos above, or inspect the site and photograph the damage yourself. Either way the photo is classified on this device — the model never sends it anywhere. A photo you take is then attached to the case as evidence for the reviewers.",
+      "assessHint": "Classify one of the family's photos above, or inspect the site and photograph the damage yourself. Either way the photo is classified on this device: the model never sends it anywhere. A photo you take is then attached to the case as evidence for the reviewers.",
       "notFinalClassification": "AI classification assists the officer. It is not a final decision.",
       "submitAssessment": "Submit assessment",
       "submitting": "Submitting…",
@@ -567,7 +573,7 @@
       "noAiResult": "No classification has been recorded for this case yet.",
       "estimateTitle": "AI-Assisted Compensation Estimate",
       "noEstimate": "No estimate is available for this case.",
-      "estimateDisclaimer": "Decision support only — not the final compensation. The DWC administrator reviews it and the Divisional Secretariat decides the final amount.",
+      "estimateDisclaimer": "Decision support only, not the final compensation. The DWC administrator reviews it and the Divisional Secretariat decides the final amount.",
       "historyTitle": "Case history",
       "error": {
         "signedOut": "Your session has expired. Sign in again.",
@@ -575,7 +581,7 @@
         "notFound": "This case was not found in your divisions.",
         "closed": "This case is no longer open for officer assessment.",
         "invalid": "The assessment could not be recorded. Check the classification and try again.",
-        "network": "Could not reach the server. Your classification is kept — try again when connected.",
+        "network": "Could not reach the server. Your classification is kept. Try again when connected.",
         "server": "The server could not complete this action. Try again."
       },
       "events": {
@@ -596,7 +602,7 @@
         "ds_authorized_payment": "Payment authorised",
         "case_paid": "Payment processed"
       },
-      "estimateSynthetic": "Prototype estimate — the crop model is trained on synthetic data, not official compensation records.",
+      "estimateSynthetic": "Prototype estimate: the crop model is trained on synthetic data, not official compensation records.",
       "citizenReportTitle": "The family's report",
       "citizenDescription": "What the family wrote",
       "noCitizenDescription": "The family did not write a description.",
@@ -606,7 +612,9 @@
       "inputSource": {
         "citizen_photo": "The family's photo",
         "officer_capture": "The officer's own photo"
-      }
+      },
+      "showAccess": "{count, plural, one {Show who opened this case (# view)} other {Show who opened this case (# views)}}",
+      "hideAccess": "Hide who opened this case"
     },
     "navProfile": "Profile",
     "photo": {
@@ -622,12 +630,15 @@
       "or": "or",
       "emailPlaceholder": "Divisional Secretariat email address",
       "passwordPlaceholder": "Password",
-      "signIn": "Sign In",
+      "signIn": "Sign in",
       "networkError": "Could not reach the sign-in service. Check your connection and try again.",
       "errorAccessDenied": "Sign-in was cancelled. Please try again.",
       "errorMissingCode": "That sign-in link is incomplete. Please start again from this page.",
       "errorExchangeFailed": "Your sign-in link has expired or was already used. Please try again.",
-      "errorProvider": "Sign-in failed. Please try again."
+      "errorProvider": "Sign-in failed. Please try again.",
+      "subtitle": "Final decisions and payments for your division",
+      "emailLabel": "Email",
+      "passwordLabel": "Password"
     },
     "title": "Divisional Secretariat",
     "divisionLabel": "Division",
@@ -662,7 +673,7 @@
         "notApproved": "This case has not been approved yet. The DWC administrator approves it before payment.",
         "noHousehold": "This case is not linked to a registered household, so it cannot be paid.",
         "noBankDetails": "This family has not given bank details. Ask them to provide an account.",
-        "unreadable": "The stored bank details could not be read. Contact the system administrator — do not ask the family to re-enter them.",
+        "unreadable": "The stored bank details could not be read. Contact the system administrator, and do not ask the family to re-enter them.",
         "server": "The server could not authorize this payment.",
         "network": "Could not reach the server. Check your connection.",
         "finalDecisionRequired": "Record the final compensation decision before authorizing payment."
@@ -672,7 +683,7 @@
     "finalDecision": {
       "title": "Final compensation review",
       "aiEstimate": "AI-assisted estimate",
-      "aiEstimateNote": "Decision support only — not a decision.",
+      "aiEstimateNote": "Decision support only, not a decision.",
       "dwcAmount": "DWC recommended amount",
       "officerAssessed": "Officer assessment recorded",
       "officerNotAssessed": "No officer assessment recorded",
@@ -688,7 +699,7 @@
       "cancel": "Cancel",
       "requiredBeforePayment": "Record the final compensation decision before authorizing payment.",
       "error": {
-        "reasonRequired": "Give a reason of at least 10 characters — the amount differs from the AI-assisted estimate.",
+        "reasonRequired": "Give a reason of at least 10 characters: the amount differs from the AI-assisted estimate.",
         "invalidAmount": "Enter a valid amount (zero or more).",
         "notApproved": "Only a case approved by DWC can receive a final decision.",
         "paymentAuthorized": "Payment has already been authorized; the decision can no longer change.",
@@ -697,7 +708,7 @@
         "server": "The server could not record the decision.",
         "network": "Could not reach the server. Check your connection."
       },
-      "aiEstimateSynthetic": "Prototype crop model, trained on synthetic data — not official compensation records."
+      "aiEstimateSynthetic": "Prototype crop model, trained on synthetic data, not on official compensation records."
     },
     "bankDetails": {
       "title": "Bank details",
@@ -731,7 +742,14 @@
       "description": "What the family wrote",
       "noDescription": "The family did not write a description."
     },
-    "submittedOn": "Reported {date}"
+    "submittedOn": "Reported {date}",
+    "queue": {
+      "decide": "Final decision needed",
+      "pay": "Ready for payment",
+      "waiting": "With the DWC",
+      "paid": "Paid"
+    },
+    "filterAria": "Filter by status"
   },
   "admin": {
     "languageLabel": "Language",
@@ -1166,7 +1184,8 @@
     "goToSync": "Open sync queue",
     "brand": {
       "ds": "Divisional Secretariat",
-      "system": "System administration"
+      "system": "System administration",
+      "officer": "Field officer"
     },
     "assignedByAdmin": "Your role and area are assigned by the system administrator.",
     "changePassword": "Change password",

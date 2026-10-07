@@ -14,7 +14,7 @@ jest.mock("next-intl", () => ({
   useLocale: () => "en",
 }));
 import { classifyImage } from "@/lib/mobilenet";
-import { saveClassification, saveOverride, getCase } from "@/lib/indexeddb";
+import { saveClassification, saveOverride, getCase, updateDraft } from "@/lib/indexeddb";
 import { getDraftId, getOrCreateDraftId, clearDraftId } from "@/lib/draft";
 
 jest.mock("@/lib/imageQuality", () => ({ assessImageQuality: jest.fn() }));
@@ -463,5 +463,64 @@ describe("OfficerClassifyPage — camera screen chrome", () => {
     selectPhoto();
     await screen.findByTestId("ai-result-card");
     expect(screen.getByTestId("field-notes")).toHaveValue("");
+  });
+});
+
+
+describe("removing a photo taken by accident (2026-10-07)", () => {
+  async function takeTwoPhotos() {
+    mockClassify
+      .mockResolvedValueOnce({ classId: "crop_damage", severity: "Moderate", confidence: 0.7, processingTimeMs: 280, modelVersion: "mobilenetv2-v1" })
+      .mockResolvedValueOnce({ classId: "no_damage", severity: "None", confidence: 0.6, processingTimeMs: 250, modelVersion: "mobilenetv2-v1", outOfDomain: true });
+    render(<OfficerClassifyPage />);
+    selectPhoto();
+    await screen.findByText("aiResult.crop_damage");
+    selectPhoto();
+    await screen.findByText("aiResult.no_damage");
+  }
+
+  beforeEach(() => {
+    (updateDraft as jest.Mock).mockReset().mockResolvedValue(undefined);
+    mockGetDraftId.mockReturnValue("draft-1");
+  });
+
+  it("takes the latest photo out, and the card goes back to the previous one", async () => {
+    await takeTwoPhotos();
+    fireEvent.click(screen.getByRole("button", { name: "classify.removePhoto 2" }));
+
+    await screen.findByText("classify.photoRemoved");
+    expect(screen.getByText("aiResult.crop_damage")).toBeInTheDocument();
+    expect(screen.queryByText("aiResult.no_damage")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("listitem", { hidden: true }).filter((li) => li.closest('[data-testid="photo-strip"]'))).toHaveLength(1);
+    expect(revokedUrls).toContain("blob:photo-2");
+    // The draft now describes the remaining photo, and the case is crop damage only.
+    expect(updateDraft).toHaveBeenCalledWith(
+      "draft-1",
+      expect.objectContaining({ ai_category: "crop_damage", case_category: "crop_damage", override_category: undefined }),
+    );
+  });
+
+  it("removing the only photo clears the result and the draft's classification", async () => {
+    render(<OfficerClassifyPage />);
+    selectPhoto();
+    await screen.findByTestId("ai-result-card");
+    fireEvent.click(screen.getByRole("button", { name: "classify.removePhoto 1" }));
+
+    await screen.findByText("classify.photoRemoved");
+    expect(screen.queryByTestId("ai-result-card")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("photo-strip")).not.toBeInTheDocument();
+    expect(updateDraft).toHaveBeenCalledWith("draft-1", expect.objectContaining({ ai_category: undefined, case_category: undefined }));
+  });
+
+  it("keeps the photo and says so when the draft could not be updated", async () => {
+    (updateDraft as jest.Mock).mockRejectedValueOnce(new Error("idb"));
+    render(<OfficerClassifyPage />);
+    selectPhoto();
+    await screen.findByTestId("ai-result-card");
+    fireEvent.click(screen.getByRole("button", { name: "classify.removePhoto 1" }));
+
+    expect(await screen.findByText("classify.removeError")).toBeInTheDocument();
+    expect(screen.getByTestId("ai-result-card")).toBeInTheDocument();
+    expect(screen.getByTestId("photo-strip")).toBeInTheDocument();
   });
 });

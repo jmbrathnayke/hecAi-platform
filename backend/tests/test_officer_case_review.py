@@ -9,6 +9,7 @@ What these tests pin down, in the order a real claim experiences it:
   * the district administrator is alerted, and the citizen is told the verification is complete;
   * a case the administrator has already decided cannot be re-assessed beneath that decision.
 """
+import re
 import json
 from datetime import datetime, timezone
 
@@ -123,9 +124,15 @@ class FakeCursor:
             self._one = (1,) if any(p["id"] == photo_id and p["case_id"] == case_id
                                     and p["source"] == "citizen"
                                     for p in self.store["photos"]) else None
-        elif s.startswith("SELECT event, created_at FROM audit_log"):
-            self._rows = [(a["event"], datetime(2026, 9, 2, tzinfo=timezone.utc))
-                          for a in reversed(self.store["audit"]) if a["case_id"] == params[0]]
+        elif s.startswith("SELECT id, event, created_at FROM audit_log"):
+            # Follows the real query: one call per side of the access-event split, each newest
+            # first and limited on its own.
+            case_id, pattern, limit = params
+            access = "event ~ %s" in s and "event !~ %s" not in s
+            matching = [(i, a) for i, a in enumerate(self.store["audit"])
+                        if a["case_id"] == case_id and bool(re.search(pattern, a["event"])) == access]
+            self._rows = [(i, a["event"], datetime(2026, 9, 2, tzinfo=timezone.utc))
+                          for i, a in reversed(matching)][:limit]
         else:  # pragma: no cover
             raise AssertionError(f"unexpected SQL: {s}")
 
@@ -573,3 +580,22 @@ def test_the_officer_reads_the_familys_own_description(client, store):
     store["cases"][REF]["citizen_description"] = "අලියා ගෙදර බිත්තිය කැඩුවා"
     res = client.get(f"/api/v1/officer/cases/{REF}", headers=_auth())
     assert res.get_json()["case"]["citizen_description"] == "අලියා ගෙදර බිත්තිය කැඩුවා"
+
+
+# ------------------------------------------------------------------------------ history
+def test_views_never_push_the_workflow_out_of_the_history(client, store, monkeypatch):
+    # 2026-10-07: on a busy case every audited read filled the 100-row history and the workflow
+    # (submitted, assessed) fell out of it. The two kinds are now limited separately.
+    monkeypatch.setattr("app.api.v1.officer_cases.MAX_HISTORY_ROWS", 5)
+    store["audit"].append({"case_id": 301, "event": "submitted", "hash": "h0"})
+    store["audit"].append({"case_id": 301, "event": "officer_review_started", "hash": "h1"})
+    for i in range(12):
+        store["audit"].append({"case_id": 301, "event": "case_photos_viewed", "hash": f"v{i}"})
+        store["audit"].append({"case_id": 301, "event": "admin_viewed_case_detail", "hash": f"a{i}"})
+
+    history = [h["event"] for h in
+               client.get(f"/api/v1/officer/cases/{REF}", headers=_auth()).get_json()["history"]]
+
+    assert history[:2] == ["submitted", "officer_review_started"]   # oldest first, still there
+    views = [e for e in history if "viewed" in e]
+    assert 0 < len(views) <= 5                                      # views capped on their own

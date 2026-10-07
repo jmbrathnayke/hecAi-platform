@@ -9,6 +9,7 @@
 // administrator (app/api/v1/ds.py::record_final_decision).
 import { useState } from "react";
 import { recordFinalDecision, type DsCase, type FinalDecision, type FinalDecisionFailure } from "@/lib/dsCases";
+import { buttonStyles, fieldStyles } from "@/components/admin/ui";
 
 const MIN_REASON_LENGTH = 10;
 
@@ -72,15 +73,16 @@ export function DsFinalDecisionPanel({ dsCase, t, onDecided, onCancel }: Props) 
   }
 
   return (
-    <section className="flex flex-col gap-design-3 rounded-md border border-forest p-design-4" data-testid="final-decision-panel">
+    <section className="flex flex-col gap-design-3 rounded-md border border-border-subtle bg-surface-raised p-design-4 shadow-card sm:p-design-5" data-testid="final-decision-panel">
       <h2 className="text-label font-semibold text-ink-primary">
-        {t("finalDecision.title")} — {dsCase.canonical_id}
+        {t("finalDecision.title")}{" "}
+        <span className="ml-design-1 font-staff-mono text-caption font-medium text-ink-secondary">{dsCase.canonical_id}</span>
       </h2>
 
       <dl className="grid grid-cols-1 gap-design-2 sm:grid-cols-2">
-        <div className="rounded-sm border border-status-warning px-design-3 py-design-2" data-testid="ds-ai-estimate">
+        <div className="rounded-sm border border-status-warning/40 bg-surface-base px-design-3 py-design-2" data-testid="ds-ai-estimate">
           <dt className="text-caption text-ink-secondary">{t("finalDecision.aiEstimate")}</dt>
-          <dd className="text-headline text-ink-primary">{lkr(aiEstimate)}</dd>
+          <dd className="text-headline tabular-nums text-ink-primary">{lkr(aiEstimate)}</dd>
           <dd className="text-caption font-semibold text-status-warning">{t("finalDecision.aiEstimateNote")}</dd>
           {dsCase.ai_estimate?.synthetic_model && (
             <dd className="text-caption font-semibold text-status-warning" data-testid="ds-estimate-synthetic">
@@ -90,14 +92,14 @@ export function DsFinalDecisionPanel({ dsCase, t, onDecided, onCancel }: Props) 
         </div>
         <div className="rounded-sm bg-surface-base px-design-3 py-design-2">
           <dt className="text-caption text-ink-secondary">{t("finalDecision.dwcAmount")}</dt>
-          <dd className="text-headline text-ink-primary">{lkr(dsCase.approved_amount)}</dd>
+          <dd className="text-headline tabular-nums text-ink-primary">{lkr(dsCase.approved_amount)}</dd>
           <dd className="text-caption text-ink-secondary">
             {dsCase.officer_assessed ? t("finalDecision.officerAssessed") : t("finalDecision.officerNotAssessed")}
           </dd>
         </div>
       </dl>
 
-      <label className="flex flex-col gap-design-1 text-label text-ink-primary">
+      <label className="flex flex-col gap-design-1 text-caption font-medium text-ink-secondary">
         {t("finalDecision.amountLabel")}
         <input
           type="number"
@@ -107,18 +109,18 @@ export function DsFinalDecisionPanel({ dsCase, t, onDecided, onCancel }: Props) 
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
           aria-invalid={!amountValid}
-          className="min-h-touch-target rounded-md border border-border-default bg-surface-raised px-design-3 text-body focus:border-border-focus focus:outline-none"
+          className={`${fieldStyles} min-h-[44px] text-body tabular-nums`}
         />
       </label>
 
-      <label className="flex flex-col gap-design-1 text-label text-ink-primary">
+      <label className="flex flex-col gap-design-1 text-caption font-medium text-ink-secondary">
         {t("finalDecision.reasonLabel")}
         <textarea
           value={reason}
           onChange={(e) => setReason(e.target.value)}
           rows={3}
           aria-invalid={!reasonOk}
-          className="rounded-md border border-border-default bg-surface-raised px-design-3 py-design-2 text-body focus:border-border-focus focus:outline-none"
+          className={`${fieldStyles} py-design-2 text-body`}
         />
         <span className="text-caption text-ink-secondary">{t("finalDecision.reasonHint")}</span>
       </label>
@@ -136,14 +138,14 @@ export function DsFinalDecisionPanel({ dsCase, t, onDecided, onCancel }: Props) 
           type="button"
           onClick={() => void submit()}
           disabled={!canSubmit}
-          className="min-h-touch-target rounded-md bg-amber px-design-4 text-label font-semibold text-ink-on-amber disabled:opacity-60"
+          className={buttonStyles.primary}
         >
           {busy ? t("finalDecision.saving") : t("finalDecision.confirm")}
         </button>
         <button
           type="button"
           onClick={onCancel}
-          className="min-h-touch-target rounded-md border border-border-default px-design-4 text-label font-semibold text-ink-secondary"
+          className={buttonStyles.secondary}
         >
           {t("finalDecision.cancel")}
         </button>

@@ -17,6 +17,9 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { createClient, isAuthReachable } from "@/lib/supabase";
 import { callbackErrorKey } from "@/lib/authErrors";
+import { GoogleLogo } from "@phosphor-icons/react";
+import { StaffBrandMark } from "@/components/StaffBrandMark";
+import { buttonStyles, fieldStyles } from "@/components/admin/ui";
 
 type SupabaseClient = ReturnType<typeof createClient>;
 
@@ -123,69 +126,78 @@ function DsLoginPageContent() {
     }
   }
 
+  // Redesign (2026-10-07), the admin portal's sign-in: one primary action (Sign in, forest),
+  // Google as the quieter alternative, labels above the inputs.
   return (
-    <main className="min-h-screen bg-surface-base flex items-center justify-center px-design-4">
-      <div className="w-full max-w-sm bg-surface-raised rounded-lg border border-border-default p-design-6 space-y-design-4">
-        <h1 className="text-title text-ink-primary text-center">{t("login.title")}</h1>
-
-        <button
-          type="button"
-          onClick={handleGoogleSignIn}
-          disabled={submitting}
-          className="w-full min-h-touch-target bg-forest text-ink-on-dark text-label font-semibold rounded-md disabled:opacity-60"
-        >
-          {t("login.google")}
-        </button>
-
-        <div className="flex items-center gap-design-3 text-label text-ink-disabled">
-          <span className="h-px flex-1 bg-border-default" aria-hidden="true" />
-          <span>{t("login.or")}</span>
-          <span className="h-px flex-1 bg-border-default" aria-hidden="true" />
+    <main className="flex min-h-dvh items-center justify-center bg-surface-base px-design-4 py-design-7">
+      <div className="w-full max-w-[400px]">
+        <div className="mb-design-5">
+          <StaffBrandMark label="HEC" size="lg" />
         </div>
+        <div className="space-y-design-5 rounded-md border border-border-subtle bg-surface-raised p-design-5 shadow-raised sm:p-design-6">
+          <div>
+            <h1 className="text-display tracking-tight text-ink-primary [text-wrap:balance]">{t("login.title")}</h1>
+            <p className="mt-design-1 text-label text-ink-secondary">{t("login.subtitle")}</p>
+          </div>
 
-        <form onSubmit={handleEmailSignIn} className="space-y-design-3">
-          {/* Visible labels are sr-only: placeholders vanish on focus and are not reliably
-              announced, so the accessible name has to exist independently. */}
-          <label htmlFor="ds-email" className="sr-only">
-            {t("login.emailPlaceholder")}
-          </label>
-          <input
-            id="ds-email"
-            type="email"
-            autoComplete="username"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder={t("login.emailPlaceholder")}
-            required
-            className="min-h-touch-target w-full rounded-md border border-border-default px-design-3 py-design-2 text-body"
-          />
-          <label htmlFor="ds-password" className="sr-only">
-            {t("login.passwordPlaceholder")}
-          </label>
-          <input
-            id="ds-password"
-            type="password"
-            autoComplete="current-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder={t("login.passwordPlaceholder")}
-            required
-            className="min-h-touch-target w-full rounded-md border border-border-default px-design-3 py-design-2 text-body"
-          />
+          <form onSubmit={handleEmailSignIn} className="space-y-design-4">
+            <div className="flex flex-col gap-design-1">
+              <label htmlFor="ds-email" className="text-caption font-medium text-ink-secondary">
+                {t("login.emailLabel")}
+              </label>
+              <input
+                id="ds-email"
+                type="email"
+                autoComplete="username"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder={t("login.emailPlaceholder")}
+                required
+                className={`${fieldStyles} min-h-[44px] placeholder:text-ink-secondary`}
+              />
+            </div>
+            <div className="flex flex-col gap-design-1">
+              <label htmlFor="ds-password" className="text-caption font-medium text-ink-secondary">
+                {t("login.passwordLabel")}
+              </label>
+              <input
+                id="ds-password"
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder={t("login.passwordPlaceholder")}
+                required
+                className={`${fieldStyles} min-h-[44px] placeholder:text-ink-secondary`}
+              />
+            </div>
+            <button type="submit" disabled={submitting} className={`${buttonStyles.primary} min-h-[44px] w-full`}>
+              {t("login.signIn")}
+            </button>
+          </form>
+
+          <div className="flex items-center gap-design-3 text-caption text-ink-secondary">
+            <span aria-hidden="true" className="h-px flex-1 bg-border-subtle" />
+            {t("login.or")}
+            <span aria-hidden="true" className="h-px flex-1 bg-border-subtle" />
+          </div>
+
           <button
-            type="submit"
+            type="button"
+            onClick={handleGoogleSignIn}
             disabled={submitting}
-            className="w-full min-h-primary-btn bg-amber text-ink-on-amber text-headline font-semibold rounded-md disabled:opacity-60"
+            className={`${buttonStyles.secondary} min-h-[44px] w-full`}
           >
-            {t("login.signIn")}
+            <GoogleLogo aria-hidden="true" size={18} weight="bold" />
+            {t("login.google")}
           </button>
-        </form>
 
-        {error && (
-          <p role="alert" className="text-status-error text-label text-center">
-            {error}
-          </p>
-        )}
+          {error && (
+            <p role="alert" className="rounded-sm bg-status-error-pale px-design-3 py-design-2 text-label text-status-error">
+              {error}
+            </p>
+          )}
+        </div>
       </div>
     </main>
   );

@@ -1,4 +1,5 @@
-// Small presentational building blocks for the admin desk (redesign, 2026-10-07).
+// Small presentational building blocks for the staff portals: the admin and DS desks and, with the
+// touch sizes below, the officer field app (redesign, 2026-10-07).
 //
 // One shape scale everywhere in the admin area: panels are rounded-md (16px); controls, inputs,
 // buttons and badges are rounded-sm (8px); avatars are rounded-pill. One accent: forest. Status
@@ -96,6 +97,21 @@ export const buttonStyles = {
   danger:
     "inline-flex min-h-[40px] items-center justify-center gap-design-2 rounded-sm border border-status-error bg-surface-raised px-design-4 text-label font-semibold text-status-error transition-[background-color,transform] duration-150 hover:bg-status-error-pale active:scale-[0.98] disabled:opacity-50 motion-reduce:transition-none",
 } as const;
+
+/** Field-app sizes (officer redesign, 2026-10-07). The officer works on a phone, outdoors, often
+ *  one-handed, so these keep the app's 48px touch floor and the 56px primary button, where the
+ *  desk portals above use 40px controls. Same shapes and the same single accent. */
+export const touchButtonStyles = {
+  primary:
+    "inline-flex min-h-primary-btn w-full items-center justify-center gap-design-2 rounded-sm bg-forest px-design-5 text-headline font-semibold text-ink-on-dark transition-[background-color,transform] duration-150 hover:bg-forest-mid active:scale-[0.98] disabled:opacity-50 motion-reduce:transition-none",
+  secondary:
+    "inline-flex min-h-touch-target items-center justify-center gap-design-2 rounded-sm border border-border-subtle bg-surface-raised px-design-4 text-label font-semibold text-ink-primary transition-[background-color,border-color,transform] duration-150 hover:border-border-default hover:bg-surface-base active:scale-[0.98] disabled:opacity-50 motion-reduce:transition-none",
+  quiet:
+    "inline-flex min-h-touch-target items-center justify-center gap-design-2 rounded-sm px-design-3 text-label font-semibold text-forest transition-colors duration-150 hover:bg-surface-tint disabled:opacity-50 motion-reduce:transition-none",
+} as const;
+
+export const touchFieldStyles =
+  "min-h-touch-target w-full rounded-sm border border-border-default bg-surface-raised px-design-3 text-body text-ink-primary transition-colors duration-150 placeholder:text-ink-secondary focus:border-forest focus:outline-none focus:ring-2 focus:ring-forest-pale motion-reduce:transition-none";
 
 /** Inputs and selects in the admin area. */
 export const fieldStyles =
