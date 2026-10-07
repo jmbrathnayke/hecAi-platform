@@ -14,6 +14,7 @@ import {
 } from "@/lib/officerCaseReview";
 import { classifyImage } from "@/lib/mobilenet";
 import { listCasePhotos, uploadCasePhoto } from "@/lib/casePhotos";
+import { fetchCaseClaimant } from "@/lib/caseClaimant";
 
 jest.mock("next/navigation", () => ({ useParams: () => ({ ref: "hec-2026-0001" }) }));
 jest.mock("next/link", () => ({
@@ -63,6 +64,7 @@ jest.mock("@/lib/imageQuality", () => ({
 }));
 jest.mock("@/lib/mobilenet", () => ({ classifyImage: jest.fn() }));
 jest.mock("@/lib/casePhotos", () => ({ listCasePhotos: jest.fn(), uploadCasePhoto: jest.fn() }));
+jest.mock("@/lib/caseClaimant", () => ({ fetchCaseClaimant: jest.fn() }));
 jest.mock("@/lib/officerCaseReview", () => {
   const actual = jest.requireActual("@/lib/officerCaseReview");
   return {
@@ -79,6 +81,7 @@ const mockAssess = submitOfficerAssessment as jest.Mock;
 const mockClassify = classifyImage as jest.Mock;
 const mockListCasePhotos = listCasePhotos as jest.Mock;
 const mockUploadCasePhoto = uploadCasePhoto as jest.Mock;
+const mockClaimant = fetchCaseClaimant as jest.Mock;
 
 function detail(overrides: Record<string, unknown> = {}) {
   return {
@@ -111,6 +114,7 @@ beforeEach(() => {
   mockStart.mockReset();
   mockAssess.mockReset();
   mockListCasePhotos.mockReset().mockResolvedValue({ ok: true, photos: [] });
+  mockClaimant.mockReset().mockResolvedValue({ ok: true, household: null });
   mockUploadCasePhoto.mockReset().mockResolvedValue({ ok: true, photoId: 1, duplicate: false });
   mockClassify.mockReset().mockResolvedValue({
     classId: "crop_damage", confidence: 0.9, severity: "Severe", processingTimeMs: 120,
@@ -437,4 +441,18 @@ describe("the family's report", () => {
     await waitFor(() => expect(mockUploadCasePhoto).toHaveBeenCalled());
     expect(mockAssess.mock.calls[0][1]).not.toHaveProperty("input_source");
   });
+});
+
+it("shows who submitted the case and how to reach them (2026-10-07)", async () => {
+  mockClaimant.mockResolvedValue({ ok: true, household: {
+  household_ref: "HH-2026-0001", district: "අනුරාධපුරය", ds_division: "තලාව", gn_division: null,
+  status: "active", registered_at: "2026-09-01T00:00:00Z", address: "12, Temple Road",
+  contact_email: null, contact_mobile: "+94771234567",
+  members: [{ full_name: "K. M. Perera", relationship: null, is_registrant: true }],
+} });
+  render(<OfficerCaseReviewPage />);
+  expect(await screen.findByTestId("claimant-name")).toHaveTextContent("K. M. Perera");
+  expect(screen.getByTestId("claimant-address")).toHaveTextContent("12, Temple Road");
+  expect(screen.getByRole("link", { name: "077 123 4567" })).toHaveAttribute("href", "tel:+94771234567");
+  expect(mockClaimant).toHaveBeenCalledWith("HEC-2026-0001");
 });

@@ -6,7 +6,10 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import DsDashboardPage from "@/app/ds/dashboard/page";
 import { fetchDsCases, recordFinalDecision } from "@/lib/dsCases";
 
-jest.mock("next-intl", () => ({ useTranslations: () => (k: string) => k }));
+jest.mock("next-intl", () => ({ useTranslations: () => (k: string) => k, useLocale: () => "en" }));
+jest.mock("@/lib/caseClaimant", () => ({
+  fetchCaseClaimant: jest.fn().mockResolvedValue({ ok: true, household: null }),
+}));
 jest.mock("next/link", () => ({
   __esModule: true,
   default: ({ href, children }: { href: string; children: React.ReactNode }) => <a href={href}>{children}</a>,

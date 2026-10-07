@@ -9,12 +9,13 @@
 // (architecture AD-6, Epic 6) — and it is trilingual from the first commit rather than shipped
 // English-first and retrofitted, which is the mistake Epic 6 existed to correct.
 import { useEffect, useRef, useState } from "react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import Link from "next/link";
 import { fetchDsCases, type DsCase, type DsFailure } from "@/lib/dsCases";
 import { PaymentAuthorizationPanel } from "@/components/PaymentAuthorizationPanel";
 import { DsFinalDecisionPanel } from "@/components/DsFinalDecisionPanel";
 import { PhotoGallery } from "@/components/admin/PhotoGallery";
+import { ClaimantDetails } from "@/components/ClaimantDetails";
 import { DsBankDetailsPanel } from "@/components/DsBankDetailsPanel";
 import PushNotificationToggle from "@/components/PushNotificationToggle";
 
@@ -47,8 +48,19 @@ function isRetryable(f: DsFailure): boolean {
   return f.reason === "network" || f.reason === "server";
 }
 
+// The categories the citizen-facing pages already translate; anything else is shown as stored.
+const KNOWN_CATEGORIES = ["crop", "property", "combined"];
+
+function formatDate(iso: string | null, locale: string): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? null : d.toLocaleDateString(locale);
+}
+
 export default function DsDashboardPage() {
   const t = useTranslations("ds");
+  const tCategory = useTranslations("myCases.category");
+  const locale = useLocale();
 
   const [cases, setCases] = useState<DsCase[]>([]);
   const [dsDivision, setDsDivision] = useState("");
@@ -202,6 +214,16 @@ export default function DsDashboardPage() {
                 </span>
                 <span className="text-caption text-ink-secondary">{c.status}</span>
               </div>
+              {/* What happened and when, before anything about money. */}
+              <p className="text-caption text-ink-secondary" data-testid="ds-case-incident">
+                {KNOWN_CATEGORIES.includes(c.damage_category) ? tCategory(c.damage_category) : c.damage_category}
+                {formatDate(c.submitted_at, locale) && (
+                  <>
+                    {" · "}
+                    {t("submittedOn", { date: formatDate(c.submitted_at, locale) as string })}
+                  </>
+                )}
+              </p>
               <p className="text-caption text-ink-secondary">
                 {/* A case with no household predates Epic 8 or is seeded research data
                     (migration 025). Saying so beats rendering an empty field. */}
@@ -233,6 +255,9 @@ export default function DsDashboardPage() {
 
               {evidenceFor === c.canonical_id && (
                 <div className="mt-design-3 space-y-design-3">
+                  {/* Who the claim belongs to: the registrant's name and members to read aloud at
+                      the counter, and how to reach them. One case's details, fetched on opening. */}
+                  {c.household_ref && <ClaimantDetails caseRef={c.canonical_id} />}
                   {/* The family's own words (migration 040) belong with the photographs: both are
                       the claim this screen is about to pay. */}
                   <div data-testid="ds-citizen-description">

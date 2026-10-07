@@ -6,9 +6,9 @@
     "reportIncident": "Report Incident",
     "checkStatus": "Check Claim Status",
     "brandSub": "Department of Wildlife Conservation",
-    "heroTitle": "Report farm damage",
+    "heroTitle": "Report your damage",
     "heroBody": "Register your claim and get a receipt instantly.",
-    "reportIncidentSub": "Takes about 5 minutes — works offline",
+    "reportIncidentSub": "Takes about 5 minutes - works offline",
     "checkStatusSub": "Look up a claim by its reference number",
     "infoStrip": "You can submit a report without a network connection. A field officer can also register one on your behalf.",
     "navAria": "Main navigation",
@@ -21,7 +21,7 @@
   },
   "offline": {
     "banner": "You are offline. Reports will be saved and sent when you reconnect.",
-    "reconnected": "Back online — syncing your reports"
+    "reconnected": "Back online - syncing your reports"
   },
   "report": {
     "gate": {
@@ -726,11 +726,12 @@
       }
     },
     "evidence": {
-      "show": "View evidence photographs",
-      "hide": "Hide evidence photographs",
+      "show": "View family, description and photos",
+      "hide": "Hide family, description and photos",
       "description": "What the family wrote",
       "noDescription": "The family did not write a description."
-    }
+    },
+    "submittedOn": "Reported {date}"
   },
   "admin": {
     "languageLabel": "Language",
@@ -1214,5 +1215,30 @@
     "s7Body": "A wildlife officer reviews your report, the DWC administrator recommends an amount, and your Divisional Secretariat office decides the final amount and pays it into your bank account.",
     "s8Title": "Need a change or help?",
     "s8Body": "You can change your address, email, mobile number and password here on your profile. To change your district, division, family members or a saved bank account, visit your Divisional Secretariat office."
+  },
+  "claimant": {
+    "title": "Submitted by",
+    "loading": "Loading the family's registration details…",
+    "registrant": "Registered by",
+    "householdRef": "Household reference",
+    "mobile": "Mobile number",
+    "email": "Email",
+    "address": "Home address",
+    "area": "District / DS division",
+    "gnDivision": "GN division",
+    "registeredOn": "Registered on",
+    "bankAccount": "Bank account",
+    "bankAccountValue": "ending {last4}",
+    "members": "Family members ({count})",
+    "memberRegistrant": "registrant",
+    "notRecorded": "Not recorded",
+    "noHousehold": "This case is not linked to a registered household, so there are no family details to show.",
+    "privacyNote": "Personal details. Use them only for this claim. Every time these details are opened, it is recorded in the audit log.",
+    "retry": "Try again",
+    "error": {
+      "signedOut": "Your session has ended. Sign in again to see the family's details.",
+      "notFound": "This case is outside your area, so its family details cannot be shown.",
+      "generic": "The family's details could not be loaded."
+    }
   }
 }

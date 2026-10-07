@@ -398,13 +398,19 @@ def lookup_household():
     }), 200
 
 
+# The one projection of a household that ever leaves this server: the citizen's own /me, and the
+# staff claimant view of a case (case_claimant.py). Never nic_hmac, the bank ciphertext or
+# registrant_uid. household_view() reads the positions in this order.
+HOUSEHOLD_COLUMNS = """id, household_ref, district, ds_division, gn_division,
+                  status, registered_at, address, contact_email,
+                  bank_account_last4, contact_mobile"""
+
+
 def _read_own_household(cur, citizen_id):
     """The caller's active household as the /me response body, or None. Never nic_hmac or the bank
     ciphertext — see the module docstring. Address, contact details and account tail are their own."""
     cur.execute(
-        """SELECT id, household_ref, district, ds_division, gn_division,
-                  status, registered_at, address, contact_email,
-                  bank_account_last4, contact_mobile
+        f"""SELECT {HOUSEHOLD_COLUMNS}
              FROM households
             WHERE registrant_uid = %s AND status = 'active'
             ORDER BY id DESC LIMIT 1""",
@@ -413,7 +419,11 @@ def _read_own_household(cur, citizen_id):
     row = cur.fetchone()
     if not row:
         return None
+    return household_view(cur, row)
 
+
+def household_view(cur, row):
+    """A HOUSEHOLD_COLUMNS row, plus its members, as a response body."""
     cur.execute(
         """SELECT full_name, relationship, is_registrant
              FROM household_members

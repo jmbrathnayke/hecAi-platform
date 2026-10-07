@@ -3,6 +3,7 @@ import { CaseDetailPanel } from "../CaseDetailPanel";
 import { fetchAdminCaseDetail, verifyAuditChain, performCaseAction } from "@/lib/adminCaseDetail";
 import { getAccessToken } from "@/lib/auth";
 import { listCasePhotos } from "@/lib/casePhotos";
+import { fetchCaseClaimant } from "@/lib/caseClaimant";
 
 // next-intl passthrough (Story 6.3): translator returns the key (+ interpolation values) and a
 // fixed locale. Covers the panel and every real child it renders (PhotoGallery / AIResultPanel /
@@ -26,6 +27,7 @@ jest.mock("next/navigation", () => ({
 jest.mock("@/lib/auth", () => ({ getAccessToken: jest.fn() }));
 // The gallery fetches on its own; this panel's tests are about the case file around it.
 jest.mock("@/lib/casePhotos", () => ({ listCasePhotos: jest.fn() }));
+jest.mock("@/lib/caseClaimant", () => ({ fetchCaseClaimant: jest.fn() }));
 jest.mock("@/lib/adminCaseDetail", () => ({
   fetchAdminCaseDetail: jest.fn(),
   verifyAuditChain: jest.fn(),
@@ -38,6 +40,7 @@ const mockGetAccessToken = getAccessToken as jest.Mock;
 const mockFetchAdminCaseDetail = fetchAdminCaseDetail as jest.Mock;
 const mockVerifyAuditChain = verifyAuditChain as jest.Mock;
 const mockPerformCaseAction = performCaseAction as jest.Mock;
+const mockClaimant = fetchCaseClaimant as jest.Mock;
 
 function makeResponse(overrides: Record<string, unknown> = {}) {
   return {
@@ -68,6 +71,7 @@ beforeEach(() => {
   mockVerifyAuditChain.mockReset().mockResolvedValue({ valid: true, broken_id: null });
   mockPerformCaseAction.mockReset().mockResolvedValue(makeResponse());
   mockListCasePhotos.mockReset().mockResolvedValue({ ok: true, photos: [] });
+  mockClaimant.mockReset().mockResolvedValue({ ok: true, household: null });
 });
 
 test("shows a loading state, then the fetched case", async () => {
@@ -374,4 +378,21 @@ test("says nothing about the input on rows older than the field", async () => {
   render(<CaseDetailPanel offlineId="off-1" />);
   await screen.findByTestId("admin-citizen-description");
   expect(screen.queryByTestId("ai-input-source")).not.toBeInTheDocument();
+});
+
+test("shows whose claim it is, fetched by the reference the panel already holds (2026-10-07)", async () => {
+  mockClaimant.mockResolvedValue({
+    ok: true,
+    household: {
+      household_ref: "HH-2026-0001", district: "Anuradhapura", ds_division: "Galnewa", gn_division: null,
+      status: "active", registered_at: null, address: "12, Temple Road", contact_email: "family@example.lk",
+      contact_mobile: null, members: [{ full_name: "K. M. Perera", relationship: null, is_registrant: true }],
+    },
+  });
+  render(<CaseDetailPanel offlineId="off-1" />);
+  expect(await screen.findByTestId("claimant-name")).toHaveTextContent("K. M. Perera");
+  expect(screen.getByTestId("claimant-address")).toHaveTextContent("12, Temple Road");
+  // The administrator never receives the bank tail; only the DS officer pays.
+  expect(screen.queryByTestId("claimant-bank")).not.toBeInTheDocument();
+  expect(mockClaimant).toHaveBeenCalledWith("HEC-2026-0001");
 });

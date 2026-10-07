@@ -1,8 +1,12 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import DsDashboardPage from "@/app/ds/dashboard/page";
 import { fetchDsCases } from "@/lib/dsCases";
+import { fetchCaseClaimant } from "@/lib/caseClaimant";
 
-jest.mock("next-intl", () => ({ useTranslations: () => (k: string) => k }));
+jest.mock("next-intl", () => ({
+  useTranslations: () => (k: string) => k,
+  useLocale: () => "en",
+}));
 jest.mock("next/link", () => ({
   __esModule: true,
   default: ({ href, children }: { href: string; children: React.ReactNode }) => (
@@ -12,10 +16,18 @@ jest.mock("next/link", () => ({
 jest.mock("@/lib/dsCases", () => ({ fetchDsCases: jest.fn() }));
 // The evidence panel renders the gallery, which fetches on its own; these tests are about the card.
 jest.mock("@/lib/casePhotos", () => ({ listCasePhotos: jest.fn().mockResolvedValue({ ok: true, photos: [] }) }));
+jest.mock("@/lib/caseClaimant", () => ({ fetchCaseClaimant: jest.fn() }));
 
 const mockFetch = fetchDsCases as jest.Mock;
 
 const THALAWA = "තලාව";
+
+const CLAIMANT = {
+  household_ref: "HH-2026-0001", district: "අනුරාධපුරය", ds_division: "තලාව", gn_division: null,
+  status: "active", registered_at: "2026-09-01T00:00:00Z", address: "12, Temple Road",
+  contact_email: null, contact_mobile: "+94771234567",
+  members: [{ full_name: "K. M. Perera", relationship: null, is_registrant: true }],
+};
 
 function dsCase(id: string, over: Record<string, unknown> = {}) {
   return {
@@ -32,7 +44,10 @@ function dsCase(id: string, over: Record<string, unknown> = {}) {
   };
 }
 
+const mockClaimant = fetchCaseClaimant as jest.Mock;
+
 beforeEach(() => {
+  mockClaimant.mockReset().mockResolvedValue({ ok: true, household: CLAIMANT });
   mockFetch.mockReset().mockResolvedValue({
     ok: true,
     cases: [dsCase("HEC-2026-0001"), dsCase("HEC-2026-0002")],
@@ -157,5 +172,38 @@ describe("the evidence a payment is decided on (migration 040)", () => {
     render(<DsDashboardPage />);
     fireEvent.click(await screen.findByTestId("ds-evidence-toggle"));
     expect(await screen.findByTestId("ds-citizen-description")).toHaveTextContent("evidence.noDescription");
+  });
+});
+
+describe("who the claim belongs to (2026-10-07)", () => {
+  it("shows the damage type and the date reported on the card itself", async () => {
+    mockFetch.mockResolvedValue({ ok: true, cases: [dsCase("HEC-2026-0001")], count: 1, dsDivision: THALAWA });
+    render(<DsDashboardPage />);
+    const line = await screen.findByTestId("ds-case-incident");
+    expect(line).toHaveTextContent("crop");
+    expect(line).toHaveTextContent("submittedOn");
+  });
+
+  it("loads the family's details only when the officer opens that case's evidence", async () => {
+    mockFetch.mockResolvedValue({ ok: true, cases: [dsCase("HEC-2026-0001"), dsCase("HEC-2026-0002")], count: 2, dsDivision: THALAWA });
+    render(<DsDashboardPage />);
+    await waitFor(() => expect(screen.getAllByTestId("ds-case")).toHaveLength(2));
+    // The list itself never fetches anyone's details.
+    expect(mockClaimant).not.toHaveBeenCalled();
+    fireEvent.click(screen.getAllByTestId("ds-evidence-toggle")[0]);
+    expect(await screen.findByTestId("claimant-name")).toHaveTextContent("K. M. Perera");
+    expect(mockClaimant).toHaveBeenCalledTimes(1);
+    expect(mockClaimant).toHaveBeenCalledWith("HEC-2026-0001");
+  });
+
+  it("does not ask for a family when the case has no household", async () => {
+    mockFetch.mockResolvedValue({
+      ok: true, cases: [dsCase("HEC-2025-0009", { household_ref: null })], count: 1, dsDivision: THALAWA,
+    });
+    render(<DsDashboardPage />);
+    fireEvent.click(await screen.findByTestId("ds-evidence-toggle"));
+    await screen.findByTestId("ds-citizen-description");
+    expect(screen.queryByTestId("claimant-details")).not.toBeInTheDocument();
+    expect(mockClaimant).not.toHaveBeenCalled();
   });
 });

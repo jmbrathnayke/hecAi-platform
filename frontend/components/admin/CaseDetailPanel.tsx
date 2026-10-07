@@ -9,6 +9,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { getAccessToken } from "@/lib/auth";
 import { fetchAdminCaseDetail, UNAUTHORIZED, type AdminCaseDetailResponse } from "@/lib/adminCaseDetail";
 import { PhotoGallery } from "@/components/admin/PhotoGallery";
+import { ClaimantDetails } from "@/components/ClaimantDetails";
 import { AIResultPanel } from "@/components/admin/AIResultPanel";
 import { CompensationPanel } from "@/components/admin/CompensationPanel";
 import { AuditTrail } from "@/components/admin/AuditTrail";
@@ -241,6 +242,8 @@ export function CaseDetailPanel({ offlineId }: CaseDetailPanelProps) {
       {/* The admin route keys on offline_id; the endpoint accepts either that or the canonical
           id, so the panel passes what it already has rather than waiting for a canonical id a
           just-synced case may not carry yet. */}
+      {/* Whose claim this is: an approval has to be of a named household, not a reference. */}
+      <ClaimantDetails caseRef={c.canonical_id ?? offlineId} />
       {/* The family's own words about the damage (migration 040), read beside their photographs:
           an approval that never read the claim is not a review of it. */}
       <div className="rounded-md border border-border-subtle bg-surface-raised p-design-4" data-testid="admin-citizen-description">
