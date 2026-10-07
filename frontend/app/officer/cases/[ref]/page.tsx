@@ -29,6 +29,7 @@ import { classifyImage, type ClassId, type ClassificationResult } from "@/lib/mo
 import { isKnownStage, isTranslatedStatus, statusKey } from "@/lib/status";
 import CropAssessmentFields from "@/components/CropAssessmentFields";
 import { PhotoGallery } from "@/components/admin/PhotoGallery";
+import { ClaimantDetails } from "@/components/ClaimantDetails";
 import { uploadCasePhoto, type CasePhoto } from "@/lib/casePhotos";
 import {
   buildAssessmentBody,
@@ -380,6 +381,11 @@ export default function OfficerCaseReviewPage() {
             />
           </dl>
         </section>
+
+        {/* ------------------------------------------------------------ who submitted it */}
+        {/* The registered household behind the claim: who to call and where to go before the site
+            visit. Fetched for this one case only, and the read is audited server-side. */}
+        <ClaimantDetails caseRef={c.canonical_id ?? ref} />
 
         {/* ------------------------------------------------------------ the family's report */}
         {/* Always shown, whatever the case's status: what the family wrote and photographed is the
