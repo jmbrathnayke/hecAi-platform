@@ -78,6 +78,10 @@ _CLASS_TO_CATEGORY = {"crop_damage": "crop", "property_damage": "property", "no_
 
 MAX_HISTORY_ROWS = 100
 
+# An audit event that records someone opening the case rather than something happening to it. Mirrors
+# frontend lib/officerCaseReview.ts isAccessEvent.
+ACCESS_EVENT_PATTERN = r"(^|_)viewed(_|$)"
+
 # Column order is shared by every read below; positions are named once here.
 _CASE_COLUMNS = """c.id, c.canonical_id, c.offline_id, c.status, c.damage_category,
                    c.gps_lat, c.gps_lng, c.submitted_at, c.updated_at, c.submitted_via,
@@ -136,12 +140,23 @@ def _detail_payload(cur, row):
 
     # Event names and times only. Actor ids and metadata stay on the administrator's audit view:
     # an officer needs to see what has happened to a case, not who else touched it.
-    cur.execute(
-        """SELECT event, created_at FROM audit_log WHERE case_id = %s
-            ORDER BY id DESC LIMIT %s""",
-        (case_id, MAX_HISTORY_ROWS),
-    )
-    history = [{"event": e, "created_at": _iso(t)} for e, t in reversed(cur.fetchall())]
+    #
+    # Workflow events and access events (someone OPENED the case) are limited SEPARATELY. Every
+    # read is audited, so on a busy case the views alone filled all MAX_HISTORY_ROWS and the
+    # workflow -- submitted, assessed, approved -- fell out of the history entirely (seen
+    # 2026-10-07 on HEC-2026-0294: 100 rows, all views). The officer page shows the workflow and
+    # offers the views on request.
+    rows = []
+    for operator in ("!~", "~"):
+        cur.execute(
+            f"""SELECT id, event, created_at FROM audit_log
+                 WHERE case_id = %s AND event {operator} %s
+                 ORDER BY id DESC LIMIT %s""",
+            (case_id, ACCESS_EVENT_PATTERN, MAX_HISTORY_ROWS),
+        )
+        rows.extend(cur.fetchall())
+    rows.sort(key=lambda r: r[0])
+    history = [{"event": e, "created_at": _iso(t)} for _id, e, t in rows]
 
     status = row[_STATUS]
     assessed = row[_ASSESSED_AT] is not None

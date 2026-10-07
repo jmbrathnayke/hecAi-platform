@@ -9,8 +9,8 @@ import { getAccessToken } from "@/lib/auth";
 import { useOfficerSession } from "@/hooks/useOfficerSession";
 import { KNOWN_STATUSES } from "@/lib/status";
 import { ModelLoadStatus } from "@/components/ModelLoadStatus";
-import { LanguageSelectorCookie } from "@/components/LanguageSelectorCookie";
-import PushNotificationToggle from "@/components/PushNotificationToggle";
+import { ArrowClockwise, CaretRight, CloudArrowUp, MapPin, Tray } from "@phosphor-icons/react";
+import { Skeleton, StatusBadge, touchButtonStyles } from "@/components/admin/ui";
 import { OfficerTopBar } from "@/components/OfficerTopBar";
 
 // Reuse the canonical case-status labels (status.statusLabels) rather than duplicating them
@@ -109,6 +109,10 @@ function formatDate(iso: string | null, locale: string): string {
 export default function OfficerDashboardPage() {
   const t = useTranslations("officer");
   const tStatus = useTranslations("status");
+  const tCategory = useTranslations("myCases.category");
+  // The categories the citizen pages already translate; anything else is shown as stored.
+  const damageLabel = (cat: string | null) =>
+    !cat ? "—" : ["crop", "property", "combined"].includes(cat) ? tCategory(cat) : cat;
   const locale = useLocale();
   const { officer_id, assigned_divisions } = useOfficerSession();
   const [cases, setCases] = useState<OfficerCase[]>([]);
@@ -181,75 +185,86 @@ export default function OfficerDashboardPage() {
   }, [statusFilter, reloadNonce]);
 
   return (
-    // Full-bleed top bar (officer-camera.html chrome), padded panel beneath — the same shape as
-    // /officer/submit and /officer/classify so the four officer routes read as one app.
+    // Redesign (2026-10-07): the staff portals' look at field-app sizes. The language switch moved
+    // into the app bar and this device's notification switch onto the Profile tab, so the screen
+    // opens on the officer's cases: one list, one row per case, the whole row tappable.
     <main className="flex-1 bg-surface-base">
       <OfficerTopBar
         label={t("dashboard.title")}
         action={
-          <Link href="/officer/sync" className="shrink-0 text-label font-semibold text-forest">
+          <Link href="/officer/sync" className={`${touchButtonStyles.quiet} shrink-0`}>
+            <CloudArrowUp aria-hidden="true" size={18} />
             {t("dashboard.syncQueueLink")}
           </Link>
         }
       />
 
       <div className="mx-auto max-w-2xl space-y-design-4 px-design-4 py-design-5">
-        <header className="space-y-design-1">
-          {officer_id && (
-            <p className="text-caption text-ink-secondary">
-              {assigned_divisions.length > 0
-                ? t("dashboard.divisions", { list: assigned_divisions.join(", ") })
-                : t("dashboard.noDivisions")}
-            </p>
-          )}
-          <div className="flex flex-col gap-design-1 pt-design-2">
-            <span className="text-caption text-ink-secondary">{t("languageLabel")}</span>
-            <LanguageSelectorCookie />
-          </div>
-        </header>
-
-        {/* FR-6.4: alerts for the divisions this officer is assigned to. */}
-        <PushNotificationToggle variant="staff" />
+        {officer_id && (
+          <p className="inline-flex items-center gap-design-1 text-label text-ink-secondary">
+            <MapPin aria-hidden="true" size={16} />
+            {assigned_divisions.length > 0
+              ? t("dashboard.divisions", { list: assigned_divisions.join(", ") })
+              : t("dashboard.noDivisions")}
+          </p>
+        )}
 
         <ModelLoadStatus />
 
         <section className="space-y-design-3">
-          {/* was `text-heading`, which is not in the type scale (display/title/headline/body/
-              label/caption) and so rendered at the inherited size. */}
-          <h2 className="text-headline text-ink-primary">{t("dashboard.yourCases")}</h2>
+          <div className="flex items-baseline justify-between gap-design-3">
+            <h2 className="text-headline text-ink-primary">{t("dashboard.yourCases")}</h2>
+            {state.kind === "ready" && (
+              <span className="text-caption tabular-nums text-ink-secondary">{cases.length}</span>
+            )}
+          </div>
 
-          {/* Status filter chips */}
-          <div className="flex flex-wrap gap-design-2" role="group" aria-label={t("dashboard.filterGroupLabel")}>
-            <FilterChip
-              label={t("dashboard.filterAll")}
-              active={statusFilter === null}
-              onClick={() => setStatusFilter(null)}
-            />
-            {KNOWN_STATUSES.map((s) => (
+          {/* One scrollable segmented control instead of chips that wrapped onto three lines. */}
+          <div
+            className="-mx-design-4 overflow-x-auto px-design-4 [scrollbar-width:none]"
+            role="group"
+            aria-label={t("dashboard.filterGroupLabel")}
+          >
+            <div className="inline-flex gap-0.5 rounded-sm border border-border-subtle bg-surface-raised p-0.5 shadow-card">
               <FilterChip
-                key={s}
-                label={tStatus(`statusLabels.${statusKey(s)}`)}
-                active={statusFilter === s}
-                onClick={() => setStatusFilter(s)}
+                label={t("dashboard.filterAll")}
+                active={statusFilter === null}
+                onClick={() => setStatusFilter(null)}
               />
-            ))}
+              {KNOWN_STATUSES.map((s) => (
+                <FilterChip
+                  key={s}
+                  label={tStatus(`statusLabels.${statusKey(s)}`)}
+                  active={statusFilter === s}
+                  onClick={() => setStatusFilter(s)}
+                />
+              ))}
+            </div>
           </div>
 
           {state.kind === "loading" && (
-            <p className="text-body text-ink-secondary" role="status">
-              {t("dashboard.loading")}
-            </p>
+            <div className="overflow-hidden rounded-md border border-border-subtle bg-surface-raised shadow-card">
+              <p className="border-b border-border-subtle px-design-4 py-design-3 text-caption text-ink-secondary" role="status">
+                {t("dashboard.loading")}
+              </p>
+              {[0, 1, 2, 3].map((i) => (
+                <div key={i} className="border-b border-border-subtle px-design-4 py-design-4 last:border-b-0">
+                  <Skeleton className="h-4 w-36" />
+                  <Skeleton className="mt-design-2 h-3 w-48" />
+                </div>
+              ))}
+            </div>
           )}
 
           {state.kind === "failed" && (
-            <div role="alert" className="space-y-design-2">
+            <div role="alert" className="space-y-design-3 rounded-md border border-status-error/30 bg-status-error-pale p-design-4">
               <p className="text-body text-status-error">{t(failureMessageKey(state.failure))}</p>
 
               {/* The line that was missing: the HTTP status and the backend's own error code.
                   An officer can ignore it; it is the first thing anyone debugging needs, and
                   it is what previously required opening DevTools to see. */}
               {"status" in state.failure && (
-                <p className="text-caption text-ink-secondary">
+                <p className="font-staff-mono text-caption text-ink-secondary">
                   {t("dashboard.error.detail", {
                     status: state.failure.status,
                     code: state.failure.code || "—",
@@ -258,20 +273,14 @@ export default function OfficerDashboardPage() {
               )}
 
               {failureRecovery(state.failure) === "retry" && (
-                <button
-                  type="button"
-                  onClick={() => setReloadNonce((n) => n + 1)}
-                  className="min-h-touch-target rounded-md border border-forest px-design-4 text-label font-semibold text-forest"
-                >
+                <button type="button" onClick={() => setReloadNonce((n) => n + 1)} className={touchButtonStyles.secondary}>
+                  <ArrowClockwise aria-hidden="true" size={18} />
                   {t("dashboard.retry")}
                 </button>
               )}
 
               {failureRecovery(state.failure) === "sign-in" && (
-                <Link
-                  href="/officer/login"
-                  className="inline-flex min-h-touch-target items-center rounded-md border border-forest px-design-4 text-label font-semibold text-forest"
-                >
+                <Link href="/officer/login" className={touchButtonStyles.secondary}>
                   {t("dashboard.error.signIn")}
                 </Link>
               )}
@@ -279,45 +288,57 @@ export default function OfficerDashboardPage() {
           )}
 
           {state.kind === "ready" && cases.length === 0 && (
-            <p className="text-body text-ink-secondary">{t("dashboard.empty")}</p>
+            <div className="flex flex-col items-center gap-design-3 rounded-md border border-border-subtle bg-surface-raised px-design-5 py-design-7 text-center shadow-card">
+              <span className="flex h-12 w-12 items-center justify-center rounded-md bg-surface-tint text-forest">
+                <Tray aria-hidden="true" size={24} />
+              </span>
+              <p className="text-body text-ink-primary">{t("dashboard.empty")}</p>
+            </div>
           )}
 
           {state.kind === "ready" && cases.length > 0 && (
-            <ul className="space-y-design-2">
-              {cases.map((c) => (
-                <li
-                  key={c.offline_id ?? c.canonical_id}
-                  className="rounded-md border border-border-subtle bg-surface-raised shadow-card px-design-3 py-design-3"
-                >
-                  <div className="flex items-center justify-between gap-design-2">
-                    <span className="text-label font-semibold text-ink-primary">
-                      {c.canonical_id ?? t("dashboard.pendingId")}
-                    </span>
-                    <StatusBadge
-                      label={
-                        KNOWN_STATUSES.includes(c.status as (typeof KNOWN_STATUSES)[number])
-                          ? tStatus(`statusLabels.${statusKey(c.status)}`)
-                          : c.status
-                      }
-                    />
-                  </div>
-                  <dl className="mt-design-1 flex flex-wrap gap-x-design-4 gap-y-design-1 text-caption text-ink-secondary">
-                    <span>{c.damage_category ?? "—"}</span>
-                    <span>{t("dashboard.via", { channel: c.submitted_via ?? "app" })}</span>
-                    <span>{formatDate(c.submitted_at, locale)}</span>
-                  </dl>
-                  {/* The review page is where a "new report" notification lands; the list reaches
-                      the same page so an officer who dismissed the notification is not stuck. */}
-                  {c.canonical_id && (
-                    <Link
-                      href={`/officer/cases/${encodeURIComponent(c.canonical_id)}`}
-                      className="mt-design-2 inline-flex min-h-touch-target items-center text-label font-semibold text-forest underline"
-                    >
-                      {t("dashboard.openCase")}
-                    </Link>
-                  )}
-                </li>
-              ))}
+            <ul className="divide-y divide-border-subtle overflow-hidden rounded-md border border-border-subtle bg-surface-raised shadow-card">
+              {cases.map((c) => {
+                const statusLabel = KNOWN_STATUSES.includes(c.status as (typeof KNOWN_STATUSES)[number])
+                  ? tStatus(`statusLabels.${statusKey(c.status)}`)
+                  : c.status;
+                const body = (
+                  <>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-design-2">
+                        <span className="font-staff-mono text-label font-semibold text-ink-primary">
+                          {c.canonical_id ?? t("dashboard.pendingId")}
+                        </span>
+                        <StatusBadge status={c.status} label={statusLabel} />
+                      </div>
+                      <p className="mt-design-1 flex flex-wrap gap-x-design-3 gap-y-design-1 text-caption text-ink-secondary">
+                        <span>{damageLabel(c.damage_category)}</span>
+                        <span>{t("dashboard.via", { channel: c.submitted_via ?? "app" })}</span>
+                        <span className="tabular-nums">{formatDate(c.submitted_at, locale)}</span>
+                      </p>
+                    </div>
+                    {c.canonical_id && <CaretRight aria-hidden="true" size={18} className="shrink-0 text-ink-secondary" />}
+                  </>
+                );
+                return (
+                  <li key={c.offline_id ?? c.canonical_id}>
+                    {/* The review page is where a "new report" notification lands; the list reaches
+                        the same page so an officer who dismissed the notification is not stuck. The
+                        whole row is the link, so it is a large target. */}
+                    {c.canonical_id ? (
+                      <Link
+                        href={`/officer/cases/${encodeURIComponent(c.canonical_id)}`}
+                        className="flex min-h-[4.5rem] items-center gap-design-3 px-design-4 py-design-3 transition-colors duration-150 hover:bg-surface-base focus-visible:bg-surface-tint focus-visible:outline-none active:bg-surface-tint motion-reduce:transition-none"
+                      >
+                        {body}
+                        <span className="sr-only">{t("dashboard.openCase")}</span>
+                      </Link>
+                    ) : (
+                      <div className="flex min-h-[4.5rem] items-center gap-design-3 px-design-4 py-design-3">{body}</div>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           )}
         </section>
@@ -340,24 +361,13 @@ function FilterChip({
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`min-h-touch-target rounded-full px-design-3 text-caption font-medium ${
-        active
-          // `text-ink-on-forest` was never a token, so the active chip inherited ink-primary
-          // (#1A2E1A) on forest (#2D6A4F) — 2.3:1, well under AA, on 12px caption text that is
-          // read in sunlight. ink-on-dark (white) is the token for text on a forest fill: 6.4:1.
-          ? "bg-forest text-ink-on-dark"
-          : "border border-border-default text-ink-secondary"
+      // 44px tall: a segment of one control rather than a free-standing button, and still well
+      // above WCAG 2.2's 24px. ink-on-dark on forest is 6.4:1, read in sunlight.
+      className={`min-h-[44px] shrink-0 whitespace-nowrap rounded-[6px] px-design-3 text-label font-medium transition-colors duration-150 motion-reduce:transition-none ${
+        active ? "bg-forest text-ink-on-dark" : "text-ink-secondary hover:bg-surface-base hover:text-ink-primary"
       }`}
     >
       {label}
     </button>
-  );
-}
-
-function StatusBadge({ label }: { label: string }) {
-  return (
-    <span className="rounded-full bg-surface-base px-design-2 text-caption font-medium text-ink-secondary">
-      {label}
-    </span>
   );
 }

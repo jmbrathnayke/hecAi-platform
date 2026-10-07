@@ -29,6 +29,8 @@ import { classifyImage, type ClassId, type ClassificationResult } from "@/lib/mo
 import { isKnownStage, isTranslatedStatus, statusKey } from "@/lib/status";
 import CropAssessmentFields from "@/components/CropAssessmentFields";
 import { PhotoGallery } from "@/components/admin/PhotoGallery";
+import { CaretLeft } from "@phosphor-icons/react";
+import { StatusBadge, touchButtonStyles } from "@/components/admin/ui";
 import { ClaimantDetails } from "@/components/ClaimantDetails";
 import { uploadCasePhoto, type CasePhoto } from "@/lib/casePhotos";
 import {
@@ -36,6 +38,7 @@ import {
   type AssessmentInput,
   EMPTY_CROP_ASSESSMENT,
   getOfficerCase,
+  isAccessEvent,
   isDeliveryEvent,
   isWorkflowEvent,
   parseCropAssessment,
@@ -87,6 +90,8 @@ export default function OfficerCaseReviewPage() {
   const [actionError, setActionError] = useState<ReviewFailure | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  // Whether the history also lists who opened the case (access events), not only what happened.
+  const [showAccess, setShowAccess] = useState(false);
 
   const [capture, setCapture] = useState<Capture>("idle");
   const [qualityWarning, setQualityWarning] = useState(false);
@@ -303,6 +308,8 @@ export default function OfficerCaseReviewPage() {
   const stageLabel = isKnownStage(wf.stage) ? tStatus(`stageLabels.${wf.stage}`) : wf.stage;
   const statusLabel = isTranslatedStatus(c.status) ? tStatus(`statusLabels.${statusKey(c.status)}`) : c.status;
   const history = detail.history.filter((h) => !isDeliveryEvent(h.event));
+  const workflowHistory = history.filter((h) => !isAccessEvent(h.event));
+  const accessCount = history.length - workflowHistory.length;
   // The class the estimate will actually be priced against: the officer's override when they
   // corrected the model, otherwise the model's own prediction. Only settled once they have
   // accepted or confirmed an override, so the crop question is never asked about a class still
@@ -324,7 +331,8 @@ export default function OfficerCaseReviewPage() {
       <OfficerTopBar
         label={t("caseReview.title")}
         action={
-          <Link href="/officer/dashboard" className="shrink-0 text-label font-semibold text-forest">
+          <Link href="/officer/dashboard" className={`${touchButtonStyles.quiet} shrink-0`}>
+            <CaretLeft aria-hidden="true" size={16} />
             {t("caseReview.back")}
           </Link>
         }
@@ -358,8 +366,8 @@ export default function OfficerCaseReviewPage() {
         {/* ------------------------------------------------------------ the case */}
         <section className="rounded-md border border-border-subtle bg-surface-raised p-design-4 shadow-card" data-testid="case-details">
           <div className="flex items-center justify-between gap-design-2">
-            <h1 className="font-mono text-headline text-ink-primary">{c.canonical_id}</h1>
-            <span className="rounded-full bg-surface-base px-design-2 text-caption font-medium text-ink-secondary">{statusLabel}</span>
+            <h1 className="font-staff-mono text-headline text-ink-primary">{c.canonical_id}</h1>
+            <StatusBadge status={c.status} label={statusLabel} />
           </div>
           <p className="mt-design-1 text-caption text-ink-secondary">
             {t("caseReview.stage")}: <span className="font-semibold text-ink-primary">{stageLabel}</span>
@@ -425,7 +433,7 @@ export default function OfficerCaseReviewPage() {
             type="button"
             onClick={() => void handleStartReview()}
             disabled={busy}
-            className="flex min-h-primary-btn w-full items-center justify-center rounded-md bg-amber px-design-4 text-label font-semibold text-ink-on-amber disabled:opacity-60"
+            className={touchButtonStyles.primary}
           >
             {t("caseReview.startReview")}
           </button>
@@ -435,7 +443,7 @@ export default function OfficerCaseReviewPage() {
         {detail.actions.can_assess && (
           <section
             ref={assessmentRef}
-            className="space-y-design-3 rounded-md border border-border-subtle bg-surface-raised p-design-4"
+            className="space-y-design-3 rounded-md border border-border-subtle bg-surface-raised p-design-4 shadow-card"
             data-testid="officer-assessment"
           >
             <h2 className="text-headline text-ink-primary">
@@ -515,7 +523,7 @@ export default function OfficerCaseReviewPage() {
                   type="button"
                   onClick={() => void handleSubmitAssessment()}
                   disabled={!canSubmit}
-                  className="flex min-h-primary-btn w-full items-center justify-center rounded-md bg-forest px-design-4 text-label font-semibold text-ink-on-dark disabled:opacity-60"
+                  className={touchButtonStyles.primary}
                 >
                   {busy ? t("caseReview.submitting") : t("caseReview.submitAssessment")}
                 </button>
@@ -525,7 +533,7 @@ export default function OfficerCaseReviewPage() {
         )}
 
         {/* ------------------------------------------------------------ recorded AI result */}
-        <section className="rounded-md border border-border-subtle bg-surface-raised p-design-4" data-testid="recorded-ai-result">
+        <section className="rounded-md border border-border-subtle bg-surface-raised p-design-4 shadow-card" data-testid="recorded-ai-result">
           <h2 className="text-headline text-ink-primary">{t("caseReview.aiResultTitle")}</h2>
           {detail.ai_result ? (
             <dl className="mt-design-2 grid grid-cols-1 gap-design-2 text-body sm:grid-cols-2">
@@ -564,7 +572,7 @@ export default function OfficerCaseReviewPage() {
         </section>
 
         {/* ------------------------------------------------------------ AI-assisted estimate */}
-        <section className="rounded-md border border-status-warning bg-surface-raised p-design-4" data-testid="ai-assisted-estimate">
+        <section className="rounded-md border border-status-warning/50 bg-surface-raised p-design-4 shadow-card" data-testid="ai-assisted-estimate">
           <h2 className="text-headline text-ink-primary">{t("caseReview.estimateTitle")}</h2>
           {detail.ai_assisted_estimate ? (
             <>
@@ -589,18 +597,31 @@ export default function OfficerCaseReviewPage() {
         </section>
 
         {/* ------------------------------------------------------------ history */}
-        <section className="rounded-md border border-border-subtle bg-surface-raised p-design-4">
+        <section className="rounded-md border border-border-subtle bg-surface-raised p-design-4 shadow-card">
           <h2 className="text-headline text-ink-primary">{t("caseReview.historyTitle")}</h2>
-          <ol className="mt-design-2 space-y-design-1" data-testid="case-history">
-            {history.map((h, i) => (
-              <li key={`${h.event}-${i}`} className="flex justify-between gap-design-2 text-caption text-ink-secondary">
-                <span className="text-ink-primary">
+          {/* What happened to the case first; who opened it only on request (redesign, 2026-10-07):
+              every read is audited, so on a busy case the views outnumber the events many times. */}
+          <ol className="mt-design-3 space-y-design-2 border-l-2 border-border-subtle pl-design-3" data-testid="case-history">
+            {(showAccess ? history : workflowHistory).map((h, i) => (
+              <li key={`${h.event}-${i}`} className="flex flex-wrap justify-between gap-x-design-3 text-caption text-ink-secondary">
+                <span className={isAccessEvent(h.event) ? "text-ink-secondary" : "font-medium text-ink-primary"}>
                   {isWorkflowEvent(h.event) ? t(`caseReview.events.${h.event}`) : h.event.replace(/_/g, " ")}
                 </span>
-                <span>{formatDateTime(h.created_at, locale)}</span>
+                <span className="tabular-nums">{formatDateTime(h.created_at, locale)}</span>
               </li>
             ))}
           </ol>
+          {accessCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowAccess((v) => !v)}
+              aria-expanded={showAccess}
+              className={`${touchButtonStyles.quiet} mt-design-2 -ml-design-3`}
+              data-testid="history-access-toggle"
+            >
+              {showAccess ? t("caseReview.hideAccess") : t("caseReview.showAccess", { count: accessCount })}
+            </button>
+          )}
         </section>
       </div>
     </main>

@@ -269,6 +269,16 @@ export function isDeliveryEvent(event: string): boolean {
   return /^(push_|email_|sms_|staff_push_)/.test(event);
 }
 
+/**
+ * Someone OPENED the case (an officer's view, the administrator's case file, the photos, the
+ * family's details), as opposed to something happening TO it. Every read is audited, so on a busy
+ * case these outnumber the workflow events many times over; the history shows them on request
+ * rather than burying what happened under who looked (officer redesign, 2026-10-07).
+ */
+export function isAccessEvent(event: string): boolean {
+  return /(^|_)viewed(_|$)/.test(event);
+}
+
 /** Workflow events with a translated label under officer.caseReview.events. */
 export const WORKFLOW_EVENTS = [
   "submitted",

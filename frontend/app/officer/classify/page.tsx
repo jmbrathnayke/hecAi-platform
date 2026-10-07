@@ -19,6 +19,8 @@ import { OfficerTopBar } from "@/components/OfficerTopBar";
 import { CameraCapture } from "@/components/CameraCapture";
 import { PhotoStrip } from "@/components/PhotoStrip";
 import { FieldNotes } from "@/components/FieldNotes";
+import { Plus } from "@phosphor-icons/react";
+import { touchButtonStyles } from "@/components/admin/ui";
 
 type Status = "idle" | "classifying" | "result" | "error";
 type Decision = "accepted" | "override" | "overridden" | null;
@@ -265,8 +267,9 @@ export default function OfficerClassifyPage() {
             <button
               type="button"
               onClick={handleStartNewCase}
-              className="min-h-touch-target shrink-0 text-label font-semibold text-forest underline"
+              className={`${touchButtonStyles.quiet} shrink-0`}
             >
+              <Plus aria-hidden="true" size={16} />
               {t("classify.startNewCase")}
             </button>
           }

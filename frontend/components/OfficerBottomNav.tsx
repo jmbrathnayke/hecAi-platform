@@ -11,6 +11,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTranslations } from "next-intl";
+import { House, NotePencil, Scan, CloudArrowUp, UserCircle, type IconProps } from "@phosphor-icons/react";
+import type { ComponentType } from "react";
 import { getQueuedItems } from "@/lib/syncQueue";
 import { BottomNav, BottomNavItemBody, bottomNavItemClass } from "@/components/BottomNav";
 
@@ -20,13 +22,15 @@ const POLL_MS = 10_000;
 // reasoning as the citizen PoC — see CitizenBottomNav).
 const HIDDEN_ON = ["/officer/login", "/officer/submit/poc"];
 
-const TABS = [
-  { href: "/officer/dashboard", icon: "🏠", labelKey: "navDashboard" },
-  { href: "/officer/submit", icon: "📝", labelKey: "navNewReport" },
-  { href: "/officer/classify", icon: "🤖", labelKey: "navClassify" },
-  { href: "/officer/sync", icon: "📤", labelKey: "navQueue", badge: true },
-  { href: "/officer/profile", icon: "👤", labelKey: "navProfile" },
-] as const;
+// Line icons, filled when active (redesign, 2026-10-07): the emoji rendered differently on every
+// phone and carried their own colours, which competed with the one accent.
+const TABS: ReadonlyArray<{ href: string; icon: ComponentType<IconProps>; labelKey: string; badge?: true }> = [
+  { href: "/officer/dashboard", icon: House, labelKey: "navDashboard" },
+  { href: "/officer/submit", icon: NotePencil, labelKey: "navNewReport" },
+  { href: "/officer/classify", icon: Scan, labelKey: "navClassify" },
+  { href: "/officer/sync", icon: CloudArrowUp, labelKey: "navQueue", badge: true },
+  { href: "/officer/profile", icon: UserCircle, labelKey: "navProfile" },
+];
 
 export function OfficerBottomNav() {
   const t = useTranslations("officer");
@@ -71,13 +75,13 @@ export function OfficerBottomNav() {
             key={tab.href}
             href={tab.href}
             aria-current={active ? "page" : undefined}
-            className={bottomNavItemClass(active)}
+            className={bottomNavItemClass(active, "secondary")}
           >
             <BottomNavItemBody
-              icon={tab.icon}
+              icon={<tab.icon size={24} weight={active ? "fill" : "regular"} />}
               label={t(tab.labelKey)}
               active={active}
-              badge={"badge" in tab && tab.badge ? queueCount : null}
+              badge={tab.badge ? queueCount : null}
             />
           </Link>
         );

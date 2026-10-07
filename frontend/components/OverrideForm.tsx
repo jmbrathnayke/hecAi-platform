@@ -40,7 +40,7 @@ export function OverrideForm({ currentCategory, onConfirm, onCancel }: OverrideF
     <section
       data-testid="override-form"
       aria-label={t("override.formLabel")}
-      className="border-l-4 border-forest bg-surface-raised rounded-md p-design-4 space-y-design-4"
+      className="border-l-4 border-forest bg-surface-raised rounded-md p-design-4 space-y-design-4 shadow-card"
     >
       <h2 className="text-headline text-ink-primary">{t("override.title")}</h2>
 
@@ -73,7 +73,7 @@ export function OverrideForm({ currentCategory, onConfirm, onCancel }: OverrideF
           value={reason}
           onChange={(e) => setReason(e.target.value)}
           rows={3}
-          className="w-full rounded-md border border-forest-pale bg-surface-base p-design-3 text-label text-ink-primary"
+          className="w-full rounded-sm border border-border-default bg-surface-raised p-design-3 text-label text-ink-primary focus:border-forest focus:outline-none focus:ring-2 focus:ring-forest-pale"
           placeholder={t("override.reasonPlaceholder")}
         />
         <div className="flex items-center justify-between">
@@ -95,7 +95,7 @@ export function OverrideForm({ currentCategory, onConfirm, onCancel }: OverrideF
         <button
           type="button"
           onClick={onCancel}
-          className="flex-1 min-h-touch-target border border-forest text-forest text-label font-semibold rounded-md"
+          className="inline-flex min-h-touch-target flex-1 items-center justify-center rounded-sm border border-border-subtle bg-surface-raised px-design-4 text-label font-semibold text-ink-primary transition-[background-color,border-color,transform] duration-150 hover:border-border-default hover:bg-surface-base active:scale-[0.98] motion-reduce:transition-none"
         >
           {t("override.cancel")}
         </button>
@@ -103,7 +103,7 @@ export function OverrideForm({ currentCategory, onConfirm, onCancel }: OverrideF
           type="button"
           onClick={() => onConfirm(category, reason.trim())}
           disabled={!canConfirm}
-          className="flex-1 min-h-touch-target bg-forest text-ink-on-dark text-label font-semibold rounded-md disabled:opacity-60"
+          className="inline-flex flex-1 min-h-touch-target items-center justify-center rounded-sm bg-forest px-design-4 text-label font-semibold text-ink-on-dark transition-[background-color,transform] duration-150 hover:bg-forest-mid active:scale-[0.98] disabled:opacity-60 motion-reduce:transition-none"
         >
           {t("override.confirm")}
         </button>

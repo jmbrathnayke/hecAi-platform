@@ -36,6 +36,7 @@ import { CameraCapture } from "@/components/CameraCapture";
 import { PhotoStrip } from "@/components/PhotoStrip";
 import { FieldNotes } from "@/components/FieldNotes";
 import type { LatLng } from "@/components/MapPinPicker";
+import { touchButtonStyles, touchFieldStyles } from "@/components/admin/ui";
 
 const MapPinPicker = dynamic(() => import("@/components/MapPinPicker"), { ssr: false });
 const SRI_LANKA_CENTER: LatLng = { lat: 7.8731, lng: 80.7718 };
@@ -514,7 +515,7 @@ export default function OfficerSubmitPage() {
                 value={nic}
                 onChange={(e) => setNic(e.target.value)}
                 aria-invalid={!!nicError}
-                className="min-h-touch-target rounded-md border border-border-default bg-surface-raised px-design-3 text-body text-ink-primary"
+                className={touchFieldStyles}
               />
               {nicError && (
                 <p role="alert" className="text-caption text-status-error">
@@ -534,7 +535,7 @@ export default function OfficerSubmitPage() {
                 value={mobile}
                 onChange={(e) => setMobile(e.target.value)}
                 aria-invalid={!!mobileError}
-                className="min-h-touch-target rounded-md border border-border-default bg-surface-raised px-design-3 text-body text-ink-primary"
+                className={touchFieldStyles}
               />
               {mobileError && (
                 <p role="alert" className="text-caption text-status-error">
@@ -555,7 +556,7 @@ export default function OfficerSubmitPage() {
             <button
               type="submit"
               disabled={saving || !sessionChecked || !officerId}
-              className="w-full min-h-primary-btn bg-amber text-ink-on-amber text-headline font-semibold rounded-md disabled:opacity-60"
+              className={touchButtonStyles.primary}
             >
               {sessionChecked ? t("submit.continue") : t("submit.verifyingSession")}
             </button>
@@ -590,7 +591,7 @@ export default function OfficerSubmitPage() {
                   type="button"
                   disabled={saving}
                   onClick={() => void saveLocation(coords, "gps")}
-                  className="w-full min-h-primary-btn bg-amber text-ink-on-amber text-headline font-semibold rounded-md disabled:opacity-60"
+                  className={touchButtonStyles.primary}
                 >
                   {t("submit.continue")}
                 </button>
@@ -639,7 +640,7 @@ export default function OfficerSubmitPage() {
               type="button"
               disabled={saving}
               onClick={() => void handleDamageNext()}
-              className="w-full min-h-primary-btn bg-amber text-ink-on-amber text-headline font-semibold rounded-md disabled:opacity-60"
+              className={touchButtonStyles.primary}
             >
               {t("submit.continue")}
             </button>
@@ -715,7 +716,7 @@ export default function OfficerSubmitPage() {
                   <button
                     type="button"
                     onClick={() => setStep("review")}
-                    className="w-full min-h-primary-btn bg-amber text-ink-on-amber text-headline font-semibold rounded-md"
+                    className={touchButtonStyles.primary}
                   >
                     {t("submit.reviewAndSubmit")}
                   </button>

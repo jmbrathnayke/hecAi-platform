@@ -147,6 +147,41 @@ it("hides notification-delivery bookkeeping from the history", async () => {
   expect(history).not.toHaveTextContent("push");
 });
 
+it("lists what happened first, and who opened the case only on request (redesign 2026-10-07)", async () => {
+  // Every read is audited, so views outnumber events; they no longer bury the workflow.
+  mockGet.mockResolvedValue({
+    ok: true,
+    detail: detail({
+      history: [
+        { event: "submitted", created_at: "2026-09-17T08:00:00" },
+        { event: "admin_viewed_case_detail", created_at: "2026-09-17T09:00:00" },
+        { event: "case_photos_viewed", created_at: "2026-09-17T09:00:01" },
+        { event: "officer_viewed_case", created_at: "2026-09-17T09:05:00" },
+        { event: "officer_review_started", created_at: "2026-09-17T09:06:00" },
+      ],
+    }),
+  });
+  render(<OfficerCaseReviewPage />);
+  const history = await screen.findByTestId("case-history");
+  expect(history).toHaveTextContent("caseReview.events.submitted");
+  expect(history).toHaveTextContent("caseReview.events.officer_review_started");
+  expect(history).not.toHaveTextContent("admin viewed case detail");
+  expect(history).not.toHaveTextContent("caseReview.events.officer_viewed_case");
+
+  const toggle = screen.getByTestId("history-access-toggle");
+  expect(toggle).toHaveAttribute("aria-expanded", "false");
+  fireEvent.click(toggle);
+  expect(history).toHaveTextContent("admin viewed case detail");
+  expect(history).toHaveTextContent("case photos viewed");
+  expect(history).toHaveTextContent("caseReview.events.officer_viewed_case");
+});
+
+it("offers no access toggle when nobody else has opened the case", async () => {
+  render(<OfficerCaseReviewPage />);
+  await screen.findByTestId("case-history");
+  expect(screen.queryByTestId("history-access-toggle")).not.toBeInTheDocument();
+});
+
 it("starts the review", async () => {
   mockStart.mockResolvedValue({
     ok: true,

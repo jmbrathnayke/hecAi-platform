@@ -31,10 +31,12 @@ export function BottomNav({ ariaLabel, children }: { ariaLabel: string; children
  * Item class for a tab link. `flex-1` divides the bar evenly (mockup) and `min-h-touch-target`
  * holds the 48px floor the rest of the app uses.
  */
-export function bottomNavItemClass(active: boolean): string {
+export function bottomNavItemClass(active: boolean, inactiveTone: "disabled" | "secondary" = "disabled"): string {
   return [
     "flex min-h-touch-target flex-1 flex-col items-center justify-center gap-design-1 px-design-1 py-design-1",
-    active ? "text-forest" : "text-ink-disabled",
+    // `secondary` is the officer app's (redesign, 2026-10-07): its line icons need more contrast
+    // than the citizen app's colour emoji to read outdoors. The citizen default is unchanged.
+    active ? "text-forest" : inactiveTone === "secondary" ? "text-ink-secondary" : "text-ink-disabled",
   ].join(" ");
 }
 
@@ -48,7 +50,8 @@ export function BottomNavItemBody({
   badge,
   active,
 }: {
-  icon: string;
+  /** A colour emoji (citizen app) or an icon element (officer app). */
+  icon: ReactNode;
   label: string;
   badge?: number | null;
   active: boolean;
