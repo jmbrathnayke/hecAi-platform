@@ -32,8 +32,8 @@ export function StatusBreakdown({ data }: StatusBreakdownProps) {
   const color = (status: string) => STATUS_CHART_COLORS[status] ?? STATUS_CHART_FALLBACK_COLOR;
 
   return (
-    <section className="rounded-md border border-border-subtle bg-surface-raised shadow-card p-design-4">
-      <h2 className="text-headline text-ink-primary">{t("analytics.statusDistribution")}</h2>
+    <section className="rounded-md border border-border-subtle bg-surface-raised p-design-4 shadow-card sm:p-design-5">
+      <h2 className="text-label font-semibold text-ink-primary">{t("analytics.statusDistribution")}</h2>
       {total === 0 ? (
         <p className="mt-design-3 text-body text-ink-secondary">{t("analytics.noData")}</p>
       ) : (
@@ -59,14 +59,14 @@ export function StatusBreakdown({ data }: StatusBreakdownProps) {
               contrast WARN, and satisfies "identity never color-alone" for >= 2 series. */}
           <ul className="flex flex-1 flex-col gap-design-1">
             {entries.map(([status, count]) => (
-              <li key={status} className="flex items-center gap-design-2 text-body text-ink-primary">
+              <li key={status} className="flex items-center gap-design-2 text-label text-ink-primary">
                 <span
                   aria-hidden="true"
-                  className="h-3 w-3 shrink-0 rounded-full"
+                  className="h-2.5 w-2.5 shrink-0 rounded-[2px]"
                   style={{ backgroundColor: color(status) }}
                 />
                 <span className="flex-1">{label(status)}</span>
-                <span className="text-ink-secondary">{count}</span>
+                <span className="font-semibold tabular-nums text-ink-primary">{count}</span>
               </li>
             ))}
           </ul>

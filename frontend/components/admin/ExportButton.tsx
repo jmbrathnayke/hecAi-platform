@@ -11,6 +11,8 @@ import { useTranslations } from "next-intl";
 import { getAccessToken } from "@/lib/auth";
 import { downloadExport, type ExportFormat } from "@/lib/adminExport";
 import type { AdminCaseFilters } from "@/components/admin/FilterBar";
+import { DownloadSimple, FileCsv, FilePdf } from "@phosphor-icons/react";
+import { buttonStyles } from "@/components/admin/ui";
 
 interface ExportButtonProps {
   filters: AdminCaseFilters;
@@ -102,8 +104,9 @@ export function ExportButton({ filters, count, disabled = false }: ExportButtonP
         disabled={disabled || busy}
         aria-haspopup="menu"
         aria-expanded={open}
-        className="min-h-touch-target rounded-md border border-forest px-design-4 text-label font-semibold text-forest disabled:opacity-40"
+        className={buttonStyles.secondary}
       >
+        <DownloadSimple aria-hidden="true" size={16} />
         {busy ? t("export.exporting") : t("export.button", { count })}
       </button>
 
@@ -111,22 +114,24 @@ export function ExportButton({ filters, count, disabled = false }: ExportButtonP
         <div
           role="menu"
           aria-label={t("export.menuAria")}
-          className="absolute right-0 top-full z-50 mt-design-1 rounded-md border border-border-subtle bg-surface-raised shadow-card shadow-lg"
+          className="absolute right-0 top-full z-50 mt-design-1 min-w-[12rem] overflow-hidden rounded-sm border border-border-subtle bg-surface-raised p-1 shadow-overlay"
         >
           <button
             type="button"
             role="menuitem"
             onClick={() => handleExport("csv")}
-            className="block w-full min-h-touch-target px-design-4 text-left text-label text-ink-primary hover:bg-surface-tint"
+            className="flex min-h-[40px] w-full items-center gap-design-2 rounded-[6px] px-design-3 text-left text-label text-ink-primary transition-colors hover:bg-surface-tint"
           >
+            <FileCsv aria-hidden="true" size={18} className="text-ink-secondary" />
             {t("export.csv")}
           </button>
           <button
             type="button"
             role="menuitem"
             onClick={() => handleExport("pdf")}
-            className="block w-full min-h-touch-target px-design-4 text-left text-label text-ink-primary hover:bg-surface-tint"
+            className="flex min-h-[40px] w-full items-center gap-design-2 rounded-[6px] px-design-3 text-left text-label text-ink-primary transition-colors hover:bg-surface-tint"
           >
+            <FilePdf aria-hidden="true" size={18} className="text-ink-secondary" />
             {t("export.pdf")}
           </button>
         </div>

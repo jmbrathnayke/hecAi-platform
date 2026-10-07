@@ -20,8 +20,8 @@ import { FilterBar, type AdminCaseFilters } from "@/components/admin/FilterBar";
 import { AdminKpiCards } from "@/components/admin/AdminKpiCards";
 import { CaseDetailPanel } from "@/components/admin/CaseDetailPanel";
 import { ExportButton } from "@/components/admin/ExportButton";
-import { LanguageSelectorCookie } from "@/components/LanguageSelectorCookie";
-import PushNotificationToggle from "@/components/PushNotificationToggle";
+import { ArrowClockwise, CaretLeft, CaretRight, CursorClick, Tray } from "@phosphor-icons/react";
+import { PageHeader, Skeleton, buttonStyles } from "@/components/admin/ui";
 
 type LoadState = "loading" | "error" | "ready";
 const PAGE_SIZE = 20;
@@ -242,123 +242,150 @@ function AdminCasesPageContent() {
   const selectedDetailContent = selectedOfflineId ? (
     <CaseDetailPanel offlineId={selectedOfflineId} />
   ) : (
-    <div className="hidden rounded-md border border-dashed border-border-default p-design-4 text-body text-ink-disabled lg:block">
-      {t("cases.selectPrompt")}
+    <div className="hidden flex-col items-center justify-center gap-design-2 rounded-md border border-dashed border-border-subtle px-design-5 py-design-8 text-center 2xl:flex">
+      <CursorClick aria-hidden="true" size={28} className="text-ink-disabled" />
+      <p className="max-w-[28ch] text-label text-ink-secondary">{t("cases.selectPrompt")}</p>
     </div>
   );
 
-  return (
-    <main className="min-h-full bg-surface-base px-design-4 py-design-6">
-      {/* max-w-7xl, not max-w-6xl: AdminShell's 240px sidebar now eats into the viewport, and at
-          6xl the case table's list pane was narrow enough that two of its six columns sat off
-          the edge of an inner scroll container with no visual cue. */}
-      <div className="mx-auto max-w-7xl space-y-design-4">
-        <header className="flex flex-wrap items-start justify-between gap-design-2">
-          <div>
-            <h1 className="text-title text-ink-primary">{t("cases.title")}</h1>
-            {/* The inline Analytics link that used to sit here is gone -- AdminShell's sidebar
-                (and its mobile destination row) is now the single navigation surface, so a
-                second, differently-styled entry point to the same page is redundant. */}
-          </div>
-          <div className="flex flex-col gap-design-1">
-            <span className="text-caption text-ink-secondary">{t("languageLabel")}</span>
-            <LanguageSelectorCookie />
-          </div>
-        </header>
+  const waiting = data?.kpis?.by_status?.Submitted ?? null;
 
-        {/* FR-6.4: a submitted case in this district raises an alert here. */}
-        <PushNotificationToggle variant="staff" />
+  return (
+    <main className="min-h-full bg-surface-base px-design-4 py-design-5 sm:px-design-5 lg:py-design-6">
+      {/* Redesign (2026-10-07). The language switch and this device's notification switch moved
+          into the top bar, so the page opens on the cases: header, district figures, filters,
+          then the list beside the case it is showing. */}
+      <div className="mx-auto max-w-[1440px] space-y-design-5">
+        <PageHeader
+          title={t("cases.title")}
+          subtitle={waiting != null ? t("cases.subtitle", { count: waiting }) : undefined}
+          actions={
+            // Story 7.2: exports the CURRENT filter selection in full — `filters` only, never
+            // page/sort/dir. Disabled while loading or when the filters match nothing.
+            <ExportButton
+              filters={filters}
+              count={data?.total ?? 0}
+              disabled={state === "loading" || !data || data.total === 0}
+            />
+          }
+        />
 
         <AdminKpiCards kpis={data?.kpis ?? null} loading={state === "loading" && !data} />
 
-        <div className="flex flex-wrap items-end justify-between gap-design-3">
-          <FilterBar value={filters} onApply={handleApplyFilters} onClear={handleClearFilters} />
-          {/* Story 7.2: exports the CURRENT filter selection in full — `filters` only, never
-              page/sort/dir. Disabled while loading or when the filters match nothing, so an
-              export can't be fired for a result set the admin can't see. */}
-          <ExportButton
-            filters={filters}
-            count={data?.total ?? 0}
-            disabled={state === "loading" || !data || data.total === 0}
-          />
-        </div>
+        <FilterBar value={filters} onApply={handleApplyFilters} onClear={handleClearFilters} />
 
         {state === "loading" && !data && (
-          <p className="text-body text-ink-secondary" role="status">
-            {t("cases.loading")}
-          </p>
+          <div className="overflow-hidden rounded-md border border-border-subtle bg-surface-raised shadow-card">
+            <p className="border-b border-border-subtle px-design-4 py-design-3 text-caption text-ink-secondary" role="status">
+              {t("cases.loading")}
+            </p>
+            {[0, 1, 2, 3, 4, 5].map((i) => (
+              <div key={i} className="flex items-center gap-design-4 border-b border-border-subtle px-design-4 py-design-3 last:border-b-0">
+                <Skeleton className="h-4 w-28" />
+                <Skeleton className="h-4 w-20" />
+                <Skeleton className="hidden h-4 w-12 sm:block" />
+                <Skeleton className="h-5 w-24" />
+                <Skeleton className="ml-auto h-4 w-16" />
+              </div>
+            ))}
+          </div>
         )}
 
         {state === "error" && (
-          <div role="alert" className="space-y-design-2">
-            <p className="text-body text-status-error">{t("cases.loadError")}</p>
-            <button
-              type="button"
-              onClick={() => setReloadNonce((n) => n + 1)}
-              className="min-h-touch-target rounded-md border border-forest px-design-4 text-label font-semibold text-forest"
-            >
+          <div
+            role="alert"
+            className="flex flex-wrap items-center justify-between gap-design-3 rounded-md border border-status-error/30 bg-status-error-pale px-design-4 py-design-3"
+          >
+            <p className="text-label text-status-error">{t("cases.loadError")}</p>
+            <button type="button" onClick={() => setReloadNonce((n) => n + 1)} className={buttonStyles.secondary}>
+              <ArrowClockwise aria-hidden="true" size={16} />
               {t("cases.retry")}
             </button>
           </div>
         )}
 
         {state === "ready" && data && data.items.length === 0 && (
-          <p className="text-body text-ink-secondary">{t("cases.empty")}</p>
+          <div className="flex flex-col items-center gap-design-3 rounded-md border border-border-subtle bg-surface-raised px-design-5 py-design-8 text-center shadow-card">
+            <span className="flex h-12 w-12 items-center justify-center rounded-md bg-surface-tint text-forest">
+              <Tray aria-hidden="true" size={24} />
+            </span>
+            <p className="text-body text-ink-primary">{t("cases.empty")}</p>
+            <button type="button" onClick={handleClearFilters} className={buttonStyles.secondary}>
+              {t("filter.clear")}
+            </button>
+          </div>
         )}
 
-        {/* Mockup proportions: the case list takes the remaining width and the detail pane is a
-            fixed ~520px rail, rather than a 40/60 split that starved the six-column table (two
-            of its columns sat off the edge of the inner scroll container with no visual cue).
-            Below lg they stack, list first. */}
+        {/* The list takes the remaining width and the case being read is a rail beside it that
+            stays in view while the list scrolls. Below lg they stack, list first. */}
         {data && data.items.length > 0 && (
           <div className="flex flex-col gap-design-4 lg:flex-row lg:items-start">
             <div className="min-w-0 lg:flex-1">
-              {/* Card wrapper (mockup): the table is a rounded, bordered surface and the
-                  horizontal scroll happens INSIDE it, so the scrollbar belongs to the card
-                  rather than to the page column. */}
-              <div className="overflow-x-auto rounded-md border border-border-subtle bg-surface-raised shadow-card">
-                <CaseListTable
-                  cases={data.items}
-                  onSort={handleSort}
-                  sortCol={sortCol}
-                  sortDir={sortDir}
-                  onSelect={setSelectedOfflineId}
-                  selectedOfflineId={selectedOfflineId}
-                />
-              </div>
+              <div className="overflow-hidden rounded-md border border-border-subtle bg-surface-raised shadow-card">
+                <div className="flex items-center justify-between gap-design-3 border-b border-border-subtle px-design-4 py-design-3">
+                  <h2 className="text-label font-semibold text-ink-primary">
+                    {t("cases.resultCount", { count: data.total })}
+                  </h2>
+                </div>
+                {/* The horizontal scroll happens INSIDE the surface, so the scrollbar belongs to
+                    the list rather than to the page column. */}
+                <div className="overflow-x-auto">
+                  <CaseListTable
+                    cases={data.items}
+                    onSort={handleSort}
+                    sortCol={sortCol}
+                    sortDir={sortDir}
+                    onSelect={setSelectedOfflineId}
+                    selectedOfflineId={selectedOfflineId}
+                    condensed={!!selectedOfflineId}
+                  />
+                </div>
 
-              {totalPages > 1 && (
-                <nav
-                  className="mt-design-3 flex items-center justify-between gap-design-2"
-                  aria-label={t("cases.paginationAria")}
-                >
-                  <button
-                    type="button"
-                    disabled={page <= 1}
-                    onClick={() => updateUrl({ page: page - 1 })}
-                    className="min-h-touch-target rounded-md border border-border-default px-design-3 text-label disabled:opacity-40"
+                {totalPages > 1 && (
+                  <nav
+                    className="flex items-center justify-between gap-design-2 border-t border-border-subtle px-design-4 py-design-3"
+                    aria-label={t("cases.paginationAria")}
                   >
-                    {t("cases.previous")}
-                  </button>
-                  <span className="text-caption text-ink-secondary">
-                    {t("cases.pageOf", { page, total: totalPages })}
-                  </span>
-                  <button
-                    type="button"
-                    disabled={page >= totalPages}
-                    onClick={() => updateUrl({ page: page + 1 })}
-                    className="min-h-touch-target rounded-md border border-border-default px-design-3 text-label disabled:opacity-40"
-                  >
-                    {t("cases.next")}
-                  </button>
-                </nav>
-              )}
+                    <button
+                      type="button"
+                      disabled={page <= 1}
+                      onClick={() => updateUrl({ page: page - 1 })}
+                      className={buttonStyles.secondary}
+                    >
+                      <CaretLeft aria-hidden="true" size={14} />
+                      {t("cases.previous")}
+                    </button>
+                    <span className="text-caption tabular-nums text-ink-secondary">
+                      {t("cases.pageOf", { page, total: totalPages })}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={page >= totalPages}
+                      onClick={() => updateUrl({ page: page + 1 })}
+                      className={buttonStyles.secondary}
+                    >
+                      {t("cases.next")}
+                      <CaretRight aria-hidden="true" size={14} />
+                    </button>
+                  </nav>
+                )}
+              </div>
             </div>
 
-            {/* Right pane: case detail (Story 5.4). Single mount point (code review fix) --
-                lg:w-[60%] makes it sit beside the list on desktop and full-width, stacked
-                below the list, on mobile (flex-col parent); no separate mobile-only copy. */}
-            <div className="lg:w-[520px] lg:shrink-0">{selectedDetailContent}</div>
+            {/* Right pane: case detail (Story 5.4). Single mount point (code review fix). On a
+                desk it is a sticky rail with its own scroll, so the case stays beside the row
+                that opened it; on a phone it stacks below the list. */}
+            {/* With nothing selected the rail only holds a hint, so below 2xl it gives its width
+                back to the list instead of squeezing the table for an empty box. */}
+            <div
+              className={
+                selectedOfflineId
+                  ? "lg:sticky lg:top-[4.5rem] lg:max-h-[calc(100dvh-5.5rem)] lg:w-[420px] lg:shrink-0 lg:overflow-y-auto lg:overscroll-contain xl:w-[460px] 2xl:w-[520px]"
+                  : "hidden 2xl:block 2xl:w-[520px] 2xl:shrink-0"
+              }
+            >
+              {selectedDetailContent}
+            </div>
           </div>
         )}
       </div>

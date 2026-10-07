@@ -135,35 +135,35 @@ export function CaseActionPanel({
 
   if (isClosed(status)) {
     return (
-      <div className="rounded-md border border-dashed border-border-default p-design-4 text-body text-ink-disabled">
+      <div className="rounded-md border border-dashed border-border-subtle p-design-4 text-label text-ink-secondary">
         {t("action.closed")}
       </div>
     );
   }
 
   return (
-    <div className="space-y-design-3">
+    <div className="space-y-design-3 rounded-md border border-border-subtle bg-surface-raised p-design-4 shadow-card">
       {/* was `text-heading-3` — undefined token; see AIResultPanel. DESIGN.md § Typography. */}
-      <h3 className="text-headline text-ink-primary">{t("action.heading")}</h3>
+      <h3 className="text-label font-semibold text-ink-primary">{t("action.heading")}</h3>
 
       {status === "Approved" && dsFinalDecided === false ? (
         // Approved means forwarded. The Divisional Secretariat decides the final amount and
         // authorises payment from its own portal; there is nothing for the administrator to pay.
-        <p className="rounded-md bg-surface-tint p-design-3 text-body text-ink-secondary" data-testid="awaiting-ds-decision">
+        <p className="rounded-sm bg-surface-tint p-design-3 text-label text-ink-secondary" data-testid="awaiting-ds-decision">
           {t("action.awaitingDsDecision")}
         </p>
       ) : status === "Approved" ? (
         <button
           type="button"
           onClick={() => openDialog("mark_paid")}
-          className="min-h-touch-target rounded-md bg-forest px-design-4 text-label font-semibold text-ink-on-dark"
+          className="inline-flex min-h-[40px] items-center justify-center gap-design-2 rounded-sm bg-forest px-design-4 text-label font-semibold text-ink-on-dark transition-[background-color,transform] duration-150 hover:bg-forest-mid active:scale-[0.98] disabled:opacity-50 motion-reduce:transition-none"
         >
           {t("action.markPaid")}
         </button>
       ) : (
         <div className="grid grid-cols-2 gap-design-2">
           {approvalBlocked && (
-            <p role="note" className="col-span-2 rounded-md bg-status-warning/25 p-design-3 text-body text-ink-primary" data-testid="assessment-required">
+            <p role="note" className="col-span-2 rounded-sm bg-status-warning/15 p-design-3 text-label text-ink-primary" data-testid="assessment-required">
               {t("action.assessmentRequired")}
             </p>
           )}
@@ -171,28 +171,28 @@ export function CaseActionPanel({
             type="button"
             onClick={() => openDialog("approve")}
             disabled={approvalBlocked}
-            className="min-h-touch-target rounded-md bg-forest px-design-4 text-label font-semibold text-ink-on-dark disabled:opacity-50"
+            className="inline-flex min-h-[40px] items-center justify-center gap-design-2 rounded-sm bg-forest px-design-4 text-label font-semibold text-ink-on-dark transition-[background-color,transform] duration-150 hover:bg-forest-mid active:scale-[0.98] disabled:opacity-50 motion-reduce:transition-none"
           >
             {t("action.approve")}
           </button>
           <button
             type="button"
             onClick={() => openDialog("reject")}
-            className="min-h-touch-target rounded-md bg-status-error px-design-4 text-label font-semibold text-white"
+            className="inline-flex min-h-[40px] items-center justify-center gap-design-2 rounded-sm border border-status-error bg-surface-raised px-design-4 text-label font-semibold text-status-error transition-[background-color,transform] duration-150 hover:bg-status-error-pale active:scale-[0.98] disabled:opacity-50 motion-reduce:transition-none"
           >
             {t("action.reject")}
           </button>
           <button
             type="button"
             onClick={() => openDialog("request_info")}
-            className="min-h-touch-target rounded-md border border-amber px-design-4 text-label font-semibold text-amber"
+            className="inline-flex min-h-[40px] items-center justify-center gap-design-2 rounded-sm border border-border-subtle bg-surface-raised px-design-4 text-label font-medium text-ink-primary transition-[background-color,border-color,transform] duration-150 hover:border-border-default hover:bg-surface-base active:scale-[0.98] disabled:opacity-50 motion-reduce:transition-none"
           >
             {t("action.requestInfo")}
           </button>
           <button
             type="button"
             onClick={() => openDialog("escalate")}
-            className="min-h-touch-target rounded-md border border-amber px-design-4 text-label font-semibold text-amber"
+            className="inline-flex min-h-[40px] items-center justify-center gap-design-2 rounded-sm border border-border-subtle bg-surface-raised px-design-4 text-label font-medium text-ink-primary transition-[background-color,border-color,transform] duration-150 hover:border-border-default hover:bg-surface-base active:scale-[0.98] disabled:opacity-50 motion-reduce:transition-none"
           >
             {t("action.escalate")}
           </button>
@@ -200,7 +200,7 @@ export function CaseActionPanel({
       )}
 
       {activeAction && (
-        <div className="rounded-md border border-border-subtle bg-surface-raised shadow-card p-design-4 space-y-design-3">
+        <div className="space-y-design-3 rounded-sm border border-border-subtle bg-surface-base p-design-4">
           <h4 className="text-label font-semibold text-ink-primary">
             {t("action.confirmTitle", { action: t(`action.${ACTION_LABEL_KEYS[activeAction]}`) })}
           </h4>
@@ -215,7 +215,7 @@ export function CaseActionPanel({
                 type="number"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
-                className="w-full rounded-md border border-border-default px-design-3 py-design-2 text-body"
+                className="w-full rounded-sm border border-border-subtle bg-surface-raised px-design-3 py-design-2 text-label text-ink-primary focus:border-forest focus:outline-none focus:ring-2 focus:ring-forest-pale"
               />
               <p className="text-caption text-ink-secondary">{t("action.forwardNote")}</p>
             </div>
@@ -231,7 +231,7 @@ export function CaseActionPanel({
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
                 rows={3}
-                className="w-full rounded-md border border-border-default px-design-3 py-design-2 text-body"
+                className="w-full rounded-sm border border-border-subtle bg-surface-raised px-design-3 py-design-2 text-label text-ink-primary focus:border-forest focus:outline-none focus:ring-2 focus:ring-forest-pale"
               />
             </div>
           )}
@@ -247,7 +247,7 @@ export function CaseActionPanel({
               type="button"
               onClick={handleConfirm}
               disabled={!canSubmit || submitting}
-              className="min-h-touch-target flex-1 rounded-md bg-forest px-design-4 text-label font-semibold text-ink-on-dark disabled:opacity-50"
+              className="inline-flex min-h-[40px] items-center justify-center gap-design-2 rounded-sm bg-forest px-design-4 text-label font-semibold text-ink-on-dark transition-[background-color,transform] duration-150 hover:bg-forest-mid active:scale-[0.98] disabled:opacity-50 motion-reduce:transition-none flex-1"
             >
               {submitting ? t("action.submitting") : t("action.confirm")}
             </button>
@@ -255,7 +255,7 @@ export function CaseActionPanel({
               type="button"
               onClick={closeDialog}
               disabled={submitting}
-              className="min-h-touch-target flex-1 rounded-md border border-border-default px-design-4 text-label text-ink-secondary disabled:opacity-50"
+              className="inline-flex min-h-[40px] items-center justify-center gap-design-2 rounded-sm border border-border-subtle bg-surface-raised px-design-4 text-label font-medium text-ink-primary transition-[background-color,border-color,transform] duration-150 hover:border-border-default hover:bg-surface-base active:scale-[0.98] disabled:opacity-50 motion-reduce:transition-none flex-1"
             >
               {t("action.cancel")}
             </button>

@@ -30,9 +30,23 @@ jest.mock("next/link", () => {
 
 // The account menu has its own tests (StaffAccountMenu.test.tsx); here it only has to be mounted.
 jest.mock("@/components/StaffAccountMenu", () => ({
-  StaffAccountMenu: ({ loginPath }: { loginPath: string }) => (
-    <div data-testid="account-menu" data-login={loginPath} />
+  StaffAccountMenu: ({ loginPath, showPushToggle }: { loginPath: string; showPushToggle?: boolean }) => (
+    <div data-testid="account-menu" data-login={loginPath} data-push={showPushToggle ? "yes" : "no"} />
   ),
+}));
+
+// The language switch has its own tests (LanguageSelectorCookie.test.tsx); here only its placement.
+jest.mock("@/components/LanguageSelectorCookie", () => ({
+  LanguageSelectorCookie: ({ segmented }: { segmented?: boolean }) => (
+    <div data-testid="language-switch" data-segmented={segmented ? "yes" : "no"} />
+  ),
+}));
+
+// The district chip reads the session; give it an administrator scoped to one district.
+jest.mock("@/lib/staffAccount", () => ({
+  readStaffAccount: jest.fn().mockResolvedValue({
+    email: "admin@example.lk", role: "admin", scope: ["අනුරාධපුරය"], canChangePassword: true,
+  }),
 }));
 
 const mockUsePathname = usePathname as jest.Mock;
@@ -93,6 +107,19 @@ describe("AdminShell", () => {
     renderAt("/admin/cases");
     const banner = screen.getByRole("banner");
     expect(within(banner).getByTestId("account-menu")).toHaveAttribute("data-login", "/admin/login");
+  });
+
+  it("carries the language switch and this device's notification switch in the top bar (redesign 2026-10-07)", () => {
+    // Both used to sit in the body of every admin page, above the cases.
+    renderAt("/admin/cases");
+    const banner = screen.getByRole("banner");
+    expect(within(banner).getByTestId("language-switch")).toHaveAttribute("data-segmented", "yes");
+    expect(within(banner).getByTestId("account-menu")).toHaveAttribute("data-push", "yes");
+  });
+
+  it("names the administrator's district next to the brand", async () => {
+    renderAt("/admin/cases");
+    expect(await within(screen.getByRole("banner")).findByText("අනුරාධපුරය")).toBeInTheDocument();
   });
 
   it("renders NO navigation on the login route", () => {

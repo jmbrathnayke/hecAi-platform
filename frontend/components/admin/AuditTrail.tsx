@@ -54,15 +54,15 @@ export function AuditTrail({ trail }: AuditTrailProps) {
   }
 
   return (
-    <div className="space-y-design-3">
-      <div className="flex items-center justify-between">
+    <div className="space-y-design-3 rounded-md border border-border-subtle bg-surface-raised p-design-4 shadow-card">
+      <div className="flex items-center justify-between gap-design-3">
         {/* was `text-heading-3` — undefined token; see AIResultPanel. DESIGN.md § Typography. */}
-        <h3 className="text-headline text-ink-primary">{t("audit.heading")}</h3>
+        <h3 className="text-label font-semibold text-ink-primary">{t("audit.heading")}</h3>
         <button
           type="button"
           onClick={handleVerify}
           disabled={verifyState === "checking"}
-          className="text-label font-medium text-forest underline disabled:opacity-50"
+          className="rounded-sm text-label font-medium text-forest underline underline-offset-2 transition-colors hover:text-forest-mid disabled:opacity-50"
         >
           {t("audit.verify")}
         </button>
@@ -95,12 +95,12 @@ export function AuditTrail({ trail }: AuditTrailProps) {
         {trail.map((entry) => (
           <div
             key={entry.id}
-            className="rounded-md border border-border-subtle bg-surface-raised shadow-card p-design-3"
+            className="rounded-sm border border-border-subtle bg-surface-base p-design-3"
           >
             <div className="flex flex-wrap items-center gap-design-2">
               <span className="text-label font-medium text-ink-primary">{entry.event}</span>
-              <span className="text-label text-ink-disabled">{entry.actor_id ?? "—"}</span>
-              <span className="ml-auto text-caption text-ink-disabled">
+              <span className="max-w-[12rem] truncate font-staff-mono text-caption text-ink-secondary" title={entry.actor_id ?? undefined}>{entry.actor_id ?? "—"}</span>
+              <span className="ml-auto text-caption tabular-nums text-ink-secondary">
                 {formatTimestamp(entry.created_at, locale)}
               </span>
             </div>

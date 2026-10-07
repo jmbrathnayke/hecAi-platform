@@ -1,4 +1,4 @@
-import { Noto_Sans, Noto_Sans_Sinhala, Noto_Sans_Tamil } from "next/font/google";
+import { Geist, Geist_Mono, Noto_Sans, Noto_Sans_Sinhala, Noto_Sans_Tamil } from "next/font/google";
 
 // Shared Noto Sans font instances (Story 6.1). Extracted from app/[locale]/layout.tsx so all
 // three root layouts -- citizen (app/[locale]), officer (app/officer), admin (app/admin) -- can
@@ -28,3 +28,20 @@ export const notoSansTamil = Noto_Sans_Tamil({
 
 // The className string that sets all three CSS variables on an <html> element.
 export const fontVariables = `${notoSans.variable} ${notoSansSinhala.variable} ${notoSansTamil.variable}`;
+
+// The staff desk face (2026-10-07 admin redesign). Geist sets the Latin text and figures of the
+// admin portal; Sinhala and Tamil still fall through to the Noto faces above, which Geist does not
+// cover. Loaded only by layouts that opt in, so citizen and officer pages are unchanged.
+export const geist = Geist({
+  subsets: ["latin"],
+  variable: "--font-geist",
+  display: "swap",
+});
+
+export const geistMono = Geist_Mono({
+  subsets: ["latin"],
+  variable: "--font-geist-mono",
+  display: "swap",
+});
+
+export const staffFontVariables = `${geist.variable} ${geistMono.variable}`;

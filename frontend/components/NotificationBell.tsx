@@ -15,6 +15,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
+import { Bell } from "@phosphor-icons/react";
 import {
   fetchNotifications,
   isKnownSubject,
@@ -40,11 +41,15 @@ function targetFor(item: NotificationItem, home: string): string {
 export default function NotificationBell({
   home,
   tone = "dark",
+  icon = "emoji",
 }: {
   /** Where an entry links to — the role's case list. */
   home: string;
   /** `dark` sits on the forest top bar, `light` on a pale page header. */
   tone?: Tone;
+  /** `line` is the staff bars' outline icon (admin redesign, 2026-10-07); citizen and officer
+   *  pages keep the emoji they were designed with. */
+  icon?: "emoji" | "line";
 }) {
   const t = useTranslations("notifications");
   const [items, setItems] = useState<NotificationItem[]>([]);
@@ -147,9 +152,13 @@ export default function NotificationBell({
         className={`relative flex min-h-touch-target min-w-touch-target items-center justify-center rounded-md px-design-2 transition-colors ${buttonTone}`}
         data-testid="notification-bell"
       >
-        <span aria-hidden="true" className="text-[20px] leading-none">
-          🔔
-        </span>
+        {icon === "line" ? (
+          <Bell aria-hidden="true" size={20} />
+        ) : (
+          <span aria-hidden="true" className="text-[20px] leading-none">
+            🔔
+          </span>
+        )}
         {unread > 0 && (
           <span
             aria-hidden="true"

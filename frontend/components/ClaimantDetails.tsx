@@ -27,16 +27,34 @@ function formatDate(iso: string | null, locale: string): string | null {
   return Number.isNaN(d.getTime()) ? null : d.toLocaleDateString(locale);
 }
 
-function Row({ label, children, testId }: { label: string; children: ReactNode; testId?: string }) {
+function Row({
+  label,
+  children,
+  testId,
+  compact = false,
+}: {
+  label: string;
+  children: ReactNode;
+  testId?: string;
+  compact?: boolean;
+}) {
   return (
     <div className="flex flex-col gap-design-1" data-testid={testId}>
       <dt className="text-caption text-ink-secondary">{label}</dt>
-      <dd className="break-words text-body text-ink-primary">{children}</dd>
+      <dd className={`break-words text-ink-primary ${compact ? "text-label" : "text-body"}`}>{children}</dd>
     </div>
   );
 }
 
-export function ClaimantDetails({ caseRef }: { caseRef: string }) {
+export function ClaimantDetails({
+  caseRef,
+  density = "default",
+}: {
+  caseRef: string;
+  /** `compact` matches the admin case rail's smaller section type (admin redesign, 2026-10-07). */
+  density?: "default" | "compact";
+}) {
+  const compact = density === "compact";
   const t = useTranslations("claimant");
   const locale = useLocale();
   const [state, setState] = useState<State>({ kind: "loading" });
@@ -55,11 +73,11 @@ export function ClaimantDetails({ caseRef }: { caseRef: string }) {
 
   return (
     <section
-      className="space-y-design-3 rounded-md border border-border-subtle bg-surface-raised p-design-4"
+      className={`space-y-design-3 rounded-md border border-border-subtle bg-surface-raised p-design-4 ${compact ? "shadow-card" : ""}`}
       data-testid="claimant-details"
       aria-labelledby={`claimant-title-${caseRef}`}
     >
-      <h2 id={`claimant-title-${caseRef}`} className="text-headline text-ink-primary">
+      <h2 id={`claimant-title-${caseRef}`} className={compact ? "text-label font-semibold text-ink-primary" : "text-headline text-ink-primary"}>
         {t("title")}
       </h2>
 
@@ -104,31 +122,31 @@ export function ClaimantDetails({ caseRef }: { caseRef: string }) {
               </p>
             </div>
             <dl className="grid grid-cols-1 gap-design-2 sm:grid-cols-2">
-              <Row label={t("householdRef")} testId="claimant-household-ref">
+              <Row compact={compact} label={t("householdRef")} testId="claimant-household-ref">
                 <span className="font-mono">{h.household_ref}</span>
               </Row>
-              <Row label={t("mobile")} testId="claimant-mobile">
+              <Row compact={compact} label={t("mobile")} testId="claimant-mobile">
                 {h.contact_mobile ? (
                   <a href={`tel:${h.contact_mobile}`} className="font-medium text-forest underline">
                     {formatMobile(h.contact_mobile)}
                   </a>
                 ) : notRecorded}
               </Row>
-              <Row label={t("email")} testId="claimant-email">
+              <Row compact={compact} label={t("email")} testId="claimant-email">
                 {h.contact_email ? (
                   <a href={`mailto:${h.contact_email}`} className="font-medium text-forest underline">
                     {h.contact_email}
                   </a>
                 ) : notRecorded}
               </Row>
-              <Row label={t("address")} testId="claimant-address">
+              <Row compact={compact} label={t("address")} testId="claimant-address">
                 {h.address ? <span className="whitespace-pre-wrap">{h.address}</span> : notRecorded}
               </Row>
-              <Row label={t("area")}>{`${h.district} / ${h.ds_division}`}</Row>
-              <Row label={t("gnDivision")}>{h.gn_division ?? notRecorded}</Row>
-              <Row label={t("registeredOn")}>{registered ?? notRecorded}</Row>
+              <Row compact={compact} label={t("area")}>{`${h.district} / ${h.ds_division}`}</Row>
+              <Row compact={compact} label={t("gnDivision")}>{h.gn_division ?? notRecorded}</Row>
+              <Row compact={compact} label={t("registeredOn")}>{registered ?? notRecorded}</Row>
               {"bank_account_last4" in h && (
-                <Row label={t("bankAccount")} testId="claimant-bank">
+                <Row compact={compact} label={t("bankAccount")} testId="claimant-bank">
                   {h.bank_account_last4 ? t("bankAccountValue", { last4: h.bank_account_last4 }) : notRecorded}
                 </Row>
               )}

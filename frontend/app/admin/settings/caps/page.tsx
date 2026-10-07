@@ -20,6 +20,7 @@ import {
   type CompensationCap,
 } from "@/lib/adminSettings";
 import districtReference from "@/public/data/district_reference.json";
+import { PageHeader, Skeleton, buttonStyles, fieldStyles } from "@/components/admin/ui";
 
 // Same district vocabulary DistrictPicker.tsx uses (Story 5.2) -- imported directly rather
 // than the whole cascading two-level component, since caps have no DS-division granularity.
@@ -151,75 +152,87 @@ export default function CompensationCapsPage() {
 
   if (!checked) return null;
 
+  // Redesign (2026-10-07): the same page header and raised surface as the rest of the admin
+  // area. Each row is still a <tr> with its own input and Save button; one district saves at a time.
   return (
-    <main className="min-h-full bg-surface-base px-design-4 py-design-6">
-      <div className="mx-auto max-w-3xl space-y-design-4">
-        <h1 className="text-title text-ink-primary">{t("caps.title")}</h1>
-        <p className="text-body text-ink-secondary">{t("caps.intro")}</p>
+    <main className="min-h-full bg-surface-base px-design-4 py-design-5 sm:px-design-5 lg:py-design-6">
+      <div className="mx-auto max-w-4xl space-y-design-5">
+        <PageHeader title={t("caps.title")} subtitle={<span className="block max-w-[65ch]">{t("caps.intro")}</span>} />
 
         {state === "loading" && (
-          <p className="text-body text-ink-secondary" role="status">
-            {t("caps.loading")}
-          </p>
+          <div className="rounded-md border border-border-subtle bg-surface-raised p-design-4 shadow-card">
+            <p className="text-caption text-ink-secondary" role="status">
+              {t("caps.loading")}
+            </p>
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} className="mt-design-3 flex items-center gap-design-4">
+                <Skeleton className="h-4 w-32" />
+                <Skeleton className="h-9 flex-1" />
+                <Skeleton className="h-9 w-20" />
+              </div>
+            ))}
+          </div>
         )}
 
         {state === "error" && (
-          <p role="alert" className="text-body text-status-error">
+          <p role="alert" className="rounded-md border border-status-error/30 bg-status-error-pale px-design-4 py-design-3 text-label text-status-error">
             {t("caps.loadError")}
           </p>
         )}
 
         {error && (
-          <p role="alert" className="text-body text-status-error">
+          <p role="alert" className="rounded-md border border-status-error/30 bg-status-error-pale px-design-4 py-design-3 text-label text-status-error">
             {error}
           </p>
         )}
 
         {state === "ready" && (
-          <table className="w-full border-collapse text-body">
-            <thead>
-              <tr className="border-b border-border-default text-left">
-                <th className="py-design-2">{t("caps.colDistrict")}</th>
-                <th className="py-design-2">{t("caps.colCap")}</th>
-                <th className="py-design-2" />
-              </tr>
-            </thead>
-            <tbody>
-              {ALL_DISTRICTS.map((district) => {
-                const existing = capFor(district);
-                const value =
-                  amounts[district] ?? (existing ? String(existing.cap_amount_lkr) : "");
-                return (
-                  <tr key={district} className="border-b border-border-default">
-                    <td className="py-design-2">{district}</td>
-                    <td className="py-design-2">
-                      <input
-                        type="number"
-                        min={0}
-                        aria-label={t("caps.capAria", { district })}
-                        value={value}
-                        onChange={(e) =>
-                          setAmounts((prev) => ({ ...prev, [district]: e.target.value }))
-                        }
-                        placeholder={existing ? undefined : t("caps.noCapPlaceholder")}
-                        className="w-full rounded-md border border-border-default px-design-3 py-design-2"
-                      />
-                    </td>
-                    <td className="py-design-2">
-                      <button
-                        type="button"
-                        disabled={saving.has(district)}
-                        onClick={() => handleSave(district)}
-                        className="min-h-touch-target rounded-md bg-forest px-design-4 text-label font-semibold text-ink-on-dark disabled:opacity-50"
-                      >
-                        {saving.has(district) ? t("caps.saving") : t("caps.save")}
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <div className="overflow-x-auto rounded-md border border-border-subtle bg-surface-raised shadow-card">
+            <table className="w-full min-w-[480px] border-collapse text-label">
+              <thead>
+                <tr className="border-b border-border-subtle bg-surface-base text-left text-caption font-medium text-ink-secondary">
+                  <th scope="col" className="px-design-4 py-design-3 font-medium">{t("caps.colDistrict")}</th>
+                  <th scope="col" className="px-design-4 py-design-3 font-medium">{t("caps.colCap")}</th>
+                  <th scope="col" className="px-design-4 py-design-3" />
+                </tr>
+              </thead>
+              <tbody>
+                {ALL_DISTRICTS.map((district) => {
+                  const existing = capFor(district);
+                  const value =
+                    amounts[district] ?? (existing ? String(existing.cap_amount_lkr) : "");
+                  return (
+                    <tr key={district} className="border-b border-border-subtle last:border-b-0">
+                      <td className="whitespace-nowrap px-design-4 py-design-3 font-medium text-ink-primary">{district}</td>
+                      <td className="px-design-4 py-design-3">
+                        <input
+                          type="number"
+                          min={0}
+                          aria-label={t("caps.capAria", { district })}
+                          value={value}
+                          onChange={(e) =>
+                            setAmounts((prev) => ({ ...prev, [district]: e.target.value }))
+                          }
+                          placeholder={existing ? undefined : t("caps.noCapPlaceholder")}
+                          className={`${fieldStyles} tabular-nums placeholder:text-ink-secondary`}
+                        />
+                      </td>
+                      <td className="px-design-4 py-design-3 text-right">
+                        <button
+                          type="button"
+                          disabled={saving.has(district)}
+                          onClick={() => handleSave(district)}
+                          className={buttonStyles.secondary}
+                        >
+                          {saving.has(district) ? t("caps.saving") : t("caps.save")}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
     </main>

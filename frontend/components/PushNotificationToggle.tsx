@@ -26,9 +26,14 @@ import {
  * "a case needing your attention". The subscription itself is identical, and the SERVER decides the
  * routing from the verified JWT role — this prop cannot influence who gets notified, which is why
  * it is safe for it to be a plain presentational flag. */
-type Props = { variant?: "citizen" | "staff" };
+type Props = {
+  variant?: "citizen" | "staff";
+  /** `row` is a compact label + switch for the staff account menu (admin redesign, 2026-10-07);
+   *  `card` is the original standalone section, still the default everywhere else. */
+  layout?: "card" | "row";
+};
 
-export default function PushNotificationToggle({ variant = "citizen" }: Props) {
+export default function PushNotificationToggle({ variant = "citizen", layout = "card" }: Props) {
   const t = useTranslations("notifications");
   const [state, setState] = useState<PushState | "checking">("checking");
   const [busy, setBusy] = useState(false);
@@ -73,6 +78,41 @@ export default function PushNotificationToggle({ variant = "citizen" }: Props) {
     } finally {
       setBusy(false);
     }
+  }
+
+  if (layout === "row") {
+    return (
+      <div className="flex flex-col gap-design-1" data-testid="push-toggle-row">
+        <div className="flex items-center justify-between gap-design-3">
+          <span className="text-label font-medium text-ink-primary">{t("title")}</span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={subscribed}
+            aria-label={t("title")}
+            onClick={toggle}
+            disabled={busy || state === "denied"}
+            className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-pill transition-colors duration-150 disabled:opacity-50 motion-reduce:transition-none ${
+              subscribed ? "bg-forest" : "bg-border-default"
+            }`}
+          >
+            <span
+              aria-hidden="true"
+              className={`inline-block h-5 w-5 rounded-pill bg-surface-raised shadow-card transition-transform duration-150 motion-reduce:transition-none ${
+                subscribed ? "translate-x-[22px]" : "translate-x-0.5"
+              }`}
+            />
+          </button>
+        </div>
+        <p className="text-caption text-ink-secondary">
+          {state === "denied"
+            ? t(variant === "staff" ? "staffBlocked" : "blocked")
+            : subscribed
+              ? t("enabledHint")
+              : t(variant === "staff" ? "staffHint" : "hint")}
+        </p>
+      </div>
+    );
   }
 
   return (

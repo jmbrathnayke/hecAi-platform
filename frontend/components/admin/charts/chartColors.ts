@@ -35,5 +35,5 @@ export const VOLUME_TREND_COLOR = "#2D6A4F"; // forest
 export const COMPENSATION_COLOR = "#1565C0"; // civic
 export const AI_HISTOGRAM_COLOR = "#E76F51"; // amber
 
-export const AXIS_COLOR = "#4A5E4A"; // ink-secondary
-export const GRID_COLOR = "#C8DBC8"; // border-default
+export const AXIS_COLOR = "#4A5B52"; // ink-secondary (realigned with tailwind.config.ts, 2026-10-07)
+export const GRID_COLOR = "#E3EAE5"; // border-subtle: gridlines are decoration, not content (2026-10-07)
