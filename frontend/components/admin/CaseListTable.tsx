@@ -6,7 +6,9 @@
 import { useLocale, useTranslations } from "next-intl";
 import type { AdminCaseListItem } from "@/lib/adminCases";
 import { statusKey } from "@/lib/status";
-import { STATUS_STYLES, STATUS_VALUES } from "@/components/admin/statusVocabulary";
+import { STATUS_VALUES } from "@/components/admin/statusVocabulary";
+import { CaretDown, CaretUp, CaretUpDown, Warning } from "@phosphor-icons/react";
+import { StatusBadge } from "@/components/admin/ui";
 import { DAMAGE_CATEGORY_KEYS } from "@/components/admin/damageVocabulary";
 
 export type SortColumn = "submitted_at" | "canonical_id" | "damage_category" | "status";
@@ -19,21 +21,24 @@ interface CaseListTableProps {
   sortDir: SortDirection;
   onSelect: (offlineId: string) => void;
   selectedOfflineId?: string | null;
+  /** True while a case is open in the rail beside the list. The two secondary columns then step
+   *  aside below 2xl so the reference, verification, status and date stay in view. */
+  condensed?: boolean;
 }
 
 // Story 6.3: labelKey resolves against the `admin.table.*` namespace; sortKey stays the canonical
 // SortColumn value the backend/URL contract expects (do not translate sortKey).
-const COLUMNS: { sortKey: SortColumn | null; labelKey: string }[] = [
+const COLUMNS: { sortKey: SortColumn | null; labelKey: string; secondary?: boolean }[] = [
   { sortKey: "canonical_id", labelKey: "colCanonicalId" },
   { sortKey: "damage_category", labelKey: "colDamageCategory" },
-  { sortKey: null, labelKey: "colAiConfidence" },
+  { sortKey: null, labelKey: "colAiConfidence", secondary: true },
   // Placed immediately before Status, which is the column the approver acts on. An approver
   // scanning this list is deciding whether to authorise money; whether anyone actually saw the
   // damage belongs next to that decision, not at the far end of a horizontally scrolling table.
   { sortKey: null, labelKey: "colVerification" },
   { sortKey: "status", labelKey: "colStatus" },
   { sortKey: "submitted_at", labelKey: "colSubmissionDate" },
-  { sortKey: null, labelKey: "colDaysPending" },
+  { sortKey: null, labelKey: "colDaysPending", secondary: true },
 ];
 
 function formatDate(iso: string | null, locale: string): string {
@@ -61,6 +66,7 @@ export function CaseListTable({
   sortDir,
   onSelect,
   selectedOfflineId,
+  condensed = false,
 }: CaseListTableProps) {
   const t = useTranslations("admin");
   const tStatus = useTranslations("status");
@@ -74,35 +80,47 @@ export function CaseListTable({
   // the `status` column has no DB-level CHECK constraint -- fall back to the raw value for
   // anything outside that set instead of rendering next-intl's missing-message placeholder
   // (Story 6.3 code review fix, mirrors StatusCard.tsx's isKnown guard).
+  // Hidden, not removed: the cells stay in the DOM (and in each row's cell order).
+  const secondary = condensed ? "hidden 2xl:table-cell" : "";
+
   const statusLabel = (status: string): string =>
     (STATUS_VALUES as readonly string[]).includes(status)
       ? tStatus(`statusLabels.${statusKey(status)}`)
       : status;
 
   return (
-    // min-w-[640px] is what makes the parent's `overflow-x-auto` actually engage on mobile.
-    // With `w-full` alone the table can never exceed its container, so the scroll container was
-    // inert and 6 columns squeezed to ~55px each on a 360px screen (dates and status pills
-    // wrapping to three lines). Now the table keeps legible column widths and scrolls sideways.
-    <table className="w-full min-w-[640px] border-collapse text-body">
-      <thead>
-        {/* Mockup header row: tinted band, uppercase micro-caps. */}
-        <tr className="border-b border-border-default bg-surface-base text-left text-caption font-bold uppercase tracking-wide text-ink-secondary">
-          {COLUMNS.map(({ sortKey, labelKey }) => {
+    // min-w-[720px] is what makes the parent's `overflow-x-auto` actually engage on mobile: with
+    // `w-full` alone the table can never exceed its container, and seven columns squeezed into a
+    // phone wrap every cell. The table keeps legible column widths and scrolls sideways instead.
+    //
+    // Redesign (2026-10-07): 14px rows, a sentence-case header that stays put while the list
+    // scrolls, square-cornered status badges that never wrap, and the case reference in Geist
+    // Mono so references line up digit for digit.
+    <table className={`w-full border-collapse text-label ${condensed ? "min-w-[560px] 2xl:min-w-[720px]" : "min-w-[720px]"}`}>
+      <thead className="sticky top-0 z-10">
+        <tr className="border-b border-border-subtle bg-surface-base text-left text-caption font-medium text-ink-secondary">
+          {COLUMNS.map(({ sortKey, labelKey, secondary: isSecondary }) => {
             const label = t(`table.${labelKey}`);
+            const active = sortCol === sortKey;
+            const SortIcon = !active ? CaretUpDown : sortDir === "asc" ? CaretUp : CaretDown;
             return (
-              <th key={labelKey} scope="col" className="px-design-3 py-design-2">
+              <th
+                key={labelKey}
+                scope="col"
+                aria-sort={sortKey && active ? (sortDir === "asc" ? "ascending" : "descending") : undefined}
+                className={`whitespace-nowrap px-design-3 py-design-3 font-medium ${isSecondary ? secondary : ""}`}
+              >
                 {sortKey ? (
                   <button
                     type="button"
                     onClick={() => onSort(sortKey)}
-                    className="flex items-center gap-design-1 font-bold uppercase tracking-wide hover:text-forest"
+                    className={`inline-flex items-center gap-design-1 rounded-sm transition-colors hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-forest ${
+                      active ? "text-ink-primary" : ""
+                    }`}
                     aria-label={t("table.sortAria", { column: label })}
                   >
                     {label}
-                    {sortCol === sortKey && (
-                      <span aria-hidden="true">{sortDir === "asc" ? "▲" : "▼"}</span>
-                    )}
+                    <SortIcon aria-hidden="true" size={12} className={active ? "text-forest" : "opacity-50"} />
                   </button>
                 ) : (
                   label
@@ -137,33 +155,29 @@ export function CaseListTable({
               }}
               // border-l-[3px] on both branches (transparent when unselected) so selecting a
               // row does not shift its cells sideways by 3px.
-              className={`cursor-pointer border-b border-border-default border-l-[3px] last:border-b-0 ${
-                selected
-                  ? "border-l-forest bg-forest-pale"
-                  : "border-l-transparent hover:bg-surface-tint"
+              className={`cursor-pointer border-b border-l-[3px] border-b-border-subtle transition-colors duration-150 last:border-b-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-forest motion-reduce:transition-none ${
+                selected ? "border-l-forest bg-surface-tint" : "border-l-transparent hover:bg-surface-base"
               }`}
             >
               {/* whitespace-nowrap: "HEC-2026-0041" was breaking at every hyphen into a
                   three-line stack whenever the column got tight. The reference is the row's
                   identity — it must stay on one line and let the table scroll instead. */}
-              <td className="whitespace-nowrap px-design-3 py-design-2 font-medium text-ink-primary">
+              <td className="whitespace-nowrap px-design-3 py-design-3 font-staff-mono font-medium text-ink-primary">
                 {c.canonical_id ?? "—"}
               </td>
-              <td className="px-design-3 py-design-2 text-ink-secondary">
+              <td className="whitespace-nowrap px-design-3 py-design-3 text-ink-secondary">
                 {damageLabel(c.damage_category)}
               </td>
-              <td className="px-design-3 py-design-2 text-ink-secondary">
+              <td className={`px-design-3 py-design-3 tabular-nums text-ink-secondary ${secondary}`}>
                 {c.ai_confidence != null ? `${Math.round(c.ai_confidence * 100)}%` : "—"}
               </td>
               {/* Unverified is styled as a warning, verified as ordinary text. The asymmetry is
                   deliberate: an officer-verified claim is the expected case and needs no emphasis,
                   while an unverified one is the exception the approver must notice before
-                  authorising payment. Colour alone never carries it — the label states which.
-
-                  The badge is an amber TINT behind dark ink, not amber text: status-warning is
-                  #E9C46A, about 1.8:1 against white and unreadable as text. The tint carries the
-                  signal, ink-primary carries the contrast. */}
-              <td className="whitespace-nowrap px-design-3 py-design-2">
+                  authorising payment. Colour alone never carries it — the label and the icon
+                  state which. The badge is a warning TINT behind dark ink, so the tint carries
+                  the signal and ink-primary carries the contrast. */}
+              <td className="whitespace-nowrap px-design-3 py-design-3">
                 {/* Verified = officer-assisted at submission, or a field officer has since recorded
                     an assessment of the citizen's report (final governance workflow). */}
                 {(c.officer_assessed ?? c.submitted_by_officer) ? (
@@ -171,24 +185,19 @@ export function CaseListTable({
                     {t("table.verifiedByOfficer")}
                   </span>
                 ) : (
-                  <span className="rounded-full bg-status-warning/25 px-design-2 py-0.5 text-caption font-medium text-ink-primary">
+                  <span className="inline-flex items-center gap-1 rounded-sm bg-status-warning/15 px-design-2 py-0.5 text-caption font-medium text-ink-primary">
+                    <Warning aria-hidden="true" size={12} weight="fill" className="text-status-warning" />
                     {t("table.notVerified")}
                   </span>
                 )}
               </td>
-              <td className="px-design-3 py-design-2">
-                <span
-                  className={`rounded-full px-design-2 py-0.5 text-caption font-medium ${
-                    STATUS_STYLES[c.status] ?? "bg-surface-tint text-ink-secondary"
-                  }`}
-                >
-                  {statusLabel(c.status)}
-                </span>
+              <td className="px-design-3 py-design-3">
+                <StatusBadge status={c.status} label={statusLabel(c.status)} />
               </td>
-              <td className="px-design-3 py-design-2 text-ink-secondary">
+              <td className="whitespace-nowrap px-design-3 py-design-3 tabular-nums text-ink-secondary">
                 {formatDate(c.submitted_at, locale)}
               </td>
-              <td className="px-design-3 py-design-2 text-ink-secondary">
+              <td className={`px-design-3 py-design-3 tabular-nums text-ink-secondary ${secondary}`}>
                 {daysPending(c.submitted_at, c.status)}
               </td>
             </tr>

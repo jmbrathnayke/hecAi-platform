@@ -19,6 +19,16 @@ export const STATUS_STYLES: Record<string, string> = {
   "Payment Processed": "bg-surface-tint text-ink-secondary",
 };
 
+// Solid fills for the status-mix bar on the case list (admin redesign, 2026-10-07). Same hue per
+// status as the badges above, so a colour in the bar means the same thing as a colour in the table.
+export const STATUS_FILLS: Record<string, string> = {
+  Submitted: "bg-civic",
+  "Under Review": "bg-amber",
+  Approved: "bg-forest",
+  Rejected: "bg-status-error",
+  "Payment Processed": "bg-border-default",
+};
+
 // Terminal statuses -- no further case-review action is possible once a case reaches one of
 // these (code review fix, Story 5.5: CaseActionPanel previously hand-duplicated this pair
 // instead of reusing this file, the same anti-pattern this file was created to avoid).

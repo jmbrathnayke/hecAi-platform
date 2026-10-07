@@ -18,7 +18,7 @@ export function AIResultPanel({ aiResult }: AIResultPanelProps) {
 
   if (!aiResult) {
     return (
-      <div className="rounded-md border border-dashed border-border-default p-design-4 text-body text-ink-disabled">
+      <div className="rounded-md border border-dashed border-border-subtle p-design-4 text-label text-ink-secondary">
         {t("ai.empty")}
       </div>
     );
@@ -34,15 +34,15 @@ export function AIResultPanel({ aiResult }: AIResultPanelProps) {
       : null;
 
   return (
-    <div className="rounded-md border border-border-subtle bg-surface-raised shadow-card p-design-4 space-y-design-2">
+    <div className="rounded-md border border-border-subtle bg-surface-raised shadow-card p-design-4 space-y-design-3">
       {/* was `text-heading-3` — never defined in the theme, so preflight left this rendering at
           plain body size/weight. DESIGN.md: "Headline (18px / 600) is section and card headings." */}
-      <h3 className="text-headline text-ink-primary">{t("ai.heading")}</h3>
+      <h3 className="text-label font-semibold text-ink-primary">{t("ai.heading")}</h3>
 
       <div className="flex items-center gap-design-3">
         <span className="text-body font-medium text-ink-primary">{aiResult.prediction}</span>
         {aiResult.ai_severity && (
-          <span className="rounded-full bg-amber-pale px-design-2 py-0.5 text-caption font-medium text-amber">
+          <span className="rounded-sm bg-amber-pale px-design-2 py-0.5 text-caption font-medium text-amber">
             {aiResult.ai_severity}
           </span>
         )}
@@ -54,7 +54,7 @@ export function AIResultPanel({ aiResult }: AIResultPanelProps) {
       {aiResult.out_of_domain && (
         <p
           data-testid="ood-notice"
-          className="rounded-md border border-amber bg-amber-pale p-design-3 text-body text-ink-primary"
+          className="rounded-sm border border-amber/40 bg-amber-pale p-design-3 text-label text-ink-primary"
         >
           {t("ai.outOfDomain")}
         </p>
@@ -62,9 +62,9 @@ export function AIResultPanel({ aiResult }: AIResultPanelProps) {
 
       {confidencePct != null && !aiResult.out_of_domain && (
         <div>
-          <div className="h-2 w-full overflow-hidden rounded-full bg-surface-tint">
+          <div className="h-1.5 w-full overflow-hidden rounded-pill bg-surface-tint">
             <div
-              className="h-full rounded-full bg-forest"
+              className="h-full rounded-pill bg-forest"
               style={{ width: `${confidencePct}%` }}
               role="progressbar"
               aria-valuenow={confidencePct}
@@ -79,13 +79,13 @@ export function AIResultPanel({ aiResult }: AIResultPanelProps) {
               here than anywhere that it is not read as a probability of correctness. Closed-set
               softmax over three classes: see AIResultCard for the full reasoning and the two
               recorded cases (a face at 94% property damage; a no-damage photo at 88.3% crop). */}
-          <p className="mt-design-1 text-caption text-ink-disabled" data-testid="confidence-caveat">
+          <p className="mt-design-1 text-caption text-ink-secondary" data-testid="confidence-caveat">
             {t("ai.confidenceCaveat")}
           </p>
         </div>
       )}
 
-      <p className="text-caption text-ink-disabled">{aiResult.model_version}</p>
+      <p className="font-staff-mono text-caption text-ink-secondary">{aiResult.model_version}</p>
 
       {/* What the classification is evidence of. A result from the family's own photograph means
           no officer has photographed the damage; the approver should know that before deciding. */}
@@ -96,7 +96,7 @@ export function AIResultPanel({ aiResult }: AIResultPanelProps) {
       )}
 
       {aiResult.was_overridden && (
-        <div className="rounded-md border border-amber bg-amber-pale p-design-3 text-body text-ink-primary">
+        <div className="rounded-sm border border-amber/40 bg-amber-pale p-design-3 text-label text-ink-primary">
           <p>
             {t("ai.originalClass")} <span className="font-medium">{aiResult.prediction}</span>
           </p>

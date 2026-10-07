@@ -34,8 +34,8 @@ export function CaseVolumeTrend({ data }: CaseVolumeTrendProps) {
   const locale = useLocale();
 
   return (
-    <section className="rounded-md border border-border-subtle bg-surface-raised shadow-card p-design-4">
-      <h2 className="text-headline text-ink-primary">{t("analytics.volumeTrend")}</h2>
+    <section className="rounded-md border border-border-subtle bg-surface-raised p-design-4 shadow-card sm:p-design-5">
+      <h2 className="text-label font-semibold text-ink-primary">{t("analytics.volumeTrend")}</h2>
       {data.length === 0 ? (
         <p className="mt-design-3 text-body text-ink-secondary">{t("analytics.noData")}</p>
       ) : (

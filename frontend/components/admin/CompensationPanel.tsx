@@ -25,7 +25,7 @@ export function CompensationPanel({ compensation }: CompensationPanelProps) {
 
   if (!compensation) {
     return (
-      <div className="rounded-md border border-dashed border-border-default p-design-4 text-body text-ink-disabled">
+      <div className="rounded-md border border-dashed border-border-subtle p-design-4 text-label text-ink-secondary">
         {t("compensation.empty")}
       </div>
     );
@@ -34,7 +34,7 @@ export function CompensationPanel({ compensation }: CompensationPanelProps) {
   return (
     <div className="rounded-md border border-border-subtle bg-surface-raised shadow-card p-design-4 space-y-design-3">
       {/* was `text-heading-3` — undefined token; see AIResultPanel. DESIGN.md § Typography. */}
-      <h3 className="text-headline text-ink-primary">{t("compensation.heading")}</h3>
+      <h3 className="text-label font-semibold text-ink-primary">{t("compensation.heading")}</h3>
       <p className="text-label font-semibold text-amber">{t("compensation.aiRecommendation")}</p>
       {/* The estimate is decision support. The administrator recommends an amount; the Divisional
           Secretariat records the final compensation decision. */}
@@ -43,8 +43,8 @@ export function CompensationPanel({ compensation }: CompensationPanelProps) {
       </p>
 
       <div>
-        <p className="text-label text-ink-disabled">{t("compensation.recommendedAmount")}</p>
-        <p className="text-title font-bold text-ink-primary">{formatLkr(compensation.amount_lkr)}</p>
+        <p className="text-caption text-ink-secondary">{t("compensation.recommendedAmount")}</p>
+        <p className="text-display font-semibold tabular-nums tracking-tight text-ink-primary">{formatLkr(compensation.amount_lkr)}</p>
         {/* Code review fix (AC3/Task 7): always show the yes/no cap status, not just when
             capped -- previously nothing rendered for the common capped=false case, so an
             admin couldn't tell "checked, not capped" from "field not rendered". */}
@@ -53,7 +53,7 @@ export function CompensationPanel({ compensation }: CompensationPanelProps) {
             {t("compensation.capYes", { amount: formatLkr(compensation.raw_estimate_lkr) })}
           </p>
         ) : (
-          <p className="text-caption text-ink-disabled">{t("compensation.capNo")}</p>
+          <p className="text-caption text-ink-secondary">{t("compensation.capNo")}</p>
         )}
       </div>
 
@@ -66,9 +66,9 @@ export function CompensationPanel({ compensation }: CompensationPanelProps) {
         </thead>
         <tbody>
           {Object.entries(compensation.feature_values).map(([key, value]) => (
-            <tr key={key} className="border-t border-border-default">
-              <td className="py-1 capitalize text-ink-secondary">{formatFeatureKey(key)}</td>
-              <td className="py-1 text-right text-ink-primary">{String(value ?? "—")}</td>
+            <tr key={key} className="border-t border-border-subtle">
+              <td className="py-1.5 capitalize text-ink-secondary">{formatFeatureKey(key)}</td>
+              <td className="py-1.5 text-right tabular-nums text-ink-primary">{String(value ?? "—")}</td>
             </tr>
           ))}
         </tbody>

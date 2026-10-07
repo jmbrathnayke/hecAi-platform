@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { NextIntlClientProvider } from "next-intl";
 import "../globals.css";
-import { fontVariables } from "@/lib/fonts";
+import { fontVariables, staffFontVariables } from "@/lib/fonts";
 import { resolveStaffLocale, loadMessages } from "@/lib/serverLocale";
 import { AdminShell } from "@/components/admin/AdminShell";
 import { SWRegistrar } from "@/components/SWRegistrar";
@@ -17,17 +17,17 @@ import { SWRegistrar } from "@/components/SWRegistrar";
 // so <html lang> and the loaded messages are SSR-correct with no flash. Bulk string extraction
 // is Story 6.3 -- this layout only establishes the provider + fonts + <html lang>.
 export const metadata: Metadata = {
-  title: "HEC Platform — Admin Portal",
+  title: "HEC Admin",
 };
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const locale = await resolveStaffLocale();
   const messages = await loadMessages(locale);
   return (
-    <html lang={locale} className={fontVariables}>
+    <html lang={locale} className={`${fontVariables} ${staffFontVariables}`}>
       {/* suppressHydrationWarning: browser extensions (Grammarly et al.) mutate <body>'s
           attributes before hydration. Scoped to this element only — see app/[locale]/layout.tsx. */}
-      <body className="font-sans" suppressHydrationWarning>
+      <body className="font-staff antialiased" suppressHydrationWarning>
         <NextIntlClientProvider locale={locale} messages={messages}>
           {/* Same reason as the officer tree: this is a separate root layout. Admin is an
               online desk app, so the offline precache is not the point here — but a stale

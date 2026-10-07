@@ -6,6 +6,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
+import { Warning } from "@phosphor-icons/react";
 import { getAccessToken } from "@/lib/auth";
 import { fetchAdminCaseDetail, UNAUTHORIZED, type AdminCaseDetailResponse } from "@/lib/adminCaseDetail";
 import { PhotoGallery } from "@/components/admin/PhotoGallery";
@@ -81,7 +82,7 @@ export function CaseDetailPanel({ offlineId }: CaseDetailPanelProps) {
   if (state === "loading") {
     return (
       <div className="rounded-md border border-border-subtle bg-surface-raised shadow-card p-design-4">
-        <p className="text-body text-ink-secondary" role="status">
+        <p className="text-label text-ink-secondary" role="status">
           {t("detail.loading")}
         </p>
       </div>
@@ -95,7 +96,7 @@ export function CaseDetailPanel({ offlineId }: CaseDetailPanelProps) {
         <button
           type="button"
           onClick={() => setReloadNonce((n) => n + 1)}
-          className="min-h-touch-target rounded-md border border-forest px-design-4 text-label font-semibold text-forest"
+          className="inline-flex min-h-[40px] items-center justify-center gap-design-2 rounded-sm border border-border-subtle bg-surface-raised px-design-4 text-label font-medium text-ink-primary transition-[background-color,border-color,transform] duration-150 hover:border-border-default hover:bg-surface-base active:scale-[0.98] disabled:opacity-50 motion-reduce:transition-none"
         >
           {t("detail.retry")}
         </button>
@@ -112,19 +113,19 @@ export function CaseDetailPanel({ offlineId }: CaseDetailPanelProps) {
   const stageKnown = workflow ? isKnownStage(workflow.stage) : false;
 
   return (
-    <div className="space-y-design-4">
-      <div className="rounded-md border border-border-subtle bg-surface-raised shadow-card p-design-4 space-y-design-2">
-        <div className="flex items-center gap-design-3">
+    <div className="space-y-design-3">
+      <div className="rounded-md border border-border-subtle bg-surface-raised shadow-card p-design-4 space-y-design-3">
+        <div className="flex flex-wrap items-center gap-design-3">
           {/* was `text-heading-3`, which has never existed in tailwind.config.ts — and because
               preflight resets h1-h6 to `font-size/font-weight: inherit`, this rendered at plain
               body size and weight. DESIGN.md's Title tier names "Case #HEC-2026-0042" as its
               own example, so this is the tier it was always meant to be. */}
-          <h2 className="text-title text-ink-primary">{c.canonical_id ?? "—"}</h2>
+          <h2 className="font-staff-mono text-title tracking-tight text-ink-primary">{c.canonical_id ?? "—"}</h2>
           {/* Status (Story 5.5 Task 5) -- not previously rendered anywhere in this panel;
               the action panel's own button set depends on it, so the admin needs to see it
               too. Reuses the same badge styling as CaseListTable's status column. */}
           <span
-            className={`rounded-full px-design-2 py-0.5 text-caption font-medium ${
+            className={`whitespace-nowrap rounded-sm px-design-2 py-0.5 text-caption font-medium ${
               STATUS_STYLES[c.status] ?? "bg-surface-tint text-ink-secondary"
             }`}
           >
@@ -133,16 +134,16 @@ export function CaseDetailPanel({ offlineId }: CaseDetailPanelProps) {
               : c.status}
           </span>
         </div>
-        <dl className="grid grid-cols-2 gap-design-2 text-body">
+        <dl className="grid grid-cols-2 gap-x-design-4 gap-y-design-3 text-label">
           <div>
-            <dt className="text-label text-ink-disabled">{t("detail.channel")}</dt>
+            <dt className="text-caption text-ink-secondary">{t("detail.channel")}</dt>
             <dd className="text-ink-primary">{c.submitted_via ?? "—"}</dd>
           </div>
           {/* This panel is where the approve/reject decision is taken, so the verification state
               belongs here and not only in the list. `channel` above cannot answer it: it reads
               "app" whether an officer stood in the field or the citizen sat at home. */}
           <div>
-            <dt className="text-label text-ink-disabled">{t("detail.verification")}</dt>
+            <dt className="text-caption text-ink-secondary">{t("detail.verification")}</dt>
             <dd
               className={
                 verified
@@ -152,11 +153,11 @@ export function CaseDetailPanel({ offlineId }: CaseDetailPanelProps) {
             >
               {verified
                 ? t("table.verifiedByOfficer")
-                : `⚠ ${t("table.notVerified")}`}
+                : <span className="inline-flex items-center gap-1"><Warning aria-hidden="true" size={14} weight="fill" className="text-status-warning" />{t("table.notVerified")}</span>}
             </dd>
           </div>
           <div>
-            <dt className="text-label text-ink-disabled">{t("detail.damageCategory")}</dt>
+            <dt className="text-caption text-ink-secondary">{t("detail.damageCategory")}</dt>
             <dd className="text-ink-primary">
               {c.damage_category
                 ? DAMAGE_CATEGORY_KEYS.has(c.damage_category)
@@ -166,18 +167,18 @@ export function CaseDetailPanel({ offlineId }: CaseDetailPanelProps) {
             </dd>
           </div>
           <div>
-            <dt className="text-label text-ink-disabled">{t("detail.submitted")}</dt>
+            <dt className="text-caption text-ink-secondary">{t("detail.submitted")}</dt>
             <dd className="text-ink-primary">{formatDateTime(c.submitted_at, locale)}</dd>
           </div>
           <div>
-            <dt className="text-label text-ink-disabled">{t("detail.location")}</dt>
+            <dt className="text-caption text-ink-secondary">{t("detail.location")}</dt>
             <dd className="text-ink-primary">
               {hasGps ? (
                 <a
                   href={`https://www.google.com/maps?q=${c.gps_lat},${c.gps_lng}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-forest underline"
+                  className="tabular-nums text-forest underline underline-offset-2"
                 >
                   {c.gps_lat}, {c.gps_lng}
                 </a>
@@ -191,29 +192,29 @@ export function CaseDetailPanel({ offlineId }: CaseDetailPanelProps) {
 
       {workflow && (
         // Where the case is in the governance workflow, organised by area and responsible officer.
-        <div className="rounded-md border border-border-subtle bg-surface-raised shadow-card p-design-4 space-y-design-2" data-testid="workflow-panel">
-          <h3 className="text-headline text-ink-primary">{t("workflow.heading")}</h3>
-          <dl className="grid grid-cols-2 gap-design-2 text-body">
+        <div className="rounded-md border border-border-subtle bg-surface-raised shadow-card p-design-4 space-y-design-3" data-testid="workflow-panel">
+          <h3 className="text-label font-semibold text-ink-primary">{t("workflow.heading")}</h3>
+          <dl className="grid grid-cols-2 gap-x-design-4 gap-y-design-3 text-label">
             <div>
-              <dt className="text-label text-ink-disabled">{t("workflow.stage")}</dt>
+              <dt className="text-caption text-ink-secondary">{t("workflow.stage")}</dt>
               <dd className="text-ink-primary">
                 {stageKnown ? tStatus(`stageLabels.${workflow.stage}`) : workflow.stage}
               </dd>
             </div>
             <div>
-              <dt className="text-label text-ink-disabled">{t("workflow.district")}</dt>
+              <dt className="text-caption text-ink-secondary">{t("workflow.district")}</dt>
               <dd className="text-ink-primary">{workflow.district ?? "—"}</dd>
             </div>
             <div>
-              <dt className="text-label text-ink-disabled">{t("workflow.division")}</dt>
+              <dt className="text-caption text-ink-secondary">{t("workflow.division")}</dt>
               <dd className="text-ink-primary">{workflow.ds_division ?? "—"}</dd>
             </div>
             <div>
-              <dt className="text-label text-ink-disabled">{t("workflow.officer")}</dt>
-              <dd className="break-all font-mono text-caption text-ink-primary">{workflow.responsible_officer_id ?? "—"}</dd>
+              <dt className="text-caption text-ink-secondary">{t("workflow.officer")}</dt>
+              <dd className="truncate font-staff-mono text-caption text-ink-primary" title={workflow.responsible_officer_id ?? undefined}>{workflow.responsible_officer_id ?? "—"}</dd>
             </div>
             <div>
-              <dt className="text-label text-ink-disabled">{t("workflow.assessedAt")}</dt>
+              <dt className="text-caption text-ink-secondary">{t("workflow.assessedAt")}</dt>
               <dd className="text-ink-primary">
                 {workflow.officer_assessed_at
                   ? formatDateTime(workflow.officer_assessed_at, locale)
@@ -223,7 +224,7 @@ export function CaseDetailPanel({ offlineId }: CaseDetailPanelProps) {
               </dd>
             </div>
             <div data-testid="workflow-ds-final">
-              <dt className="text-label text-ink-disabled">{t("workflow.dsFinal")}</dt>
+              <dt className="text-caption text-ink-secondary">{t("workflow.dsFinal")}</dt>
               <dd className="text-ink-primary">
                 {workflow.ds_final_amount != null
                   ? `Rs. ${workflow.ds_final_amount.toLocaleString("en-LK")} · ${formatDateTime(workflow.ds_final_at, locale)}`
@@ -243,12 +244,12 @@ export function CaseDetailPanel({ offlineId }: CaseDetailPanelProps) {
           id, so the panel passes what it already has rather than waiting for a canonical id a
           just-synced case may not carry yet. */}
       {/* Whose claim this is: an approval has to be of a named household, not a reference. */}
-      <ClaimantDetails caseRef={c.canonical_id ?? offlineId} />
+      <ClaimantDetails caseRef={c.canonical_id ?? offlineId} density="compact" />
       {/* The family's own words about the damage (migration 040), read beside their photographs:
           an approval that never read the claim is not a review of it. */}
-      <div className="rounded-md border border-border-subtle bg-surface-raised p-design-4" data-testid="admin-citizen-description">
+      <div className="rounded-md border border-border-subtle bg-surface-raised p-design-4 shadow-card" data-testid="admin-citizen-description">
         <h3 className="text-label font-semibold text-ink-primary">{t("citizenDescription.heading")}</h3>
-        <p className={`mt-design-1 whitespace-pre-wrap text-body ${c.citizen_description ? "text-ink-primary" : "text-ink-disabled"}`}>
+        <p className={`mt-design-2 max-w-[65ch] whitespace-pre-wrap text-body ${c.citizen_description ? "text-ink-primary" : "text-ink-secondary"}`}>
           {c.citizen_description || t("citizenDescription.none")}
         </p>
       </div>

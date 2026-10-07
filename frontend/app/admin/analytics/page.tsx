@@ -6,7 +6,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
-import Link from "next/link";
 import { createClient } from "@/lib/supabase";
 import { getAccessToken } from "@/lib/auth";
 import { fetchAdminAnalytics, UNAUTHORIZED, type AdminAnalyticsResponse } from "@/lib/adminAnalytics";
@@ -14,7 +13,8 @@ import { CaseVolumeTrend } from "@/components/admin/charts/CaseVolumeTrend";
 import { StatusBreakdown } from "@/components/admin/charts/StatusBreakdown";
 import { CompensationTotal } from "@/components/admin/charts/CompensationTotal";
 import { AIMetrics } from "@/components/admin/charts/AIMetrics";
-import { LanguageSelectorCookie } from "@/components/LanguageSelectorCookie";
+import { ArrowClockwise } from "@phosphor-icons/react";
+import { PageHeader, Skeleton, buttonStyles, fieldStyles } from "@/components/admin/ui";
 
 type LoadState = "loading" | "error" | "ready";
 
@@ -116,74 +116,78 @@ export default function AdminAnalyticsPage() {
 
   if (!checked) return null;
 
-  return (
-    <main className="min-h-full bg-surface-base px-design-4 py-design-6">
-      <div className="mx-auto max-w-6xl space-y-design-4">
-        <header className="flex flex-wrap items-start justify-between gap-design-2">
-          <div>
-            <h1 className="text-title text-ink-primary">{t("analytics.title")}</h1>
-            <Link href="/admin/cases" className="text-label text-civic underline">
-              {t("analytics.backToCases")}
-            </Link>
-          </div>
-          <div className="flex flex-col gap-design-1">
-            <span className="text-caption text-ink-secondary">{t("languageLabel")}</span>
-            <LanguageSelectorCookie />
-          </div>
-        </header>
+  // The date range is the page's one control, so it sits in the header beside the title rather
+  // than in a form of its own below it (redesign, 2026-10-07). The sidebar is the way back to the
+  // case list; the old in-page "Back to cases" link duplicated it.
+  const rangeControls = (
+    <form className="flex flex-wrap items-end gap-design-2" aria-label={t("analytics.filterAria")} onSubmit={(e) => e.preventDefault()}>
+      <label className="flex flex-col gap-design-1 text-caption font-medium text-ink-secondary">
+        {t("analytics.from")}
+        <input
+          type="date"
+          value={range.from}
+          max={range.to}
+          onChange={(e) => setRange((r) => ({ ...r, from: e.target.value }))}
+          className={`${fieldStyles} w-auto`}
+        />
+      </label>
+      <label className="flex flex-col gap-design-1 text-caption font-medium text-ink-secondary">
+        {t("analytics.to")}
+        <input
+          type="date"
+          value={range.to}
+          min={range.from}
+          onChange={(e) => setRange((r) => ({ ...r, to: e.target.value }))}
+          className={`${fieldStyles} w-auto`}
+        />
+      </label>
+    </form>
+  );
 
-        <form
-          className="flex flex-wrap items-end gap-design-3"
-          aria-label={t("analytics.filterAria")}
-          onSubmit={(e) => e.preventDefault()}
-        >
-          <label className="flex flex-col gap-design-1 text-label text-ink-secondary">
-            {t("analytics.from")}
-            <input
-              type="date"
-              value={range.from}
-              max={range.to}
-              onChange={(e) => setRange((r) => ({ ...r, from: e.target.value }))}
-              className="min-h-touch-target rounded-md border border-border-default px-design-3 text-body"
-            />
-          </label>
-          <label className="flex flex-col gap-design-1 text-label text-ink-secondary">
-            {t("analytics.to")}
-            <input
-              type="date"
-              value={range.to}
-              min={range.from}
-              onChange={(e) => setRange((r) => ({ ...r, to: e.target.value }))}
-              className="min-h-touch-target rounded-md border border-border-default px-design-3 text-body"
-            />
-          </label>
-        </form>
+  return (
+    <main className="min-h-full bg-surface-base px-design-4 py-design-5 sm:px-design-5 lg:py-design-6">
+      <div className="mx-auto max-w-[1440px] space-y-design-5">
+        <PageHeader title={t("analytics.title")} actions={rangeControls} />
 
         {state === "loading" && !data && (
-          <p className="text-body text-ink-secondary" role="status">
-            {t("analytics.loading")}
-          </p>
+          <div className="grid grid-cols-1 gap-design-4 lg:grid-cols-2">
+            <p className="sr-only" role="status">
+              {t("analytics.loading")}
+            </p>
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} className={`rounded-md border border-border-subtle bg-surface-raised p-design-5 shadow-card ${i === 0 ? "lg:col-span-2" : ""}`}>
+                <Skeleton className="h-4 w-40" />
+                <Skeleton className="mt-design-4 h-48 w-full" />
+              </div>
+            ))}
+          </div>
         )}
 
         {state === "error" && (
-          <div role="alert" className="space-y-design-2">
-            <p className="text-body text-status-error">{t("analytics.loadError")}</p>
-            <button
-              type="button"
-              onClick={() => setReloadNonce((n) => n + 1)}
-              className="min-h-touch-target rounded-md border border-forest px-design-4 text-label font-semibold text-forest"
-            >
+          <div
+            role="alert"
+            className="flex flex-wrap items-center justify-between gap-design-3 rounded-md border border-status-error/30 bg-status-error-pale px-design-4 py-design-3"
+          >
+            <p className="text-label text-status-error">{t("analytics.loadError")}</p>
+            <button type="button" onClick={() => setReloadNonce((n) => n + 1)} className={buttonStyles.secondary}>
+              <ArrowClockwise aria-hidden="true" size={16} />
               {t("analytics.retry")}
             </button>
           </div>
         )}
 
+        {/* The volume trend is the headline series, so it gets the full width; the three
+            supporting views share the row below it. */}
         {data && (
           <div className="grid grid-cols-1 gap-design-4 lg:grid-cols-2">
-            <CaseVolumeTrend data={data.volume_trend} />
+            <div className="lg:col-span-2">
+              <CaseVolumeTrend data={data.volume_trend} />
+            </div>
             <StatusBreakdown data={data.status_distribution} />
             <CompensationTotal data={data.compensation_by_month} />
-            <AIMetrics data={data.ai_metrics} />
+            <div className="lg:col-span-2">
+              <AIMetrics data={data.ai_metrics} />
+            </div>
           </div>
         )}
       </div>

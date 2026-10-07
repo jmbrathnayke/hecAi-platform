@@ -16,6 +16,7 @@ export function LocaleButtonGroup({
   current,
   onSelect,
   compact = false,
+  segmented = false,
 }: {
   current: string;
   onSelect: (code: LocaleCode) => void;
@@ -26,7 +27,39 @@ export function LocaleButtonGroup({
    * to, so `min-h-touch-target` stays on both variants.
    */
   compact?: boolean;
+  /**
+   * One joined control instead of three separate buttons, for the staff top bars (admin
+   * redesign, 2026-10-07). Opt-in, so the citizen selector is unchanged. Desk screens, so the
+   * 48px touch floor relaxes to 36px here; the hit area is still well above WCAG 2.2's 24px.
+   */
+  segmented?: boolean;
 }) {
+  if (segmented) {
+    return (
+      <div
+        className="inline-flex items-center gap-0.5 rounded-sm border border-border-subtle bg-surface-base p-0.5"
+        role="group"
+        aria-label="Language selection"
+      >
+        {LOCALES.map(({ code, label }) => (
+          <button
+            key={code}
+            type="button"
+            onClick={() => onSelect(code)}
+            aria-pressed={current === code}
+            lang={code}
+            className={`h-8 rounded-[6px] px-design-2 text-caption font-medium transition-colors duration-150 motion-reduce:transition-none ${
+              current === code
+                ? "bg-surface-raised text-ink-primary shadow-card"
+                : "text-ink-secondary hover:text-ink-primary"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+    );
+  }
   return (
     <div className="flex gap-design-2 justify-center" role="group" aria-label="Language selection">
       {LOCALES.map(({ code, label }) => (

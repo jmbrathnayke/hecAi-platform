@@ -111,6 +111,17 @@ const config: Config = {
           "system-ui",
           "sans-serif",
         ],
+        // The staff desk face (admin redesign, 2026-10-07): Geist for Latin text and figures,
+        // the same Noto faces for Sinhala and Tamil. Only layouts that load staffFontVariables
+        // (lib/fonts.ts) use it.
+        staff: [
+          "var(--font-geist)",
+          "var(--font-noto-sinhala)",
+          "var(--font-noto-tamil)",
+          "system-ui",
+          "sans-serif",
+        ],
+        "staff-mono": ["var(--font-geist-mono)", "ui-monospace", "monospace"],
       },
       // Sizes are unchanged (NFR-4.2 covers minimum text size). What changed is the setting:
       // headings carry slightly negative tracking and tighter leading, which is most of the

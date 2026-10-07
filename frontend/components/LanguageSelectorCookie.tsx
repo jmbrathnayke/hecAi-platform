@@ -15,7 +15,7 @@ import { LocaleButtonGroup, type LocaleCode } from "@/components/LocaleButtonGro
 // (locale-aware route replace) -- these surfaces are not locale-routed.
 const ONE_YEAR_SECONDS = 60 * 60 * 24 * 365;
 
-export function LanguageSelectorCookie() {
+export function LanguageSelectorCookie({ segmented = false }: { segmented?: boolean } = {}) {
   const router = useRouter();
   const current = useLocale();
 
@@ -36,5 +36,5 @@ export function LanguageSelectorCookie() {
     router.refresh();
   }
 
-  return <LocaleButtonGroup current={current} onSelect={switchLocale} />;
+  return <LocaleButtonGroup current={current} onSelect={switchLocale} segmented={segmented} />;
 }
