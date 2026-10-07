@@ -88,18 +88,20 @@ describe("the division is always visible", () => {
 });
 
 describe("filtering", () => {
+  // The filter labels are translated now (redesign 2026-10-07; they were raw English in every
+  // language), so the mock translator shows each as its message key.
   it("refetches with the chosen status", async () => {
     render(<DsDashboardPage />);
     await screen.findByText(THALAWA);
-    fireEvent.click(screen.getByText("Approved"));
+    fireEvent.click(screen.getByRole("button", { name: "statusLabels.Approved" }));
     await waitFor(() => expect(mockFetch).toHaveBeenLastCalledWith("Approved"));
   });
 
   it("clears the filter back to undefined, not an empty string", async () => {
     render(<DsDashboardPage />);
     await screen.findByText(THALAWA);
-    fireEvent.click(screen.getByText("Approved"));
-    fireEvent.click(screen.getByText("filterAll"));
+    fireEvent.click(screen.getByRole("button", { name: "statusLabels.Approved" }));
+    fireEvent.click(screen.getByRole("button", { name: "filterAll" }));
     await waitFor(() => expect(mockFetch).toHaveBeenLastCalledWith(undefined));
   });
 });
@@ -205,5 +207,39 @@ describe("who the claim belongs to (2026-10-07)", () => {
     await screen.findByTestId("ds-citizen-description");
     expect(screen.queryByTestId("claimant-details")).not.toBeInTheDocument();
     expect(mockClaimant).not.toHaveBeenCalled();
+  });
+});
+
+describe("the work queue (redesign 2026-10-07)", () => {
+  it("counts what needs a decision, what is ready to pay and what is with the DWC", async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      cases: [
+        dsCase("HEC-2026-0001", { status: "Approved", final_decision: null, payment_authorized: false }),
+        dsCase("HEC-2026-0002", { status: "Approved", final_decision: { amount_lkr: 1, reason: null, decided_at: null }, payment_authorized: false }),
+        dsCase("HEC-2026-0003"),
+        dsCase("HEC-2026-0004", { status: "Rejected" }),
+      ],
+      count: 4,
+      dsDivision: THALAWA,
+    });
+    render(<DsDashboardPage />);
+    // Each cell is label then count in the DOM (the count is shown on top only visually).
+    const queue = await screen.findByTestId("ds-queue");
+    expect(queue).toHaveTextContent("queue.decide1");
+    expect(queue).toHaveTextContent("queue.pay1");
+    expect(queue).toHaveTextContent("queue.waiting1");
+    expect(queue).toHaveTextContent("queue.paid0");
+    // Each card says what this office does next; a rejected claim has nothing next.
+    expect(screen.getAllByTestId("ds-next-step").map((n) => n.textContent)).toEqual([
+      "queue.decide", "queue.pay", "queue.waiting",
+    ]);
+  });
+
+  it("is not shown under a status filter, where it would count only a subset", async () => {
+    render(<DsDashboardPage />);
+    await screen.findByTestId("ds-queue");
+    fireEvent.click(screen.getByRole("button", { name: "statusLabels.Submitted" }));
+    await waitFor(() => expect(screen.queryByTestId("ds-queue")).not.toBeInTheDocument());
   });
 });

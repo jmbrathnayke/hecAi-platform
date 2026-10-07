@@ -11,6 +11,7 @@
 // including by accident, and an audit trail full of accesses nobody intended.
 import { useState } from "react";
 import { authorizePayment, type PaymentAuthorization, type PaymentFailure } from "@/lib/dsCases";
+import { buttonStyles } from "@/components/admin/ui";
 
 interface Props {
   canonicalId: string;
@@ -61,11 +62,12 @@ export function PaymentAuthorizationPanel({ canonicalId, t, onClose, onRecordBan
 
   return (
     <section
-      className="flex flex-col gap-design-4 rounded-md border border-forest p-design-4"
+      className="flex flex-col gap-design-3 rounded-md border border-border-subtle bg-surface-raised p-design-4 shadow-card sm:p-design-5"
       data-testid="payment-panel"
     >
       <h2 className="text-label font-semibold text-ink-primary">
-        {t("payment.title")} — {canonicalId}
+        {t("payment.title")}{" "}
+        <span className="ml-design-1 font-staff-mono text-caption font-medium text-ink-secondary">{canonicalId}</span>
       </h2>
 
       {!auth && (
@@ -77,7 +79,7 @@ export function PaymentAuthorizationPanel({ canonicalId, t, onClose, onRecordBan
             type="button"
             onClick={reveal}
             disabled={busy}
-            className="min-h-touch-target self-start rounded-md bg-amber px-design-4 text-label font-semibold text-ink-on-amber disabled:opacity-60"
+            className={`${buttonStyles.primary} self-start`}
           >
             {busy ? t("payment.revealing") : t("payment.reveal")}
           </button>
@@ -85,7 +87,7 @@ export function PaymentAuthorizationPanel({ canonicalId, t, onClose, onRecordBan
       )}
 
       {failure && (
-        <p role="alert" className="text-body text-status-error">
+        <p role="alert" className="rounded-sm bg-status-error-pale px-design-3 py-design-2 text-label text-status-error">
           {t(failureKey(failure))}
         </p>
       )}
@@ -96,17 +98,17 @@ export function PaymentAuthorizationPanel({ canonicalId, t, onClose, onRecordBan
         <button
           type="button"
           onClick={onRecordBankDetails}
-          className="min-h-touch-target self-start rounded-md border border-forest px-design-4 text-label font-semibold text-forest"
+          className={`${buttonStyles.secondary} self-start`}
         >
           {t("bankDetails.record")}
         </button>
       )}
 
       {auth && (
-        <dl className="flex flex-col gap-design-2" data-testid="bank-details">
+        <dl className="grid grid-cols-1 gap-x-design-4 gap-y-design-3 rounded-sm border border-border-subtle bg-surface-base p-design-4 sm:grid-cols-2" data-testid="bank-details">
           <div>
             <dt className="text-caption text-ink-secondary">{t("payment.accountNumber")}</dt>
-            <dd className="text-body font-semibold text-ink-primary">
+            <dd className="font-staff-mono text-headline tracking-wide text-ink-primary">
               {auth.bank_details.account_number}
             </dd>
           </div>
@@ -140,7 +142,7 @@ export function PaymentAuthorizationPanel({ canonicalId, t, onClose, onRecordBan
       <button
         type="button"
         onClick={onClose}
-        className="min-h-touch-target self-start text-label font-semibold text-ink-secondary"
+        className={`${buttonStyles.quiet} self-start`}
       >
         {t("payment.close")}
       </button>

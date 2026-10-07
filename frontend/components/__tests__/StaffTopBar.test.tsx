@@ -14,9 +14,12 @@ jest.mock("next/link", () => {
   return { __esModule: true, default: Link };
 });
 jest.mock("@/components/StaffAccountMenu", () => ({
-  StaffAccountMenu: ({ loginPath }: { loginPath: string }) => (
-    <div data-testid="account-menu" data-login={loginPath} />
+  StaffAccountMenu: ({ loginPath, showPushToggle }: { loginPath: string; showPushToggle?: boolean }) => (
+    <div data-testid="account-menu" data-login={loginPath} data-push={showPushToggle ? "yes" : "no"} />
   ),
+}));
+jest.mock("@/components/LanguageSelectorCookie", () => ({
+  LanguageSelectorCookie: () => <div data-testid="language-switch" />,
 }));
 
 const mockPathname = usePathname as jest.Mock;
@@ -38,4 +41,19 @@ it.each([
   mockPathname.mockReturnValue(login);
   const { container } = render(<StaffTopBar tree={tree} />);
   expect(container).toBeEmptyDOMElement();
+});
+
+it("gives the DS desk the language switch and this device's notification switch (redesign 2026-10-07)", () => {
+  // The DS office had no language switch at all, and its notification card sat above the cases.
+  mockPathname.mockReturnValue("/ds/dashboard");
+  render(<StaffTopBar tree="ds" />);
+  expect(screen.getByTestId("language-switch")).toBeInTheDocument();
+  expect(screen.getByTestId("account-menu")).toHaveAttribute("data-push", "yes");
+});
+
+it("leaves the system administration bar as it was", () => {
+  mockPathname.mockReturnValue("/system/users");
+  render(<StaffTopBar tree="system" />);
+  expect(screen.queryByTestId("language-switch")).not.toBeInTheDocument();
+  expect(screen.getByTestId("account-menu")).toHaveAttribute("data-push", "no");
 });

@@ -7,6 +7,7 @@
 // records that the account changed and why, never what it changed to.
 import { useState } from "react";
 import { setHouseholdBankDetails, type BankDetailsFailure } from "@/lib/dsCases";
+import { buttonStyles, fieldStyles } from "@/components/admin/ui";
 
 interface Props {
   householdRef: string;
@@ -18,8 +19,7 @@ interface Props {
 }
 
 const MIN_REASON = 10;
-const FIELD =
-  "min-h-touch-target w-full rounded-md border border-border-default bg-surface-raised px-design-3 text-body text-ink-primary focus:border-border-focus focus:outline-none";
+const FIELD = `${fieldStyles} min-h-[44px] text-body`;
 
 function failureKey(f: BankDetailsFailure): string {
   switch (f.reason) {
@@ -83,10 +83,11 @@ export function DsBankDetailsPanel({ householdRef, currentLast4, t, onSaved, onC
   return (
     <section
       data-testid="ds-bank-details-panel"
-      className="flex flex-col gap-design-3 rounded-md border border-forest p-design-4"
+      className="flex flex-col gap-design-3 rounded-md border border-border-subtle bg-surface-raised p-design-4 shadow-card sm:p-design-5"
     >
       <h2 className="text-label font-semibold text-ink-primary">
-        {t("bankDetails.title")} — {householdRef}
+        {t("bankDetails.title")}{" "}
+        <span className="ml-design-1 font-staff-mono text-caption font-medium text-ink-secondary">{householdRef}</span>
       </h2>
 
       <p className="text-caption text-ink-secondary">
@@ -97,13 +98,13 @@ export function DsBankDetailsPanel({ householdRef, currentLast4, t, onSaved, onC
 
       {savedLast4 !== null ? (
         <>
-          <p role="status" className="rounded-md bg-forest-pale px-design-3 py-design-2 text-caption text-forest">
+          <p role="status" className="rounded-sm bg-forest-pale px-design-3 py-design-2 text-caption font-medium text-forest">
             {t("bankDetails.saved", { last4: savedLast4 ?? "" })}
           </p>
           <button
             type="button"
             onClick={onClose}
-            className="min-h-touch-target self-start text-label font-semibold text-ink-secondary"
+            className={`${buttonStyles.quiet} self-start`}
           >
             {t("bankDetails.close")}
           </button>
@@ -113,7 +114,7 @@ export function DsBankDetailsPanel({ householdRef, currentLast4, t, onSaved, onC
           <p className="text-caption text-ink-secondary">{t("bankDetails.hint")}</p>
 
           <div className="flex flex-col gap-design-1">
-            <label htmlFor="ds-account-number" className="text-caption font-medium text-ink-primary">
+            <label htmlFor="ds-account-number" className="text-caption font-medium text-ink-secondary">
               {t("bankDetails.accountNumber")}
             </label>
             <input
@@ -127,21 +128,21 @@ export function DsBankDetailsPanel({ householdRef, currentLast4, t, onSaved, onC
           </div>
 
           <div className="flex flex-col gap-design-1">
-            <label htmlFor="ds-bank-name" className="text-caption font-medium text-ink-primary">
+            <label htmlFor="ds-bank-name" className="text-caption font-medium text-ink-secondary">
               {t("bankDetails.bankName")}
             </label>
             <input id="ds-bank-name" value={bankName} onChange={(e) => setBankName(e.target.value)} className={FIELD} />
           </div>
 
           <div className="flex flex-col gap-design-1">
-            <label htmlFor="ds-branch" className="text-caption font-medium text-ink-primary">
+            <label htmlFor="ds-branch" className="text-caption font-medium text-ink-secondary">
               {t("bankDetails.branch")}
             </label>
             <input id="ds-branch" value={branch} onChange={(e) => setBranch(e.target.value)} className={FIELD} />
           </div>
 
           <div className="flex flex-col gap-design-1">
-            <label htmlFor="ds-account-holder" className="text-caption font-medium text-ink-primary">
+            <label htmlFor="ds-account-holder" className="text-caption font-medium text-ink-secondary">
               {t("bankDetails.accountHolder")}
             </label>
             <input
@@ -153,7 +154,7 @@ export function DsBankDetailsPanel({ householdRef, currentLast4, t, onSaved, onC
           </div>
 
           <div className="flex flex-col gap-design-1">
-            <label htmlFor="ds-bank-reason" className="text-caption font-medium text-ink-primary">
+            <label htmlFor="ds-bank-reason" className="text-caption font-medium text-ink-secondary">
               {t("bankDetails.reasonLabel")}
             </label>
             <textarea
@@ -176,7 +177,7 @@ export function DsBankDetailsPanel({ householdRef, currentLast4, t, onSaved, onC
             <button
               type="submit"
               disabled={saving}
-              className="min-h-touch-target rounded-md bg-amber px-design-4 text-label font-semibold text-ink-on-amber disabled:opacity-60"
+              className={buttonStyles.primary}
             >
               {saving ? t("bankDetails.saving") : t("bankDetails.save")}
             </button>
@@ -184,7 +185,7 @@ export function DsBankDetailsPanel({ householdRef, currentLast4, t, onSaved, onC
               type="button"
               onClick={onClose}
               disabled={saving}
-              className="min-h-touch-target rounded-md border border-border-default px-design-4 text-label font-medium text-ink-secondary"
+              className={buttonStyles.secondary}
             >
               {t("bankDetails.cancel")}
             </button>

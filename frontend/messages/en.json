@@ -622,12 +622,15 @@
       "or": "or",
       "emailPlaceholder": "Divisional Secretariat email address",
       "passwordPlaceholder": "Password",
-      "signIn": "Sign In",
+      "signIn": "Sign in",
       "networkError": "Could not reach the sign-in service. Check your connection and try again.",
       "errorAccessDenied": "Sign-in was cancelled. Please try again.",
       "errorMissingCode": "That sign-in link is incomplete. Please start again from this page.",
       "errorExchangeFailed": "Your sign-in link has expired or was already used. Please try again.",
-      "errorProvider": "Sign-in failed. Please try again."
+      "errorProvider": "Sign-in failed. Please try again.",
+      "subtitle": "Final decisions and payments for your division",
+      "emailLabel": "Email",
+      "passwordLabel": "Password"
     },
     "title": "Divisional Secretariat",
     "divisionLabel": "Division",
@@ -662,7 +665,7 @@
         "notApproved": "This case has not been approved yet. The DWC administrator approves it before payment.",
         "noHousehold": "This case is not linked to a registered household, so it cannot be paid.",
         "noBankDetails": "This family has not given bank details. Ask them to provide an account.",
-        "unreadable": "The stored bank details could not be read. Contact the system administrator — do not ask the family to re-enter them.",
+        "unreadable": "The stored bank details could not be read. Contact the system administrator, and do not ask the family to re-enter them.",
         "server": "The server could not authorize this payment.",
         "network": "Could not reach the server. Check your connection.",
         "finalDecisionRequired": "Record the final compensation decision before authorizing payment."
@@ -672,7 +675,7 @@
     "finalDecision": {
       "title": "Final compensation review",
       "aiEstimate": "AI-assisted estimate",
-      "aiEstimateNote": "Decision support only — not a decision.",
+      "aiEstimateNote": "Decision support only, not a decision.",
       "dwcAmount": "DWC recommended amount",
       "officerAssessed": "Officer assessment recorded",
       "officerNotAssessed": "No officer assessment recorded",
@@ -688,7 +691,7 @@
       "cancel": "Cancel",
       "requiredBeforePayment": "Record the final compensation decision before authorizing payment.",
       "error": {
-        "reasonRequired": "Give a reason of at least 10 characters — the amount differs from the AI-assisted estimate.",
+        "reasonRequired": "Give a reason of at least 10 characters: the amount differs from the AI-assisted estimate.",
         "invalidAmount": "Enter a valid amount (zero or more).",
         "notApproved": "Only a case approved by DWC can receive a final decision.",
         "paymentAuthorized": "Payment has already been authorized; the decision can no longer change.",
@@ -697,7 +700,7 @@
         "server": "The server could not record the decision.",
         "network": "Could not reach the server. Check your connection."
       },
-      "aiEstimateSynthetic": "Prototype crop model, trained on synthetic data — not official compensation records."
+      "aiEstimateSynthetic": "Prototype crop model, trained on synthetic data, not on official compensation records."
     },
     "bankDetails": {
       "title": "Bank details",
@@ -731,7 +734,14 @@
       "description": "What the family wrote",
       "noDescription": "The family did not write a description."
     },
-    "submittedOn": "Reported {date}"
+    "submittedOn": "Reported {date}",
+    "queue": {
+      "decide": "Final decision needed",
+      "pay": "Ready for payment",
+      "waiting": "With the DWC",
+      "paid": "Paid"
+    },
+    "filterAria": "Filter by status"
   },
   "admin": {
     "languageLabel": "Language",

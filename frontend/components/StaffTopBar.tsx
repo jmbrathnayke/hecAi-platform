@@ -9,16 +9,20 @@ import { useTranslations } from "next-intl";
 import { StaffAccountMenu } from "@/components/StaffAccountMenu";
 import { StaffBrandMark } from "@/components/StaffBrandMark";
 import NotificationBell from "@/components/NotificationBell";
+import { LanguageSelectorCookie } from "@/components/LanguageSelectorCookie";
 
+// `desk` trees get the admin portal's full bar (DS redesign, 2026-10-07): the language switch,
+// which the DS office had no way to reach before, and this device's notification switch in the
+// account menu instead of a card at the top of the case list.
 const TREES = {
-  ds: { home: "/ds/dashboard", login: "/ds/login" },
-  system: { home: "/system/users", login: "/system/login" },
+  ds: { home: "/ds/dashboard", login: "/ds/login", desk: true },
+  system: { home: "/system/users", login: "/system/login", desk: false },
 } as const;
 
 export function StaffTopBar({ tree }: { tree: keyof typeof TREES }) {
   const t = useTranslations("staffAccount");
   const pathname = usePathname();
-  const { home, login } = TREES[tree];
+  const { home, login, desk } = TREES[tree];
 
   if (!pathname || pathname === login || pathname.startsWith(`${login}/`)) return null;
 
@@ -33,8 +37,9 @@ export function StaffTopBar({ tree }: { tree: keyof typeof TREES }) {
       {/* The bell and the account menu travel together on the right. StaffAccountMenu keeps its
           own ml-auto, which is a no-op inside this group. */}
       <div className="ml-auto flex items-center gap-design-1 sm:gap-design-2">
+        {desk && <LanguageSelectorCookie segmented />}
         <NotificationBell home={home} tone="light" icon="line" />
-        <StaffAccountMenu loginPath={login} />
+        <StaffAccountMenu loginPath={login} showPushToggle={desk} />
       </div>
     </header>
   );
