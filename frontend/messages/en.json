@@ -6,9 +6,9 @@
     "reportIncident": "Report Incident",
     "checkStatus": "Check Claim Status",
     "brandSub": "Department of Wildlife Conservation",
-    "heroTitle": "Report farm damage",
+    "heroTitle": "Report your damage",
     "heroBody": "Register your claim and get a receipt instantly.",
-    "reportIncidentSub": "Takes about 5 minutes — works offline",
+    "reportIncidentSub": "Takes about 5 minutes - works offline",
     "checkStatusSub": "Look up a claim by its reference number",
     "infoStrip": "You can submit a report without a network connection. A field officer can also register one on your behalf.",
     "navAria": "Main navigation",
@@ -21,7 +21,7 @@
   },
   "offline": {
     "banner": "You are offline. Reports will be saved and sent when you reconnect.",
-    "reconnected": "Back online — syncing your reports"
+    "reconnected": "Back online - syncing your reports"
   },
   "report": {
     "gate": {
