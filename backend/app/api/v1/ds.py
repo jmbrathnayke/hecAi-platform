@@ -4,6 +4,7 @@
     POST /api/v1/ds/cases/<ref>/final-decision          the human final compensation decision
     POST /api/v1/ds/cases/<ref>/authorize-payment       release payment (after the decision)
     PUT  /api/v1/households/<ref>/bank-details          record or correct a family's account
+    POST /api/v1/households/<ref>/verify                confirm an officer-registered family (041)
 
 THE FINAL GOVERNANCE STEP. The Random Forest produces an AI-assisted estimate; the DWC administrator
 reviews the officer's assessment and forwards an approved case with a recommended amount. Neither of
@@ -371,7 +372,9 @@ def authorize_payment(canonical_id):
                         """SELECT c.id, c.status, c.approved_amount, c.household_id,
                                   h.household_ref, h.bank_details_ciphertext,
                                   h.bank_account_last4,
-                                  pa.ds_authorized_at, c.ds_final_amount, c.district
+                                  pa.ds_authorized_at, c.ds_final_amount, c.district,
+                                  (h.registered_by_officer IS NOT NULL
+                                   AND h.verified_at IS NULL)
                              FROM cases c
                              LEFT JOIN households h ON h.id = c.household_id
                              LEFT JOIN payment_authorizations pa ON pa.case_id = c.id
@@ -386,7 +389,7 @@ def authorize_payment(canonical_id):
 
                     case_id, status, approved_amount, household_id, household_ref, \
                         ciphertext, last4, previously_authorized, \
-                        ds_final_amount, district = row
+                        ds_final_amount, district, household_unverified = row
 
                     # Read BEFORE the UPDATE below overwrites ds_authorized_at. This endpoint is
                     # repeatable on purpose — an officer who closed the window needs the account
@@ -413,6 +416,13 @@ def authorize_payment(canonical_id):
                     if not household_id:
                         # Pre-Epic-8 or seeded. There is no registered family to pay.
                         return jsonify({"error": "no_household"}), 409
+                    if household_unverified and previously_authorized is None:
+                        # Migration 041. A field officer registered this family and filed its
+                        # claim; this office has not yet checked that the family is real. The
+                        # check (verify_household) comes first, so no one person can both create
+                        # a household and have it paid.
+                        return jsonify({"error": "household_unverified",
+                                        "household_ref": household_ref}), 409
                     if not ciphertext:
                         return jsonify({"error": "no_bank_details",
                                         "household_ref": household_ref}), 409
@@ -513,6 +523,75 @@ def authorize_payment(canonical_id):
         "authorized_at": auth_row[2].isoformat() if auth_row[2] else None,
         # The one response on the platform that carries a full account number.
         "bank_details": details,
+    }), 200
+
+
+@ds_bp.route("/households/<string:household_ref>/verify", methods=["POST"])
+@require_ds_officer()
+def verify_household(household_ref):
+    """The DS office confirms a family a field officer registered in the field (migration 041).
+
+    The officer who registered the household also filed its claim, so until someone else has
+    checked it the household is provisional and authorize_payment refuses it. This is that check:
+    the DS officer looks at the NIC card, the Grama Niladhari register or the family in person, and
+    records what they checked as the note (the same written-reason floor as a bank correction).
+
+    Idempotent: verifying an already verified household returns its first verification and writes
+    nothing. A household the family registered itself needs no verification and is refused with
+    not_provisional, so the trail never shows a check that meant nothing.
+    """
+    ds_division = g.ds_division
+    ds_officer_id = g.ds_officer_id
+    ref = household_ref.strip().upper()
+
+    body = request.get_json(silent=True) or {}
+    note = body.get("note")
+    if not isinstance(note, str) or len(note.strip()) < MIN_REASON_LENGTH:
+        return jsonify({"error": "note_required", "min_length": MIN_REASON_LENGTH}), 400
+    note = note.strip()
+
+    try:
+        conn = _get_connection()
+        try:
+            with conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """SELECT id, registered_by_officer IS NOT NULL, verified_at
+                             FROM households
+                            WHERE household_ref = %s AND ds_division = %s AND status = 'active'
+                              FOR UPDATE""",
+                        (ref, ds_division),
+                    )
+                    row = cur.fetchone()
+                    # 404 for another division too -- see authorize_payment.
+                    if not row:
+                        return jsonify({"error": "not_found"}), 404
+                    household_id, by_officer, verified_at = row
+                    if not by_officer:
+                        return jsonify({"error": "not_provisional"}), 409
+                    if verified_at is None:
+                        cur.execute(
+                            """UPDATE households
+                                  SET verified_at = now(), verified_by = %s, updated_at = now()
+                                WHERE id = %s
+                            RETURNING verified_at""",
+                            (ds_officer_id, household_id),
+                        )
+                        verified_at = cur.fetchone()[0]
+                        write_audit_log(
+                            cur, None, "ds_verified_household", ds_officer_id,
+                            {"ip_address": _client_ip(), "ds_division": ds_division,
+                             "household_ref": ref, "note": note},
+                        )
+        finally:
+            conn.close()
+    except psycopg2.Error:
+        current_app.logger.exception("household verification failed")
+        return jsonify({"error": "server_error"}), 500
+
+    return jsonify({
+        "household_ref": ref,
+        "verified_at": verified_at.isoformat() if verified_at else None,
     }), 200
 
 

@@ -14,6 +14,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { fetchCaseClaimant, type ClaimantFailure, type ClaimantHousehold } from "@/lib/caseClaimant";
+import { verifyHousehold } from "@/lib/dsCases";
 import { formatMobile } from "@/lib/validation";
 
 type State =
@@ -46,13 +47,68 @@ function Row({
   );
 }
 
+// The written-reason floor the backend enforces (domain/validation.py MIN_REASON_LENGTH).
+const MIN_NOTE_LENGTH = 10;
+
+/** The DS office's check of a household a field officer registered (migration 041). */
+function VerifyHouseholdForm({ householdRef, onVerified }: { householdRef: string; onVerified: () => void }) {
+  const t = useTranslations("claimant");
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit() {
+    if (busy) return;
+    if (note.trim().length < MIN_NOTE_LENGTH) {
+      setError(t("verifyNoteRequired", { min: MIN_NOTE_LENGTH }));
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    const res = await verifyHousehold(householdRef, note.trim());
+    setBusy(false);
+    if (res.ok) onVerified();
+    else setError(res.failure === "note-required"
+      ? t("verifyNoteRequired", { min: MIN_NOTE_LENGTH })
+      : t("verifyFailed"));
+  }
+
+  return (
+    <div className="space-y-design-2" data-testid="claimant-verify">
+      <h3 className="text-label font-semibold text-ink-primary">{t("verifyTitle")}</h3>
+      <p className="text-caption text-ink-secondary">{t("verifyHint")}</p>
+      <label htmlFor={`verify-note-${householdRef}`} className="sr-only">{t("verifyNote")}</label>
+      <textarea
+        id={`verify-note-${householdRef}`}
+        rows={2}
+        value={note}
+        placeholder={t("verifyNote")}
+        onChange={(e) => setNote(e.target.value)}
+        className="w-full rounded-md border border-border-default bg-surface-raised p-design-2 text-label text-ink-primary"
+      />
+      {error && <p role="alert" className="text-caption text-status-error">{error}</p>}
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => void submit()}
+        className="min-h-touch-target rounded-md bg-forest px-design-4 text-label font-semibold text-ink-on-dark disabled:opacity-50"
+      >
+        {t("verifySubmit")}
+      </button>
+    </div>
+  );
+}
+
 export function ClaimantDetails({
   caseRef,
   density = "default",
+  canVerify = false,
 }: {
   caseRef: string;
   /** `compact` matches the admin case rail's smaller section type (admin redesign, 2026-10-07). */
   density?: "default" | "compact";
+  /** The Divisional Secretariat may verify an officer-registered household here (migration 041). */
+  canVerify?: boolean;
 }) {
   const compact = density === "compact";
   const t = useTranslations("claimant");
@@ -113,8 +169,23 @@ export function ClaimantDetails({
         const registrant = h.members.find((m) => m.is_registrant);
         const others = h.members.filter((m) => !m.is_registrant);
         const registered = formatDate(h.registered_at, locale);
+        const verifiedOn = formatDate(h.verified_at ?? null, locale);
         return (
           <>
+            {h.provisional && (
+              <div
+                className="space-y-design-3 rounded-md border border-status-warning bg-surface-base p-design-3"
+                data-testid="claimant-provisional"
+              >
+                <p className="text-label text-ink-primary">{t("provisional")}</p>
+                {canVerify && <VerifyHouseholdForm householdRef={h.household_ref} onVerified={() => void load()} />}
+              </div>
+            )}
+            {h.registered_by_officer && !h.provisional && verifiedOn && (
+              <p className="text-caption text-ink-secondary" data-testid="claimant-verified">
+                {t("verifiedOn", { date: verifiedOn })}
+              </p>
+            )}
             <div>
               <p className="text-caption text-ink-secondary">{t("registrant")}</p>
               <p className="text-headline text-ink-primary" data-testid="claimant-name">

@@ -454,8 +454,34 @@
       "submitError": "Could not complete the submission. Please try again.",
       "submitting": "Submitting…",
       "submit": "Submit report",
-      "householdNotRegistered": "This family is not registered. They must register at the Divisional Secretariat office before a claim can be filed.",
-      "householdLookupFailed": "Could not check the registration. Check your connection and try again."
+      "householdNotRegistered": "This family is not registered yet.",
+      "householdLookupFailed": "Could not check the registration. Check your connection and try again.",
+      "registerOffer": "You can register the family now, while you are with them, and then continue the report.",
+      "registerButton": "Register this family",
+      "registerTitle": "Register the family",
+      "registerHint": "Check the citizen's NIC card first. The Divisional Secretariat will verify this registration before any payment is made.",
+      "registerName": "Registrant's full name",
+      "registerAddress": "Home address",
+      "registerDivision": "DS division",
+      "registerGn": "GN division (optional)",
+      "registerMembers": "Other family members (optional)",
+      "registerMemberNic": "Member's NIC",
+      "registerMemberName": "Member's name",
+      "registerMemberRelationship": "Relationship",
+      "registerAddMember": "Add a family member",
+      "registerRemoveMember": "Remove member {number}",
+      "registerConfirm": "I have seen this citizen's NIC card.",
+      "registerSubmit": "Register and continue",
+      "registerCancel": "Cancel",
+      "registerRequired": "Enter the registrant's name and home address, and confirm that you have seen the NIC card.",
+      "registerMemberNicError": "Enter a valid NIC for each family member, or remove the row.",
+      "registerNoDivision": "You have no assigned DS division, so you cannot register families. Contact your administrator.",
+      "registerOffline": "Registering a family needs a connection. Move to an area with signal and try again.",
+      "registerNicTaken": "This citizen's NIC is already registered to a household. Go back and look it up again.",
+      "registerMemberTaken": "A family member's NIC is already registered to another household. Remove that member and try again.",
+      "registerDuplicateNic": "The same NIC is entered twice. Remove the repeated one.",
+      "registerFailed": "Could not register the family. Please try again.",
+      "registeredProvisional": "Registered as {ref}. It stays provisional until the Divisional Secretariat checks it."
     },
     "submitPoc": {
       "title": "Proof of Claim issued",
@@ -676,7 +702,8 @@
         "unreadable": "The stored bank details could not be read. Contact the system administrator, and do not ask the family to re-enter them.",
         "server": "The server could not authorize this payment.",
         "network": "Could not reach the server. Check your connection.",
-        "finalDecisionRequired": "Record the final compensation decision before authorizing payment."
+        "finalDecisionRequired": "Record the final compensation decision before authorizing payment.",
+        "householdUnverified": "A field officer registered this family. Verify the household in the family details before authorizing payment."
       },
       "finalAmount": "Final compensation amount"
     },
@@ -1264,6 +1291,14 @@
       "signedOut": "Your session has ended. Sign in again to see the family's details.",
       "notFound": "This case is outside your area, so its family details cannot be shown.",
       "generic": "The family's details could not be loaded."
-    }
+    },
+    "provisional": "Registered in the field by a DWC officer. Not yet verified by the Divisional Secretariat, so payment is held until it is.",
+    "verifiedOn": "Registered by a DWC officer. Verified by the Divisional Secretariat on {date}.",
+    "verifyTitle": "Verify this family",
+    "verifyHint": "Check the NIC card, the Grama Niladhari register or the family in person, and write what you checked.",
+    "verifyNote": "What you checked",
+    "verifySubmit": "Mark as verified",
+    "verifyNoteRequired": "Write at least {min} characters about what you checked.",
+    "verifyFailed": "The household could not be verified. Please try again."
   }
 }

@@ -87,6 +87,7 @@ class FakeCursor:
                     pa.get("ds_authorized_at") if pa else None,
                     c.get("ds_final_amount"),
                     c.get("district"),
+                    bool(h and h.get("registered_by_officer") and not h.get("verified_at")),
                 )
         elif "SELECT c.id, c.status, c.approved_amount, c.district" in s:
             # The final-decision read (FOR UPDATE OF c). Same scoping as the payment read.
@@ -154,6 +155,21 @@ class FakeCursor:
                 auth["bank_account_last4"] = auth.get("bank_account_last4") or last4
                 auth["reveals"] = auth.get("reveals", 0) + 1
                 self._one = (auth["id"], auth["amount_lkr"], auth["ds_authorized_at"])
+        elif s.startswith("SELECT id, registered_by_officer IS NOT NULL, verified_at"):
+            # verify_household (migration 041), scoped by division like every DS read.
+            assert "FOR UPDATE" in s
+            ref, division = params
+            hit = next(((hid, h) for hid, h in self.store["households"].items()
+                        if h["household_ref"] == ref
+                        and h.get("ds_division", THALAWA) == division), None)
+            self._one = None if hit is None else (
+                hit[0], hit[1].get("registered_by_officer") is not None, hit[1].get("verified_at"))
+        elif s.startswith("UPDATE households SET verified_at"):
+            by, household_id = params
+            h = self.store["households"][household_id]
+            h["verified_at"] = datetime(2026, 10, 8, 9, 0)
+            h["verified_by"] = by
+            self._one = (h["verified_at"],)
         else:  # pragma: no cover
             raise AssertionError(f"unexpected SQL: {s}")
 
@@ -668,3 +684,86 @@ def test_ds_notifications_use_push_and_email_only(client, store):
         channels = {a["event"].split("_")[0] for a in store["audit"]
                     if a["event"].startswith(("push_", "email_")) and _meta(a).get("status") == status}
         assert channels == {"push", "email"}, (status, channels)
+
+
+# --------------------------------------------------------------------- migration 041
+# A household a field officer registered is provisional: its claim proceeds, but the DS office must
+# check the family before the payment is released, so no one person both creates and gets paid.
+def _officer_registered(store, household_id=1, verified=False):
+    h = store["households"][household_id]
+    h["registered_by_officer"] = "officer-9"
+    if verified:
+        h["verified_at"] = datetime(2026, 10, 1, 9, 0)
+        h["verified_by"] = "ds-1"
+
+
+def test_an_unverified_officer_registered_household_cannot_be_paid(client, store):
+    _officer_registered(store)
+    res = _post(client)
+    assert res.status_code == 409
+    assert res.get_json() == {"error": "household_unverified", "household_ref": "HH-2026-0001"}
+    # Refused before anything was revealed or recorded.
+    assert "ds_authorized_at" not in store["payment_auth"][1]
+    assert not any(e["event"] == "ds_authorized_payment" for e in store["audit"])
+
+
+def test_a_verified_officer_registered_household_is_paid_normally(client, store):
+    _officer_registered(store, verified=True)
+    res = _post(client)
+    assert res.status_code == 200
+    assert res.get_json()["bank_details"]["account_number"] == "8001234567890"
+
+
+def test_a_household_the_family_registered_itself_needs_no_verification(client):
+    assert _post(client).status_code == 200
+
+
+def _verify(client, ref="HH-2026-0001", note="Checked the NIC card and the GN register", **kw):
+    return client.post(f"/api/v1/households/{ref}/verify", json={"note": note},
+                       headers=_auth(**kw))
+
+
+def test_the_ds_office_verifies_a_provisional_household_and_then_it_can_be_paid(client, store):
+    _officer_registered(store)
+    res = _verify(client)
+    assert res.status_code == 200
+    assert res.get_json()["household_ref"] == "HH-2026-0001"
+    assert res.get_json()["verified_at"].startswith("2026-10-08")
+    assert store["households"][1]["verified_by"] == "ds-1"
+    entry = next(e for e in store["audit"] if e["event"] == "ds_verified_household")
+    assert json.loads(entry["metadata"])["note"] == "Checked the NIC card and the GN register"
+    assert _post(client).status_code == 200
+
+
+def test_verifying_twice_keeps_the_first_verification_and_logs_once(client, store):
+    _officer_registered(store, verified=True)
+    res = _verify(client)
+    assert res.status_code == 200
+    assert res.get_json()["verified_at"].startswith("2026-10-01")
+    assert not any(e["event"] == "ds_verified_household" for e in store["audit"])
+
+
+def test_verification_needs_a_written_note(client, store):
+    _officer_registered(store)
+    res = _verify(client, note="ok")
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "note_required"
+    assert store["households"][1].get("verified_at") is None
+
+
+def test_a_self_registered_household_is_not_verified(client):
+    res = _verify(client)
+    assert res.status_code == 409
+    assert res.get_json()["error"] == "not_provisional"
+
+
+def test_another_divisions_household_is_a_404(client, store):
+    _officer_registered(store)
+    store["households"][1]["ds_division"] = KEKIRAWA
+    assert _verify(client).status_code == 404
+
+
+def test_only_a_ds_officer_can_verify(client, store):
+    _officer_registered(store)
+    assert _verify(client, role="admin").status_code in (401, 403)
+    assert store["households"][1].get("verified_at") is None

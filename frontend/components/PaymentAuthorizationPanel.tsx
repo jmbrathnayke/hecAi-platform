@@ -34,6 +34,8 @@ function failureKey(f: PaymentFailure): string {
       return "payment.error.noHousehold";
     case "no-bank-details":
       return "payment.error.noBankDetails";
+    case "household-unverified":
+      return "payment.error.householdUnverified";
     case "unreadable":
       return "payment.error.unreadable";
     case "forbidden":

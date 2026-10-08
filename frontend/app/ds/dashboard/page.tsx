@@ -433,7 +433,7 @@ export default function DsDashboardPage() {
                         <>
                           {/* Who the claim belongs to: the names to read aloud at the counter, and
                               how to reach them. One case's details, fetched on opening. */}
-                          {c.household_ref && <ClaimantDetails caseRef={c.canonical_id} density="compact" />}
+                          {c.household_ref && <ClaimantDetails caseRef={c.canonical_id} density="compact" canVerify />}
                           {/* The family's own words (migration 040) belong with the photographs. */}
                           <div
                             className="rounded-md border border-border-subtle bg-surface-raised p-design-4 shadow-card"

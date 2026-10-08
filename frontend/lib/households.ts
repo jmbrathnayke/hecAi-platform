@@ -201,6 +201,83 @@ export async function registerHousehold(input: RegisterHouseholdInput): Promise<
   }
 }
 
+// --- Officer registration in the field (migration 041) -----------------------------------------
+//
+// For the families an officer-assisted report exists for: no smartphone, so no account of their
+// own to register with. The officer registers them on the spot; the household is PROVISIONAL until
+// the Divisional Secretariat verifies it, and payment is held until then. The district is derived
+// on the server from the division, and no bank details are sent: the family or the DS office
+// records the account. The same NIC discipline as registerHousehold applies.
+
+export interface OfficerRegisterInput {
+  nic: string;
+  full_name: string;
+  ds_division: string;
+  gn_division?: string;
+  address: string;
+  members: HouseholdMemberInput[];
+  /** "+947XXXXXXXX" (lib/validation.ts normaliseMobile), when the officer has one. */
+  contact_mobile?: string;
+}
+
+export type OfficerRegisterFailure =
+  | RegisterFailure
+  | { reason: "division-not-assigned" };
+
+export type OfficerRegisterResult =
+  | { ok: true; householdRef: string; district: string; dsDivision: string; provisional: boolean }
+  | { ok: false; failure: OfficerRegisterFailure };
+
+export async function registerHouseholdByOfficer(
+  input: OfficerRegisterInput,
+): Promise<OfficerRegisterResult> {
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+    return { ok: false, failure: { reason: "config" } };
+  }
+  const token = await getAccessToken();
+  if (!token) return { ok: false, failure: { reason: "no-session" } };
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/api/v1/households/officer`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify(input),
+    });
+  } catch {
+    return { ok: false, failure: { reason: "network" } };
+  }
+
+  if (!res.ok) {
+    const body = await errorBody(res);
+    if (res.status === 403 && body.error === "division_not_assigned") {
+      return { ok: false, failure: { reason: "division-not-assigned" } };
+    }
+    return { ok: false, failure: classify(res.status, body) };
+  }
+
+  try {
+    const data = (await res.json()) as {
+      household_ref?: string;
+      district?: string;
+      ds_division?: string;
+      provisional?: boolean;
+    };
+    if (!data.household_ref) {
+      return { ok: false, failure: { reason: "server", status: res.status, code: "bad_response" } };
+    }
+    return {
+      ok: true,
+      householdRef: data.household_ref,
+      district: data.district ?? "",
+      dsDivision: data.ds_division ?? input.ds_division,
+      provisional: data.provisional !== false,
+    };
+  } catch {
+    return { ok: false, failure: { reason: "server", status: res.status, code: "bad_response" } };
+  }
+}
+
 export interface HouseholdLookup {
   household_ref: string;
   district: string;
