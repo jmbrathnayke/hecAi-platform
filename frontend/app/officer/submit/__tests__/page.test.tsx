@@ -78,15 +78,24 @@ jest.mock("@/lib/poc", () => ({
 // the officer app cannot derive a household_ref itself (it encrypts the NIC with a
 // non-extractable device key), so this call is the only way it gets one. Default to found;
 // the dedicated tests below override it.
-jest.mock("@/lib/households", () => ({ lookupHousehold: jest.fn() }));
+jest.mock("@/lib/households", () => ({
+  lookupHousehold: jest.fn(),
+  registerHouseholdByOfficer: jest.fn(),
+}));
+// The officer's assigned divisions (migration 041 registration). Mocked so the hook's own session
+// cache and IndexedDB reads stay out of this page's tests.
+jest.mock("@/hooks/useOfficerSession", () => ({
+  useOfficerSession: () => ({ officer_id: "officer-1", assigned_divisions: ["තලාව"], loading: false }),
+}));
 
 jest.mock("@/lib/mobilenet", () => ({ classifyImage: jest.fn() }));
 jest.mock("@/lib/imageQuality", () => ({ assessImageQuality: jest.fn() }));
 jest.mock("@/lib/geolocation", () => ({ getCurrentPosition: jest.fn() }));
 
-import { lookupHousehold } from "@/lib/households";
+import { lookupHousehold, registerHouseholdByOfficer } from "@/lib/households";
 
 const mockLookupHousehold = lookupHousehold as jest.Mock;
+const mockRegisterByOfficer = registerHouseholdByOfficer as jest.Mock;
 
 // The factory stays empty of behavior — every test's session shape is set via
 // createClient.mockReturnValue(...) at runtime (in beforeEach / individual tests), which avoids
@@ -574,4 +583,54 @@ it("does not look up an invalid NIC", async () => {
   fireEvent.click(screen.getByRole("button", { name: "submit.continue" }));
   await act(async () => {});
   expect(mockLookupHousehold).not.toHaveBeenCalled();
+});
+
+// --------------------------------------------------------------- migration 041
+// A family with no registration (often: no smartphone) is registered by the officer on the spot,
+// and the report carries on with the new household.
+it("offers to register an unregistered family, then continues the report with it", async () => {
+  mockLookupHousehold.mockResolvedValue({ status: "not-registered" });
+  mockRegisterByOfficer.mockReset().mockResolvedValue({
+    ok: true, householdRef: "HH-2026-0042", district: "අනුරාධපුරය", dsDivision: "තලාව",
+    provisional: true,
+  });
+  await fillIdentityAndContinue();
+  fireEvent.click(screen.getByRole("button", { name: "submit.registerButton" }));
+
+  fireEvent.change(screen.getByLabelText("submit.registerName"), { target: { value: "K. Silva" } });
+  fireEvent.change(screen.getByLabelText("submit.registerAddress"), {
+    target: { value: "No. 3, Wewa Road" },
+  });
+  fireEvent.click(screen.getByLabelText("submit.registerConfirm"));
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "submit.registerSubmit" }));
+  });
+
+  expect(mockRegisterByOfficer).toHaveBeenCalledWith(expect.objectContaining({
+    nic: "200012345678", full_name: "K. Silva", ds_division: "තලාව",
+    address: "No. 3, Wewa Road",
+  }));
+  const [, fields] = mockUpdateDraft.mock.calls.at(-1)!;
+  expect(fields.household_ref).toBe("HH-2026-0042");
+  expect(JSON.stringify(fields)).not.toContain("200012345678");
+  expect(screen.queryByLabelText(/submit.citizenNic/i)).not.toBeInTheDocument();
+  expect(screen.getByTestId("officer-registered-notice")).toBeInTheDocument();
+});
+
+it("does not register without the name, the address and the NIC-card confirmation", async () => {
+  mockLookupHousehold.mockResolvedValue({ status: "not-registered" });
+  mockRegisterByOfficer.mockReset();
+  await fillIdentityAndContinue();
+  fireEvent.click(screen.getByRole("button", { name: "submit.registerButton" }));
+  fireEvent.change(screen.getByLabelText("submit.registerName"), { target: { value: "K. Silva" } });
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "submit.registerSubmit" }));
+  });
+  expect(screen.getByText("submit.registerRequired")).toBeInTheDocument();
+  expect(mockRegisterByOfficer).not.toHaveBeenCalled();
+});
+
+it("does not offer registration when the family was found", async () => {
+  await fillIdentityAndContinue();
+  expect(screen.queryByRole("button", { name: "submit.registerButton" })).not.toBeInTheDocument();
 });

@@ -16,6 +16,7 @@ jest.mock("next-intl", () => ({
   useLocale: () => "en",
 }));
 jest.mock("@/lib/caseClaimant", () => ({ fetchCaseClaimant: jest.fn() }));
+jest.mock("@/lib/dsCases", () => ({ verifyHousehold: jest.fn() }));
 
 const mockFetch = fetchCaseClaimant as jest.Mock;
 
@@ -113,4 +114,48 @@ it("tells a signed-out user to sign in again", async () => {
   mockFetch.mockResolvedValue({ ok: false, failure: { reason: "signed-out" } });
   render(<ClaimantDetails caseRef="HEC-2026-0301" />);
   expect(await screen.findByRole("alert")).toHaveTextContent("error.signedOut");
+});
+
+// --------------------------------------------------------------- migration 041
+describe("a household a field officer registered", () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { verifyHousehold } = require("@/lib/dsCases") as { verifyHousehold: jest.Mock };
+  const provisional = { ...household, registered_by_officer: true, verified_at: null, provisional: true };
+
+  it("says payment is held until the DS office verifies it", async () => {
+    mockFetch.mockResolvedValue({ ok: true, household: provisional });
+    render(<ClaimantDetails caseRef="HEC-2026-0301" />);
+    expect(await screen.findByTestId("claimant-provisional")).toHaveTextContent("provisional");
+    // Only the DS office can verify; the officer and the administrator only see the notice.
+    expect(screen.queryByTestId("claimant-verify")).not.toBeInTheDocument();
+  });
+
+  it("lets the DS office verify it with a written note, then reloads", async () => {
+    mockFetch.mockResolvedValueOnce({ ok: true, household: provisional })
+      .mockResolvedValueOnce({ ok: true, household: { ...provisional, provisional: false,
+        verified_at: "2026-10-08T09:00:00Z" } });
+    verifyHousehold.mockReset().mockResolvedValue({ ok: true, householdRef: "HH-2026-0007",
+      verifiedAt: "2026-10-08T09:00:00Z" });
+    render(<ClaimantDetails caseRef="HEC-2026-0301" canVerify />);
+    await screen.findByTestId("claimant-verify");
+
+    fireEvent.click(screen.getByRole("button", { name: "verifySubmit" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("verifyNoteRequired");
+    expect(verifyHousehold).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText("verifyNote"), {
+      target: { value: "Checked the NIC card and GN register" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "verifySubmit" }));
+    expect(await screen.findByTestId("claimant-verified")).toBeInTheDocument();
+    expect(verifyHousehold).toHaveBeenCalledWith("HH-2026-0007", "Checked the NIC card and GN register");
+    expect(screen.queryByTestId("claimant-provisional")).not.toBeInTheDocument();
+  });
+
+  it("shows nothing extra for a family that registered itself", async () => {
+    render(<ClaimantDetails caseRef="HEC-2026-0301" canVerify />);
+    await screen.findByTestId("claimant-name");
+    expect(screen.queryByTestId("claimant-provisional")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("claimant-verified")).not.toBeInTheDocument();
+  });
 });

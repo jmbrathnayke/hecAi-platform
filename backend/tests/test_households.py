@@ -118,7 +118,7 @@ class FakeCursor:
             self._one = (self.store["seq"],)
         elif s.startswith("INSERT INTO households"):
             (ref, district, ds_division, gn, uid, bank_ct, bank_last4, contact_email, address,
-             contact_mobile) = params
+             contact_mobile, registered_by_officer) = params
             # Mirrors CHECK households_contact_mobile_format (migration 039).
             assert contact_mobile is None or re.fullmatch(r"\+947[0-9]{8}", contact_mobile)
             new_id = len(self.store["households"]) + 1
@@ -129,6 +129,7 @@ class FakeCursor:
                 "bank_details_ciphertext": bank_ct, "bank_account_last4": bank_last4,
                 "contact_email": contact_email, "address": address,
                 "contact_mobile": contact_mobile,
+                "registered_by_officer": registered_by_officer, "verified_at": None,
             })
             self._one = (new_id,)
         elif s.startswith("INSERT INTO household_members"):
@@ -140,7 +141,9 @@ class FakeCursor:
             self._one = (hit["id"], hit["household_ref"], hit["district"], hit["ds_division"],
                          hit["gn_division"], hit["status"], hit["registered_at"], hit["address"],
                          hit["contact_email"], hit["bank_account_last4"],
-                         hit.get("contact_mobile")) if hit else None
+                         hit.get("contact_mobile"),
+                         hit.get("registered_by_officer") is not None,
+                         hit.get("verified_at")) if hit else None
         elif s.startswith("SELECT id, household_ref, address, contact_email"):
             # PATCH /me: the caller's household, locked for update.
             hit = next((h for h in self.store["households"]
@@ -794,3 +797,94 @@ def test_migration_039_constrains_the_stored_spelling():
            / "039_add_contact_mobile_to_households.sql").read_text(encoding="utf-8")
     assert "ADD COLUMN IF NOT EXISTS contact_mobile TEXT" in sql
     assert r"'^\+947[0-9]{8}$'" in sql
+
+
+# --------------------------------------------------------------------------- migration 041
+# A field officer registers a family in the field. Same control, provisional household.
+def _officer_auth(sub="officer-1", divisions=(DIVISION,)):
+    meta = {"role": "officer", "assigned_divisions": list(divisions)}
+    return {"Authorization": "Bearer " + jwt.encode({"sub": sub, "app_metadata": meta}, SECRET,
+                                                     algorithm="HS256")}
+
+
+def _officer_payload(nic=NIC_CURRENT, **over):
+    body = {"nic": nic, "full_name": "Field Registrant", "ds_division": DIVISION,
+            "address": "No. 4, Wewa Road, Thalawa", "members": [],
+            "contact_mobile": "0771234567"}
+    body.update(over)
+    return body
+
+
+def test_an_officer_registers_a_family_provisionally(client, store):
+    res = client.post("/api/v1/households/officer", json=_officer_payload(),
+                      headers=_officer_auth())
+    assert res.status_code == 201
+    body = res.get_json()
+    assert body["household_ref"].startswith("HH-")
+    assert body["provisional"] is True
+    # The district is derived from the officer's division, never typed.
+    assert body["district"] == DISTRICT and body["ds_division"] == DIVISION
+    h = store["households"][0]
+    assert h["registrant_uid"] is None          # no family account behind it
+    assert h["registered_by_officer"] == "officer-1"
+    assert h["contact_mobile"] == "+94771234567"
+    entry = store["audit"][0]
+    assert entry["event"] == "household_registered_by_officer"
+    assert entry["actor_id"] == "officer-1"
+    assert json.loads(entry["metadata"])["provisional"] is True
+    assert NIC_CURRENT not in json.dumps(entry["metadata"], ensure_ascii=False)
+
+
+def test_a_family_registering_itself_is_not_provisional(client):
+    res = client.post("/api/v1/households", json=_payload(), headers=_auth())
+    assert res.get_json()["provisional"] is False
+
+
+def test_one_officer_can_register_many_families(client, store):
+    first = client.post("/api/v1/households/officer", json=_officer_payload(),
+                        headers=_officer_auth())
+    second = client.post("/api/v1/households/officer", json=_officer_payload(nic=NIC_OTHER),
+                         headers=_officer_auth())
+    assert first.status_code == 201 and second.status_code == 201
+    assert len(store["households"]) == 2
+
+
+def test_the_duplicate_claim_control_applies_to_officer_registration(client, store):
+    """A NIC the family already registered cannot be registered again by an officer."""
+    client.post("/api/v1/households", json=_payload(members=[NIC_OTHER]), headers=_auth())
+    for nic in (NIC_LEGACY, NIC_OTHER):  # the registrant's other card, and a declared member
+        res = client.post("/api/v1/households/officer", json=_officer_payload(nic=nic),
+                          headers=_officer_auth())
+        assert res.status_code == 409
+        assert res.get_json()["error"] == "nic_already_registered"
+    assert len(store["households"]) == 1
+
+
+def test_an_officer_registers_only_in_an_assigned_division(client, store):
+    res = client.post("/api/v1/households/officer", json=_officer_payload(),
+                      headers=_officer_auth(divisions=("කැකිරාව",)))
+    assert res.status_code == 403
+    assert res.get_json()["error"] == "division_not_assigned"
+    assert store["households"] == []
+
+
+def test_officer_registration_needs_the_registrants_name(client):
+    res = client.post("/api/v1/households/officer", json=_officer_payload(full_name="  "),
+                      headers=_officer_auth())
+    assert res.status_code == 400
+    assert res.get_json()["fields"] == ["full_name"]
+
+
+def test_officer_registration_never_takes_bank_details(client, store):
+    res = client.post("/api/v1/households/officer",
+                      json=_officer_payload(bank={"account_number": "8001234567890"}),
+                      headers=_officer_auth())
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "bank_details_not_accepted"
+    assert store["households"] == []
+
+
+def test_a_citizen_cannot_use_the_officer_route(client, store):
+    res = client.post("/api/v1/households/officer", json=_officer_payload(), headers=_auth())
+    assert res.status_code in (401, 403)
+    assert store["households"] == []

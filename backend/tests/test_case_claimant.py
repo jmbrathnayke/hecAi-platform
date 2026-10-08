@@ -26,7 +26,8 @@ SEEDED_REF = "HEC-2026-0010"   # Galnewa, no household (pre-Epic-8 / research se
 OFFLINE = "4f1c1a5e-2b7e-4c3a-9d2e-0a1b2c3d4e5f"
 
 HOUSEHOLD_KEYS = {"household_ref", "district", "ds_division", "gn_division", "status",
-                  "registered_at", "address", "contact_email", "contact_mobile", "members"}
+                  "registered_at", "address", "contact_email", "contact_mobile", "members",
+                  "registered_by_officer", "verified_at", "provisional"}
 
 
 def _auth(sub, role=None, **meta):
@@ -82,6 +83,7 @@ class FakeCursor:
                 h["id"], h["household_ref"], h["district"], h["ds_division"], h["gn_division"],
                 h["status"], h["registered_at"], h["address"], h["contact_email"],
                 h["bank_account_last4"], h["contact_mobile"],
+                h.get("registered_by_officer") is not None, h.get("verified_at"),
             )]
         elif "FROM household_members" in s:
             assert "nic_hmac" not in s

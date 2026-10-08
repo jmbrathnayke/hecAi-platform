@@ -25,6 +25,8 @@ import { classifyImage, type ClassId, type ClassificationResult } from "@/lib/mo
 import { deriveCaseCategory } from "@/lib/classification";
 import { buildPoC, submitCaseOnline } from "@/lib/poc";
 import { lookupHousehold } from "@/lib/households";
+import { useOfficerSession } from "@/hooks/useOfficerSession";
+import { OfficerRegisterHousehold } from "@/components/OfficerRegisterHousehold";
 import { createClient } from "@/lib/supabase";
 import { AIResultCard } from "@/components/AIResultCard";
 import { OverrideForm } from "@/components/OverrideForm";
@@ -88,6 +90,12 @@ export default function OfficerSubmitPage() {
   const [nicError, setNicError] = useState<string | null>(null);
   const [mobileError, setMobileError] = useState<string | null>(null);
   const [identityError, setIdentityError] = useState<string | null>(null);
+  // Migration 041: the lookup found no household. The officer may register the family on the spot
+  // (provisional until the DS office verifies it) and carry on with the report.
+  const [notRegistered, setNotRegistered] = useState(false);
+  const [registering, setRegistering] = useState(false);
+  const [registeredRef, setRegisteredRef] = useState<string | null>(null);
+  const { assigned_divisions: assignedDivisions } = useOfficerSession();
 
   // Location step.
   const [locStatus, setLocStatus] = useState<"idle" | "detecting" | "gps" | "manual">("idle");
@@ -235,6 +243,7 @@ export default function OfficerSubmitPage() {
       if (!mountedRef.current) return;
       if (lookup.status === "not-registered") {
         setIdentityError(t("submit.householdNotRegistered"));
+        setNotRegistered(true);
         setSaving(false);
         return;
       }
@@ -246,26 +255,52 @@ export default function OfficerSubmitPage() {
         return;
       }
 
-      const key = await getOrCreateSessionKey();
-      const nicEnc = await encryptField(nic.trim(), key);
-      const mobileEnc = await encryptField(mobile.trim(), key);
-      if (!mountedRef.current) return;
+      await continueWithHousehold(lookup.household.household_ref);
+    } catch {
+      if (mountedRef.current) setIdentityError(t("submit.identitySaveError"));
+    } finally {
+      if (mountedRef.current) setSaving(false);
+    }
+  }
 
-      const draftId = getOrCreateDraftId();
-      await updateDraft(draftId, {
-        // The reference, not the NIC — this is what travels to the submit endpoint. The NIC
-        // itself stays encrypted, exactly as before.
-        household_ref: lookup.household.household_ref,
-        reporter_nic_ciphertext: nicEnc.ciphertext,
-        reporter_nic_iv: nicEnc.iv,
-        reporter_mobile_ciphertext: mobileEnc.ciphertext,
-        reporter_mobile_iv: mobileEnc.iv,
-        submitted_by_officer: true,
-        officer_id: officerId,
-      });
-      if (!mountedRef.current) return;
-      setStep("location");
-      void beginLocationDetect();
+  // The household is known -- found by the lookup, or just registered by this officer. From here
+  // the two paths are identical: the NIC and mobile are encrypted into the draft and the report
+  // moves on to the location step.
+  async function continueWithHousehold(householdRef: string) {
+    if (!officerId) {
+      setIdentityError(t("submit.sessionError"));
+      return;
+    }
+    const key = await getOrCreateSessionKey();
+    const nicEnc = await encryptField(nic.trim(), key);
+    const mobileEnc = await encryptField(mobile.trim(), key);
+    if (!mountedRef.current) return;
+
+    const draftId = getOrCreateDraftId();
+    await updateDraft(draftId, {
+      // The reference, not the NIC — this is what travels to the submit endpoint. The NIC
+      // itself stays encrypted, exactly as before.
+      household_ref: householdRef,
+      reporter_nic_ciphertext: nicEnc.ciphertext,
+      reporter_nic_iv: nicEnc.iv,
+      reporter_mobile_ciphertext: mobileEnc.ciphertext,
+      reporter_mobile_iv: mobileEnc.iv,
+      submitted_by_officer: true,
+      officer_id: officerId,
+    });
+    if (!mountedRef.current) return;
+    setStep("location");
+    void beginLocationDetect();
+  }
+
+  async function handleRegistered(householdRef: string) {
+    setRegisteredRef(householdRef);
+    setRegistering(false);
+    setNotRegistered(false);
+    setIdentityError(null);
+    setSaving(true);
+    try {
+      await continueWithHousehold(householdRef);
     } catch {
       if (mountedRef.current) setIdentityError(t("submit.identitySaveError"));
     } finally {
@@ -577,7 +612,11 @@ export default function OfficerSubmitPage() {
                 autoComplete="off"
                 placeholder={t("submit.nicPlaceholder")}
                 value={nic}
-                onChange={(e) => setNic(e.target.value)}
+                onChange={(e) => {
+                  setNic(e.target.value);
+                  setNotRegistered(false);
+                  setRegistering(false);
+                }}
                 aria-invalid={!!nicError}
                 className={touchFieldStyles}
               />
@@ -617,14 +656,42 @@ export default function OfficerSubmitPage() {
                 {identityError}
               </p>
             )}
-            <button
-              type="submit"
-              disabled={saving || !sessionChecked || !officerId}
-              className={touchButtonStyles.primary}
-            >
-              {sessionChecked ? t("submit.continue") : t("submit.verifyingSession")}
-            </button>
+            {notRegistered && !registering && (
+              <div className="space-y-design-2" data-testid="officer-register-offer">
+                <p className="text-label text-ink-secondary">{t("submit.registerOffer")}</p>
+                <button
+                  type="button"
+                  onClick={() => setRegistering(true)}
+                  className={`${touchButtonStyles.secondary} w-full`}
+                >
+                  {t("submit.registerButton")}
+                </button>
+              </div>
+            )}
+            {!registering && (
+              <button
+                type="submit"
+                disabled={saving || !sessionChecked || !officerId}
+                className={touchButtonStyles.primary}
+              >
+                {sessionChecked ? t("submit.continue") : t("submit.verifyingSession")}
+              </button>
+            )}
           </form>
+        )}
+        {step === "identity" && registering && (
+          <OfficerRegisterHousehold
+            nic={nic}
+            mobile={mobile}
+            divisions={assignedDivisions}
+            onRegistered={(ref) => void handleRegistered(ref)}
+            onCancel={() => setRegistering(false)}
+          />
+        )}
+        {step !== "identity" && registeredRef && (
+          <p role="status" className="text-caption text-ink-secondary" data-testid="officer-registered-notice">
+            {t("submit.registeredProvisional", { ref: registeredRef })}
+          </p>
         )}
 
         {step === "location" && (

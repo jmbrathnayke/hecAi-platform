@@ -28,6 +28,12 @@ export interface ClaimantHousehold {
   contact_mobile: string | null;
   /** Present for the DS officer only. */
   bank_account_last4?: string | null;
+  /** Migration 041: registered in the field by a DWC officer rather than by the family. */
+  registered_by_officer?: boolean;
+  /** When the Divisional Secretariat verified an officer-registered household; null until then. */
+  verified_at?: string | null;
+  /** Officer-registered and not yet verified: payment is held. */
+  provisional?: boolean;
   members: ClaimantMember[];
 }
 

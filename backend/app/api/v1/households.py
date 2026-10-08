@@ -1,6 +1,7 @@
 """Household registration API (Story 8.2, FR-10.1 / FR-10.2 / FR-10.6).
 
     POST  /api/v1/households      register a household           (citizen JWT)
+    POST  /api/v1/households/officer  register a family in the field, provisionally (officer JWT)
     GET   /api/v1/households/me   the caller's own household     (citizen JWT)
     PATCH /api/v1/households/me   correct contact details; add bank details if none (citizen JWT)
 
@@ -36,7 +37,7 @@ from flask import Blueprint, current_app, g, jsonify, request
 from app.api.v1.middleware.auth import require_citizen, require_officer
 from app.infrastructure import registry
 from app.infrastructure.audit import write_audit_log
-from app.infrastructure.geo.divisions import is_valid_pair
+from app.infrastructure.geo.divisions import district_for_division, is_valid_pair
 from app.infrastructure.security.bank_crypto import BankKeyMissing, encrypt_bank_details
 from app.infrastructure.security.nic_identity import NicPepperMissing, nic_hmac
 
@@ -151,6 +152,22 @@ def register_household():
     if not is_valid_pair(district, ds_division):
         return jsonify({"error": "invalid_division"}), 400
 
+    return _register(body, pepper, district, ds_division, registrant_uid=citizen_id,
+                     registered_by_officer=None, actor_id=citizen_id)
+
+
+def _register(body, pepper, district, ds_division, *, registrant_uid, registered_by_officer,
+              actor_id):
+    """Everything after "who may register, and where": the form, the NIC digests, the insert.
+
+    Shared by the family's own registration and the field officer's (migration 041), so the
+    duplicate-claim control -- the pre-check, the UNIQUE index and the race handler -- is one code
+    path and cannot drift between them. The two differ only in what the caller passes:
+
+      registrant_uid         the family's own account, or None when an officer registers them
+      registered_by_officer  the officer's id, which also marks the household provisional
+    """
+    by_officer = registered_by_officer is not None
     # Required from migration 035 on; households registered before it keep NULL.
     address = _clean_text(body.get("address"), MAX_ADDRESS_LEN)
     if not address:
@@ -188,6 +205,10 @@ def register_household():
     bank_ciphertext = None
     bank_last4 = None
     bank = body.get("bank")
+    if bank is not None and by_officer:
+        # The account the money goes to is recorded by the family itself or at the DS office that
+        # pays (ds.py set_household_bank_details), never by the officer who also files the claim.
+        return jsonify({"error": "bank_details_not_accepted"}), 400
     if bank is not None:
         try:
             bank_ciphertext, bank_last4 = encrypt_bank_details(
@@ -226,16 +247,18 @@ def register_household():
         try:
             with conn:
                 with conn.cursor() as cur:
-                    # (a) Has this Supabase account already registered a household?
-                    cur.execute(
-                        "SELECT household_ref FROM households "
-                        " WHERE registrant_uid = %s AND status = 'active' LIMIT 1",
-                        (citizen_id,),
-                    )
-                    mine = cur.fetchone()
-                    if mine:
-                        return jsonify({"error": "already_registered",
-                                        "household_ref": mine[0]}), 409
+                    # (a) Has this Supabase account already registered a household? Only asked
+                    #     of a family's own account: an officer registers many families.
+                    if registrant_uid is not None:
+                        cur.execute(
+                            "SELECT household_ref FROM households "
+                            " WHERE registrant_uid = %s AND status = 'active' LIMIT 1",
+                            (registrant_uid,),
+                        )
+                        mine = cur.fetchone()
+                        if mine:
+                            return jsonify({"error": "already_registered",
+                                            "household_ref": mine[0]}), 409
 
                     # (b) Is any supplied NIC already occupied? Checked before inserting so the
                     #     common case produces a clean 409 rather than a caught constraint error.
@@ -259,11 +282,12 @@ def register_household():
                         """INSERT INTO households
                              (household_ref, district, ds_division, gn_division, registrant_uid,
                               bank_details_ciphertext, bank_account_last4, contact_email, address,
-                              contact_mobile)
-                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+                              contact_mobile, registered_by_officer)
+                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
                         (household_ref, district, ds_division,
-                         _clean_text(body.get("gn_division")), citizen_id,
-                         bank_ciphertext, bank_last4, contact_email, address, contact_mobile),
+                         _clean_text(body.get("gn_division")), registrant_uid,
+                         bank_ciphertext, bank_last4, contact_email, address, contact_mobile,
+                         registered_by_officer),
                     )
                     household_id = cur.fetchone()[0]
 
@@ -279,13 +303,16 @@ def register_household():
                     # No NIC and no digest in the metadata — the audit trail must not become the
                     # PII store the schema deliberately avoids being.
                     write_audit_log(
-                        cur, None, "household_registered", citizen_id,
+                        cur, None,
+                        "household_registered_by_officer" if by_officer else "household_registered",
+                        actor_id,
                         {"household_ref": household_ref, "district": district,
                          "ds_division": ds_division, "member_count": len(people),
                          # Whether, not what. The audit trail must not become the PII store the
                          # rest of this design goes to lengths to avoid.
                          "bank_details_provided": bank_ciphertext is not None,
-                         "contact_mobile_provided": contact_mobile is not None},
+                         "contact_mobile_provided": contact_mobile is not None,
+                         "provisional": by_officer},
                     )
         finally:
             conn.close()
@@ -305,7 +332,53 @@ def register_household():
         # The tail only, and only so the citizen can confirm they typed the right account. The
         # full number is never returned by this endpoint or any other except the DS payment view.
         "bank_account_last4": bank_last4,
+        # Awaiting the DS office's check before any payment (migration 041).
+        "provisional": by_officer,
     }), 201
+
+
+@households_bp.route("/households/officer", methods=["POST"])
+@require_officer()
+def register_household_by_officer():
+    """A field officer registers a family on the spot, provisionally (migration 041).
+
+    For the families the officer-assisted report exists for: no smartphone, so no account of their
+    own to register with. Without this the officer could only send them away at step 1.
+
+    What keeps it honest:
+      * only in a DS division the officer is assigned to (the claim's routing follows it);
+      * the registrant's name is required, so the DS office has someone to check;
+      * no bank details -- the family or the DS office records the account;
+      * the household is provisional: the DS office must verify it against the NIC card / GN
+        register before payment can be authorised (ds.py verify_household / authorize_payment);
+      * the officer's id is on the household row and in the audit trail.
+
+    The duplicate-claim control is unchanged and shared (_register): a NIC already in any household,
+    as registrant or member, is refused exactly as it is for a family registering itself.
+    """
+    officer_id = g.officer_id
+    pepper = current_app.config.get("NIC_PEPPER")
+    if not pepper:
+        current_app.logger.error("officer household registration attempted with no NIC_PEPPER")
+        return jsonify({"error": "server_misconfigured"}), 500
+
+    body = request.get_json(silent=True) or {}
+    ds_division = _clean_text(body.get("ds_division"))
+    missing = [f for f, v in (("ds_division", ds_division),
+                              ("full_name", _clean_text(body.get("full_name")))) if not v]
+    if missing:
+        return jsonify({"error": "missing_fields", "fields": missing}), 400
+    if ds_division not in g.assigned_divisions:
+        # Their own divisions only: an officer registering families elsewhere would be creating
+        # households that no colleague of theirs, and no DS office they work with, will ever see.
+        return jsonify({"error": "division_not_assigned"}), 403
+    # The district is derived, never typed: a mismatched pair would route the claim nowhere.
+    district = district_for_division(ds_division)
+    if not district:
+        return jsonify({"error": "invalid_division"}), 400
+
+    return _register(body, pepper, district, ds_division, registrant_uid=None,
+                     registered_by_officer=officer_id, actor_id=officer_id)
 
 
 def _conflict_response(registrant_digest, taken):
@@ -403,7 +476,8 @@ def lookup_household():
 # registrant_uid. household_view() reads the positions in this order.
 HOUSEHOLD_COLUMNS = """id, household_ref, district, ds_division, gn_division,
                   status, registered_at, address, contact_email,
-                  bank_account_last4, contact_mobile"""
+                  bank_account_last4, contact_mobile,
+                  registered_by_officer IS NOT NULL, verified_at"""
 
 
 def _read_own_household(cur, citizen_id):
@@ -446,6 +520,11 @@ def household_view(cur, row):
         "contact_email": row[8],
         "bank_account_last4": row[9],
         "contact_mobile": row[10],
+        # Migration 041. Whether, never who: the officer's id stays in the audit trail.
+        "registered_by_officer": bool(row[11]),
+        "verified_at": row[12].isoformat() if row[12] else None,
+        # Registered by an officer and not yet checked by the DS office: payment is held.
+        "provisional": bool(row[11]) and row[12] is None,
         "members": members,
     }
 

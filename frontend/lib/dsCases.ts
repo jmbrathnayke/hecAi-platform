@@ -143,6 +143,8 @@ export type PaymentFailure =
   | { reason: "not-approved"; status?: string }
   | { reason: "no-household" }
   | { reason: "no-bank-details"; householdRef?: string }
+  /** Migration 041: a field officer registered the family; this office must verify it first. */
+  | { reason: "household-unverified"; householdRef?: string }
   /** Stored ciphertext could not be decrypted. NOT the same as "the family gave none" — telling
    *  the officer that would send them to collect details the family already provided. */
   | { reason: "unreadable" }
@@ -190,6 +192,9 @@ export async function authorizePayment(canonicalId: string): Promise<PaymentResu
     }
     if (code === "no_bank_details") {
       return { ok: false, failure: { reason: "no-bank-details", householdRef: body.household_ref } };
+    }
+    if (code === "household_unverified") {
+      return { ok: false, failure: { reason: "household-unverified", householdRef: body.household_ref } };
     }
     if (code === "bank_details_unreadable") return { ok: false, failure: { reason: "unreadable" } };
     return { ok: false, failure: { reason: "server", status: res.status, code } };
@@ -354,4 +359,43 @@ export async function setHouseholdBankDetails(
   if (code === "reason_required") return { ok: false, failure: { reason: "reason-required" } };
   if (code === "invalid_bank_details") return { ok: false, failure: { reason: "invalid-bank" } };
   return { ok: false, failure: { reason: "server", status: res.status, code } };
+}
+
+// --- Verifying an officer-registered household (migration 041) --------------------------------
+//
+// A field officer may register a family in the field and file its claim in the same visit. Until
+// this office has checked the family (NIC card, Grama Niladhari register, or in person), the
+// household is provisional and authorizePayment is refused with household_unverified.
+
+export type VerifyHouseholdResult =
+  | { ok: true; householdRef: string; verifiedAt: string | null }
+  | { ok: false; failure: "note-required" | "not-found" | "not-provisional" | "forbidden" | "network" | "server" };
+
+export async function verifyHousehold(householdRef: string, note: string): Promise<VerifyHouseholdResult> {
+  const token = await getAccessToken();
+  if (!token) return { ok: false, failure: "forbidden" };
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/api/v1/households/${encodeURIComponent(householdRef)}/verify`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ note }),
+    });
+  } catch {
+    return { ok: false, failure: "network" };
+  }
+  let body: { error?: string; household_ref?: string; verified_at?: string | null } = {};
+  try {
+    body = (await res.json()) as typeof body;
+  } catch {
+    body = {};
+  }
+  if (res.ok) {
+    return { ok: true, householdRef: body.household_ref ?? householdRef, verifiedAt: body.verified_at ?? null };
+  }
+  if (res.status === 404) return { ok: false, failure: "not-found" };
+  if (res.status === 401 || res.status === 403) return { ok: false, failure: "forbidden" };
+  if (body.error === "note_required") return { ok: false, failure: "note-required" };
+  if (body.error === "not_provisional") return { ok: false, failure: "not-provisional" };
+  return { ok: false, failure: "server" };
 }
